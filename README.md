@@ -6,26 +6,50 @@ Design doc: [Bigfoot Pet — Design](https://claude.ai/code/artifact/85ce4636-3c
 
 ## Status
 
-Step 1 of the build plan: the **simulation core** and a **fast-forward harness**, both pure C++ that runs on a PC. No display or board code yet.
+Steps 1 and 2 of the build plan: the **simulation core** with a **fast-forward harness**, and the **clearing scene** running on the PC in an SDL window with placeholder art. No board code yet.
 
 | Folder | What's in it |
 | --- | --- |
 | `sim/` | The game: meters, Trust, discipline, life stages, adult forms, sickness, running away, generations, save files. No hardware code; later it builds as an ESP-IDF component unchanged. |
+| `scene/` | The screen: an anti-aliased software renderer into an RGB565 framebuffer, touch-to-gesture recognition, and the clearing with Squatch, the status strip and the care tray. Also hardware-free, so the board will draw the same pixels. |
+| `pc/` | `squatch-pc`: shows the scene in an SDL window, with the mouse as a finger, the real clock and a save file. |
 | `harness/` | `squatch-harness`: raises pets at high speed under scripted players to tune the balance. |
-| `tests/` | Framework-free tests, including "every adult form is reachable". |
+| `tests/` | Framework-free tests: the sim (including "every adult form is reachable") and the scene, driven by touch events. |
 
 ## Build and run
 
-Needs CMake 3.16+ and a C++17 compiler (in WSL: `sudo apt install build-essential cmake`).
+Needs CMake 3.16+ and a C++17 compiler, plus SDL2 for the PC scene (in WSL: `sudo apt install build-essential cmake libsdl2-dev`). Without SDL2 everything else still builds.
 
 ```sh
 cmake -S . -B build
 cmake --build build -j
 ./build/squatch-tests
-./build/squatch-harness
+./build/squatch-scene-tests
+./build/squatch-pc
 ```
 
-The harness raises 20 pets per scripted player and shows which adult forms came out:
+## The PC scene
+
+`squatch-pc` loads `squatch.sav` from the current folder, catches up on the time it was closed, and runs in real time. With no save it lays a new egg, which hatches after a day (use the speed keys to skip ahead).
+
+| You do | With the mouse | It does |
+| --- | --- | --- |
+| Open or close the care tray | click the tab at the bottom, or drag up from the bottom edge (down to close) | Feed, Clean, Heal, Play, Light, Photos |
+| Give something | click a tray item, then click Squatch, or drag the item onto it | food, brush, poultice, a pinecone to play catch |
+| Pet it | drag slowly across it | only once it trusts you |
+| Clean a mess | drag across it, or click it | |
+| Answer a call | click the pulsing footprints (top right) or Squatch | |
+| Scold | right-click (a two-finger tap) | only fair while it's misbehaving |
+| Stats | click or hold the status strip | |
+| Leave food out while it's away | drop food on the stump | three separate days bring it back |
+
+Dev keys: `]` and `[` change the speed of time (1x, 60x, 600x, 3600x), `P` saves a screenshot. `--new` starts over, `--save FILE` picks another save, `--zoom 2` makes the window bigger, and `--shot FILE.bmp` draws one frame without opening a window.
+
+Where Squatch stands follows Trust: hiding behind the left tree with only its eyes showing, wandering the back of the clearing, or out front, waving. The sky follows the clock, from dawn to stars and a campfire in the evening. The art is placeholder shapes at roughly the planned 192×192 sprite size, ready to be swapped for real sprites in step 4. Play is a stand-in game of catch until the mini-games arrive in step 5.
+
+## Balance harness
+
+`./build/squatch-harness` raises 20 pets per scripted player and shows which adult forms came out:
 
 ```
 player        style                                      Guardian  Runner    Couch     Hermit    Legend
@@ -61,5 +85,6 @@ It never dies: untreated sickness or long neglect makes it run away, and leaving
 
 ## Next steps
 
-1. **Step 2:** an SDL scene on the PC: the clearing, Squatch idling, the care tray, touch via mouse.
-2. **Step 3:** port to the [Waveshare ESP32-S3-Touch-LCD-4B](https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-4B) (display, touch, audio, battery, flash saves, RTC + NTP clock).
+1. **Step 3:** port to the [Waveshare ESP32-S3-Touch-LCD-4B](https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-4B): push the scene's framebuffer to the ST7701 panel, feed GT911 touches into the scene, save to flash, keep time with NTP and the PCF85063 RTC, and add audio and battery support.
+2. **Step 4:** real art for the egg, baby and child.
+3. Not yet in the scene: the naming screen at hatching and the half-speed meter setting.

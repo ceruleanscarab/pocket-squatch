@@ -10,6 +10,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install SDL2
+        run: sudo apt-get update && sudo apt-get install -y libsdl2-dev
+
       - name: Configure
         run: cmake -S . -B build
 
@@ -17,7 +20,17 @@ jobs:
         run: cmake --build build -j
 
       - name: Tests
-        run: ./build/squatch-tests
+        run: |
+          ./build/squatch-tests
+          ./build/squatch-scene-tests
+
+      - name: Scene screenshot
+        run: ./build/squatch-pc --new --save /tmp/ci.sav --shot scene.bmp
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: scene
+          path: scene.bmp
 
       - name: Balance report
         run: |

@@ -62,4 +62,4 @@ It never dies: untreated sickness or long neglect makes it run away, and leaving
 ## Next steps
 
 1. **Step 2:** an SDL scene on the PC: the clearing, Squatch idling, the care tray, touch via mouse.
-2. **Step 3:** port to the Waveshare ESP32-S3-Touch-LCD-4 (display, touch, flash saves, NTP clock).
+2. **Step 3:** port to the [Waveshare ESP32-S3-Touch-LCD-4B](https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-4B) (display, touch, audio, battery, flash saves, RTC + NTP clock).

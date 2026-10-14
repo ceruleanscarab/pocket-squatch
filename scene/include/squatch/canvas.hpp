@@ -48,9 +48,10 @@ public:
     static int textHeight(int scale) { return 7 * scale; }
 
 private:
+    // march: how far a distance may be trusted when skipping empty space (1 for exact
+    // distances, less for estimates); 0 marks a shape that isn't convex, tested pixel by pixel.
     template <typename Dist>
-    void fillShape(float x0, float y0, float x1, float y1, Rgb c, float a, Dist dist);
-    void blend(int x, int y, Rgb c, float a);
+    void fillShape(float x0, float y0, float x1, float y1, Rgb c, float a, Dist dist, float march = 1);
 
     uint16_t* px_;
     int w_, h_;

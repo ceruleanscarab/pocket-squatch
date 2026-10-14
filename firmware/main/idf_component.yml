@@ -1,0 +1,8 @@
+## Panel, touch and IO expander drivers, as used by Waveshare's BSP for this board,
+## without the BSP itself (it pulls in LVGL, which the scene doesn't need).
+dependencies:
+  idf: ">=5.4,<5.5"
+  espressif/esp_lcd_st7701: "^1"
+  espressif/esp_lcd_panel_io_additions: "^1"
+  espressif/esp_io_expander_tca9554: "^2"
+  espressif/esp_lcd_touch_gt911: "^1"

@@ -6,13 +6,14 @@ Design doc: [Bigfoot Pet — Design](https://claude.ai/code/artifact/85ce4636-3c
 
 ## Status
 
-Steps 1 and 2 of the build plan: the **simulation core** with a **fast-forward harness**, and the **clearing scene** running on the PC in an SDL window with placeholder art. No board code yet.
+Steps 1 to 3 of the build plan: the **simulation core** with a **fast-forward harness**, the **clearing scene** running on the PC in an SDL window with placeholder art, and **firmware** for the Waveshare ESP32-S3-Touch-LCD-4B. The firmware builds but hasn't run on a board yet.
 
 | Folder | What's in it |
 | --- | --- |
 | `sim/` | The game: meters, Trust, discipline, life stages, adult forms, sickness, running away, generations, save files. No hardware code; later it builds as an ESP-IDF component unchanged. |
 | `scene/` | The screen: an anti-aliased software renderer into an RGB565 framebuffer, touch-to-gesture recognition, and the clearing with Squatch, the status strip and the care tray. Also hardware-free, so the board will draw the same pixels. |
 | `pc/` | `squatch-pc`: shows the scene in an SDL window, with the mouse as a finger, the real clock and a save file. |
+| `firmware/` | The ESP-IDF project for the board: the same sim and scene, with the panel, touch, flash saves and the clock. |
 | `harness/` | `squatch-harness`: raises pets at high speed under scripted players to tune the balance. |
 | `tests/` | Framework-free tests: the sim (including "every adult form is reachable") and the scene, driven by touch events. |
 
@@ -46,6 +47,29 @@ cmake --build build -j
 Dev keys: `]` and `[` change the speed of time (1x, 60x, 600x, 3600x), `P` saves a screenshot. `--new` starts over, `--save FILE` picks another save, `--zoom 2` makes the window bigger, and `--shot FILE.bmp` draws one frame without opening a window.
 
 Where Squatch stands follows Trust: hiding behind the left tree with only its eyes showing, wandering the back of the clearing, or out front, waving. The sky follows the clock, from dawn to stars and a campfire in the evening. The art is placeholder shapes at roughly the planned 192×192 sprite size, ready to be swapped for real sprites in step 4. Play is a stand-in game of catch until the mini-games arrive in step 5.
+
+## On the board
+
+The firmware targets the [Waveshare ESP32-S3-Touch-LCD-4B](https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-4B) and ESP-IDF v5.4 (the version Waveshare's demos use). It uses the same `sim/` and `scene/` folders as the PC, so the board shows exactly the pixels `squatch-pc` does.
+
+```sh
+. ~/esp/esp-idf/export.sh
+idf.py -C firmware menuconfig        # Pocket Squatch: Wi-Fi for the clock, and your time zone
+idf.py -C firmware build flash monitor
+```
+
+In WSL the board's USB port has to be passed through first (`usbipd attach --wsl` from Windows); otherwise flash from Windows with the same ESP-IDF version.
+
+| Part | How |
+| --- | --- |
+| Display | ST7701 over the 16-bit RGB bus, two frame buffers in PSRAM: the scene draws into one while the other is on screen, then they swap at the next refresh. |
+| Touch | GT911, read every frame (its interrupt line isn't wired to the ESP32). Fingers become the scene's touch events, so gestures work exactly as on the PC. |
+| Saves | One NVS blob in flash, in the same format as `squatch.sav`, written after every care action and every 5 minutes. |
+| Clock | The PCF85063 RTC keeps time on the battery. With Wi-Fi configured, the board fetches the time over NTP at start-up, stores it in the RTC and turns Wi-Fi off. The time zone is a POSIX TZ string (default US Mountain). |
+
+Pins and the panel's start-up commands come from Waveshare's board support package (Apache-2.0). That package also brings LVGL, which the scene doesn't need, so `firmware/main/board.c` is a small copy of just the display, backlight and touch parts.
+
+The serial log reports frames per second and milliseconds per draw every 10 seconds. That's the first thing to check on real hardware.
 
 ## Balance harness
 
@@ -85,6 +109,7 @@ It never dies: untreated sickness or long neglect makes it run away, and leaving
 
 ## Next steps
 
-1. **Step 3:** port to the [Waveshare ESP32-S3-Touch-LCD-4B](https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-4B): push the scene's framebuffer to the ST7701 panel, feed GT911 touches into the scene, save to flash, keep time with NTP and the PCF85063 RTC, and add audio and battery support.
+1. **Finish step 3 on a real board:** check the picture, touch orientation, frame rate, saves surviving a power cycle, and the clock.
 2. **Step 4:** real art for the egg, baby and child.
 3. Not yet in the scene: the naming screen at hatching and the half-speed meter setting.
+4. **Step 6:** sound through the ES8311, and battery level and sleep through the AXP2101.

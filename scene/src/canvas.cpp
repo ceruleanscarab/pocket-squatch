@@ -18,6 +18,25 @@ inline Rgb from565(uint16_t p) {
 
 inline float clamp01(float v) { return v < 0 ? 0 : (v > 1 ? 1 : v); }
 
+inline int alpha256(float a) { return static_cast<int>(clamp01(a) * 256 + 0.5f); }
+
+// Mixes src into dst by a/256, channel by channel, all in integers (the board has no fast
+// floating point to spare per pixel).
+inline void blend565(uint16_t& dst, uint16_t src, int a) {
+    if (a >= 256) {
+        dst = src;
+        return;
+    }
+    int dr = dst >> 11, dg = (dst >> 5) & 63, db = dst & 31;
+    int sr = src >> 11, sg = (src >> 5) & 63, sb = src & 31;
+    dr += ((sr - dr) * a + 128) >> 8;  // + 128: round to nearest
+    dg += ((sg - dg) * a + 128) >> 8;
+    db += ((sb - db) * a + 128) >> 8;
+    dst = static_cast<uint16_t>(dr << 11 | dg << 5 | db);
+}
+
+inline float length(float x, float y) { return std::sqrt(x * x + y * y); }
+
 // 5x7 glyphs, one string of 7 rows x 5 columns each.
 struct Glyph {
     char c;
@@ -97,11 +116,6 @@ Rgb mix(Rgb a, Rgb b, float t) {
 
 Rgb Canvas::pixel(int x, int y) const { return from565(px_[y * w_ + x]); }
 
-void Canvas::blend(int x, int y, Rgb c, float a) {
-    uint16_t& p = px_[y * w_ + x];
-    p = to565(a >= 0.999f ? c : mix(from565(p), c, a));
-}
-
 void Canvas::clear(Rgb c) { std::fill(px_, px_ + w_ * h_, to565(c)); }
 
 void Canvas::verticalGradient(int y0, int y1, Rgb top, Rgb bottom) {
@@ -114,25 +128,75 @@ void Canvas::verticalGradient(int y0, int y1, Rgb top, Rgb bottom) {
 }
 
 void Canvas::tint(Rgb c, float alpha) {
-    if (alpha <= 0) return;
-    for (int i = 0; i < w_ * h_; i++) px_[i] = to565(mix(from565(px_[i]), c, alpha));
+    int a = alpha256(alpha);
+    if (a <= 0) return;
+    uint16_t c565 = to565(c);
+    for (int i = 0; i < w_ * h_; i++) blend565(px_[i], c565, a);
 }
 
-// Fills every pixel in the box by coverage: dist is the signed distance in pixels from a
-// pixel centre to the shape's edge (negative inside), and the edge pixel gets partial ink.
+// Fills a shape by pixel coverage: dist is the signed distance in pixels from a pixel centre
+// to the shape's edge (negative inside), and edge pixels get partial ink.
+//
+// For convex shapes each row is one run: march in from both ends of the row (a distance
+// says how far it is safe to skip), anti-alias the rim, and fill the inside as a solid run
+// without measuring it. Only the rim costs a distance per pixel.
 template <typename Dist>
-void Canvas::fillShape(float x0, float y0, float x1, float y1, Rgb c, float a, Dist dist) {
-    if (a <= 0) return;
-    int ix0 = std::max(0, static_cast<int>(std::floor(x0 - 1)));
-    int iy0 = std::max(0, static_cast<int>(std::floor(y0 - 1)));
-    int ix1 = std::min(w_, static_cast<int>(std::ceil(x1 + 1)));
-    int iy1 = std::min(h_, static_cast<int>(std::ceil(y1 + 1)));
+void Canvas::fillShape(float x0, float y0, float x1, float y1, Rgb c, float a, Dist dist, float march) {
+    const int a256 = alpha256(a);
+    if (a256 <= 0) return;
+    const uint16_t c565 = to565(c);
+    const int ix0 = std::max(0, static_cast<int>(std::floor(x0 - 1)));
+    const int iy0 = std::max(0, static_cast<int>(std::floor(y0 - 1)));
+    const int ix1 = std::min(w_, static_cast<int>(std::ceil(x1 + 1)));
+    const int iy1 = std::min(h_, static_cast<int>(std::ceil(y1 + 1)));
+
     for (int y = iy0; y < iy1; y++) {
-        float py = y + 0.5f;
-        for (int x = ix0; x < ix1; x++) {
-            float cov = clamp01(0.5f - dist(x + 0.5f, py));
-            if (cov > 0) blend(x, y, c, a * cov);
+        const float py = y + 0.5f;
+        uint16_t* row = px_ + y * w_;
+        auto rim = [&](int x, float d) {
+            int cov = static_cast<int>(clamp01(0.5f - d) * static_cast<float>(a256) + 0.5f);
+            if (cov > 0) blend565(row[x], c565, cov);
+        };
+
+        if (march <= 0) {
+            for (int x = ix0; x < ix1; x++) rim(x, dist(x + 0.5f, py));
+            continue;
         }
+
+        int l = ix0;
+        while (l < ix1) {
+            float d = dist(l + 0.5f, py);
+            if (d < 0.5f) break;
+            l += std::max(1, static_cast<int>(d * march));
+        }
+        bool solid = false;
+        for (; l < ix1; l++) {
+            float d = dist(l + 0.5f, py);
+            if (d <= -0.5f) {
+                solid = true;
+                break;
+            }
+            if (d >= 0.5f) break;  // out the other side: this row only grazes the shape
+            rim(l, d);
+        }
+        if (!solid) continue;
+
+        int r = ix1 - 1;
+        while (r > l) {
+            float d = dist(r + 0.5f, py);
+            if (d < 0.5f) break;
+            r -= std::max(1, static_cast<int>(d * march));
+        }
+        r = std::max(r, l);
+        for (; r > l; r--) {
+            float d = dist(r + 0.5f, py);
+            if (d <= -0.5f) break;
+            rim(r, d);
+        }
+
+        if (a256 >= 256) std::fill(row + l, row + r + 1, c565);
+        else
+            for (int x = l; x <= r; x++) blend565(row[x], c565, a256);
     }
 }
 
@@ -144,13 +208,13 @@ void Canvas::fillRoundRect(float x, float y, float w, float h, float r, Rgb c, f
     fillShape(x, y, x + w, y + h, c, a, [=](float px, float py) {
         float qx = std::fabs(px - cx) - (hx - r), qy = std::fabs(py - cy) - (hy - r);
         float ox = std::max(qx, 0.0f), oy = std::max(qy, 0.0f);
-        return std::sqrt(ox * ox + oy * oy) + std::min(std::max(qx, qy), 0.0f) - r;
+        return length(ox, oy) + std::min(std::max(qx, qy), 0.0f) - r;
     });
 }
 
 void Canvas::fillCircle(float cx, float cy, float r, Rgb c, float a) {
     fillShape(cx - r, cy - r, cx + r, cy + r, c, a,
-              [=](float px, float py) { return std::hypot(px - cx, py - cy) - r; });
+              [=](float px, float py) { return length(px - cx, py - cy) - r; });
 }
 
 void Canvas::fillEllipse(float cx, float cy, float rx, float ry, Rgb c, float a) {
@@ -163,23 +227,26 @@ void Canvas::fillEllipse(float cx, float cy, float rx, float ry, Rgb c, float a)
         float gx = 2 * dx / (rx * rx), gy = 2 * dy / (ry * ry);
         float g = std::sqrt(gx * gx + gy * gy);
         return g > 1e-6f ? std::max(f / g, inner) : inner;
-    });
+    }, 0.5f);  // an estimate, so skip empty space more cautiously
 }
 
 void Canvas::ring(float cx, float cy, float r, float thickness, Rgb c, float a) {
     float o = r + thickness / 2;
     fillShape(cx - o, cy - o, cx + o, cy + o, c, a,
-              [=](float px, float py) { return std::fabs(std::hypot(px - cx, py - cy) - r) - thickness / 2; });
+              [=](float px, float py) { return std::fabs(length(px - cx, py - cy) - r) - thickness / 2; },
+              0);  // a ring isn't convex
 }
 
 void Canvas::glow(float cx, float cy, float r, Rgb c, float a) {
-    if (a <= 0 || r <= 0) return;
+    const int a256 = alpha256(a);
+    if (a256 <= 0 || r <= 0) return;
+    const uint16_t c565 = to565(c);
     int x0 = std::max(0, static_cast<int>(cx - r)), x1 = std::min(w_, static_cast<int>(cx + r) + 1);
     int y0 = std::max(0, static_cast<int>(cy - r)), y1 = std::min(h_, static_cast<int>(cy + r) + 1);
     for (int y = y0; y < y1; y++) {
         for (int x = x0; x < x1; x++) {
-            float t = 1 - std::hypot(x + 0.5f - cx, y + 0.5f - cy) / r;
-            if (t > 0) blend(x, y, c, a * t * t);
+            float t = 1 - length(x + 0.5f - cx, y + 0.5f - cy) / r;
+            if (t > 0) blend565(px_[y * w_ + x], c565, static_cast<int>(t * t * static_cast<float>(a256)));
         }
     }
 }
@@ -195,7 +262,7 @@ void Canvas::fillTriangle(float x0, float y0, float x1, float y1, float x2, floa
     float nx[3], ny[3], off[3];
     for (int i = 0; i < 3; i++) {
         int j = (i + 1) % 3;
-        float ex = xs[j] - xs[i], ey = ys[j] - ys[i], len = std::hypot(ex, ey);
+        float ex = xs[j] - xs[i], ey = ys[j] - ys[i], len = length(ex, ey);
         nx[i] = ey / len;
         ny[i] = -ex / len;
         off[i] = nx[i] * xs[i] + ny[i] * ys[i];
@@ -215,7 +282,7 @@ void Canvas::line(float x0, float y0, float x1, float y1, float width, Rgb c, fl
     fillShape(std::min(x0, x1) - hw, std::min(y0, y1) - hw, std::max(x0, x1) + hw, std::max(y0, y1) + hw, c, a,
               [=](float px, float py) {
                   float t = len2 > 0 ? clamp01(((px - x0) * dx + (py - y0) * dy) / len2) : 0;
-                  return std::hypot(px - (x0 + t * dx), py - (y0 + t * dy)) - hw;
+                  return length(px - (x0 + t * dx), py - (y0 + t * dy)) - hw;
               });
 }
 

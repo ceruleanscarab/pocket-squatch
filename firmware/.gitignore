@@ -1,0 +1,5 @@
+build/
+managed_components/
+# Holds your Wi-Fi password once you run menuconfig; sdkconfig.defaults is the shared part.
+sdkconfig
+sdkconfig.old

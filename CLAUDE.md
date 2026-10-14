@@ -30,7 +30,10 @@ Wiki: https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-4B
   ESP-IDF component on the device (`sim/CMakeLists.txt`).
 - `scene/` (renderer, gestures, the clearing) follows the same rule: touch events and a millisecond
   clock in, pixels out to an RGB565 `Canvas`. It reads the sim and calls actions but never ticks it.
-  Only `pc/` (and later the board code) touches SDL, files and the real clock.
+  Only `pc/` and `firmware/` touch SDL or ESP-IDF, files, and the real clock.
+- `firmware/` is the ESP-IDF 5.4 project for the board (`idf.py -C firmware build`). `main/board.c` holds the
+  pins and panel start-up copied from Waveshare's BSP; keep it close to that source rather than tidying it.
+  Wi-Fi credentials go in `firmware/sdkconfig` via menuconfig, which is git-ignored.
 - Every scene touch target is checked at 64 px or more in `tests/scene_tests.cpp`; add new ones there.
 - Balance numbers live in `Tuning`. After changing any of them, run `./build/squatch-harness --runs 50`
   and `./build/squatch-tests`; every scripted player should still mostly reach its adult form.
@@ -41,7 +44,8 @@ Wiki: https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-4B
 ## Build plan
 1. Sim core + harness — done.
 2. SDL scene on the PC (placeholder art): clearing, idle animation, care tray, mouse as touch — done.
-3. Port to the board: LovyanGFX or LVGL (ST7701 RGB panel), GT911 touch, flash saves, NTP + PCF85063 clock, AXP2101 power.
+3. Port to the board: ST7701 RGB panel via esp_lcd (the scene draws its own frames, so no LVGL), GT911 touch,
+   flash saves, NTP + PCF85063 clock — code done and building; not yet run on hardware. AXP2101 moved to step 6.
 4. Real art for egg, baby, child; then the other stages.
 5. Mini-games (Hide and Seek, Berry Catch, Blurry Photo) and the photo gallery.
 6. Sound (ES8311 over I2S), battery level and sleep via the AXP2101, then the 3D-printed stump case.

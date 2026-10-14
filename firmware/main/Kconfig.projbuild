@@ -1,0 +1,22 @@
+menu "Pocket Squatch"
+
+    config SQUATCH_WIFI_SSID
+        string "Wi-Fi network (for setting the clock)"
+        default ""
+        help
+            Used only to fetch the time at start-up, then Wi-Fi is switched off again.
+            Leave empty to rely on the board's battery-backed clock alone.
+
+    config SQUATCH_WIFI_PASSWORD
+        string "Wi-Fi password"
+        default ""
+
+    config SQUATCH_TZ
+        string "Time zone (POSIX TZ string)"
+        default "MST7MDT,M3.2.0,M11.1.0"
+        help
+            Decides when it's bedtime and when the sky gets dark. Examples:
+            "EST5EDT,M3.2.0,M11.1.0" (US Eastern), "GMT0BST,M3.5.0/1,M10.5.0" (UK),
+            "CET-1CEST,M3.5.0,M10.5.0/3" (Central Europe).
+
+endmenu

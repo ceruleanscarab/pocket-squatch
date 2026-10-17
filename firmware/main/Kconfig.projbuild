@@ -1,5 +1,19 @@
 menu "Pocket Squatch"
 
+    choice SQUATCH_BOARD
+        prompt "Board"
+        default SQUATCH_BOARD_LCD_4B
+        help
+            Which Waveshare board this build is for. The game draws the same 480x480
+            picture on both; the AMOLED shows it scaled to fit its narrower screen.
+
+        config SQUATCH_BOARD_LCD_4B
+            bool "ESP32-S3-Touch-LCD-4B (4 inch, 480x480)"
+
+        config SQUATCH_BOARD_AMOLED_18
+            bool "ESP32-S3-Touch-AMOLED-1.8 (1.8 inch, 368x448, picture scaled)"
+    endchoice
+
     config SQUATCH_WIFI_SSID
         string "Wi-Fi network (for setting the clock)"
         default ""

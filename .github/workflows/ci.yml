@@ -48,8 +48,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build firmware
+      - name: Build firmware (4" LCD board)
         shell: bash
         run: |
           . $IDF_PATH/export.sh
           idf.py -C firmware build
+
+      - name: Build firmware (1.8" AMOLED board)
+        shell: bash
+        run: |
+          . $IDF_PATH/export.sh
+          idf.py -C firmware -B build-amoled18 -D SDKCONFIG=build-amoled18/sdkconfig \
+            -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.amoled18" build

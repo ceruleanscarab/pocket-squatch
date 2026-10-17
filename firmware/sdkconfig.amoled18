@@ -1,0 +1,4 @@
+# Extra defaults for the Waveshare ESP32-S3-Touch-AMOLED-1.8, on top of sdkconfig.defaults:
+#   idf.py -C firmware -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.amoled18" build
+# (or pick the board in menuconfig: Pocket Squatch > Board).
+CONFIG_SQUATCH_BOARD_AMOLED_18=y

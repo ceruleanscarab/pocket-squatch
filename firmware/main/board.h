@@ -1,9 +1,15 @@
-// Waveshare ESP32-S3-Touch-LCD-4B: the display, backlight and touch.
+// The board: display, backlight and touch. Two boards implement it, picked in menuconfig
+// (Pocket Squatch > Board):
 //
-// Pins and the ST7701 start-up sequence come from Waveshare's board support package
-// (waveshare/esp32_s3_touch_lcd_4b 2.0.0, Apache-2.0). That package also pulls in LVGL,
-// which the scene doesn't need, so this is a small copy of just the parts we use. It is
-// C, like the original, so the driver configuration can be kept close to it.
+//   board.c           Waveshare ESP32-S3-Touch-LCD-4B, 480x480: the scene px for px.
+//                     Pins and the ST7701 start-up sequence come from Waveshare's board
+//                     support package (waveshare/esp32_s3_touch_lcd_4b 2.0.0, Apache-2.0),
+//                     copied without its LVGL, which the scene doesn't need.
+//   board_amoled18.c  Waveshare ESP32-S3-Touch-AMOLED-1.8, 368x448: the scene scaled to
+//                     368x368 and centred, touches mapped back.
+//
+// Either way the scene draws a 480x480 frame and gets touches in 480x480 coordinates.
+// C, like the originals, so driver configuration stays close to them.
 #pragma once
 
 #include <stdint.h>
@@ -15,6 +21,7 @@
 extern "C" {
 #endif
 
+// The scene's size, on every board.
 #define BOARD_WIDTH 480
 #define BOARD_HEIGHT 480
 
@@ -31,7 +38,7 @@ uint16_t* board_draw_buffer(void);
 // can be drawn into the buffer that just left the screen.
 void board_present(void);
 
-void board_backlight(int percent);
+void board_backlight(int percent);  // on the AMOLED: the panel's own brightness
 
 // Fills up to max fingers currently touching and returns how many; 0 when none.
 int board_read_touch(board_touch_t* out, int max);

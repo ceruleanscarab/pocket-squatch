@@ -1,8 +1,13 @@
-## Panel, touch and IO expander drivers, as used by Waveshare's BSP for this board,
-## without the BSP itself (it pulls in LVGL, which the scene doesn't need).
+## Panel, touch and IO expander drivers for both boards, without Waveshare's BSPs (they
+## pull in LVGL, which the scene doesn't need). Only the chosen board's are compiled in.
 dependencies:
   idf: ">=5.4,<5.5"
+  # Waveshare ESP32-S3-Touch-LCD-4B
   espressif/esp_lcd_st7701: "^1"
   espressif/esp_lcd_panel_io_additions: "^1"
   espressif/esp_io_expander_tca9554: "^2"
   espressif/esp_lcd_touch_gt911: "^1"
+  # Waveshare ESP32-S3-Touch-AMOLED-1.8 (V1 SH8601 + FT3168, V2 CO5300 + CST816)
+  espressif/esp_lcd_sh8601: "^2.0"
+  espressif/esp_lcd_touch_ft5x06: "^1.1"
+  espressif/esp_lcd_touch_cst816s: "^1.0"

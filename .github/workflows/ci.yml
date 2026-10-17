@@ -58,5 +58,10 @@ jobs:
         shell: bash
         run: |
           . $IDF_PATH/export.sh
+          set -o pipefail
           idf.py -C firmware -B build-amoled18 -D SDKCONFIG=build-amoled18/sdkconfig \
-            -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.amoled18" build
+            -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.amoled18" build 2>&1 | tee amoled18.log || {
+            # Surface compiler errors as annotations, so they show without opening the log.
+            grep -E "error:|Error|undefined reference" amoled18.log | head -20 | while read -r line; do echo "::error::$line"; done
+            exit 1
+          }

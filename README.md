@@ -84,6 +84,8 @@ idf.py -C firmware menuconfig        # Pocket Squatch: Wi-Fi for the clock, and 
 idf.py -C firmware build flash monitor
 ```
 
+**Two boards.** In menuconfig, *Pocket Squatch > Board* picks the [ESP32-S3-Touch-LCD-4B](https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-4B) (the default, the scene pixel for pixel) or the [ESP32-S3-Touch-AMOLED-1.8](https://www.waveshare.com/wiki/ESP32-S3-Touch-AMOLED-1.8), which shows the 480x480 scene scaled to 368x368 in the middle of its 368x448 screen, with black bars above and below. Both of its revisions are told apart at boot; the V2 (CO5300 + CST816) touch chip only sees one finger, so there's no two-finger scold on it. The AMOLED code follows [pocket-tank](https://github.com/mediacutlet/pocket-tank) (MIT), which runs on that board. To build for it without menuconfig: `idf.py -C firmware -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.amoled18" build`.
+
 In WSL the board's USB port has to be passed through first (`usbipd attach --wsl` from Windows); otherwise flash from Windows with the same ESP-IDF version.
 
 | Part | How |

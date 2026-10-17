@@ -14,7 +14,7 @@
 namespace squatch {
 
 constexpr uint32_t kSaveMagic = 0x48435153;  // "SQCH"
-constexpr uint16_t kSaveVersion = 1;
+constexpr uint16_t kSaveVersion = 2;  // 2: DNA and the trail map
 
 struct SaveHeader {
     uint32_t magic;

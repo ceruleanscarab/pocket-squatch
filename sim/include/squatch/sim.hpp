@@ -9,6 +9,9 @@
 #include <cstdint>
 #include <cstddef>
 
+#include "squatch/dna.hpp"
+#include "squatch/trails.hpp"
+
 namespace squatch {
 
 // ---------------------------------------------------------------- enums
@@ -42,6 +45,9 @@ enum class EventType : uint8_t {
     LaidEgg,            // a new generation begins
     WentToSleep,
     WokeUp,
+    TrailsScouted,      // a = trails on the map that it has never visited
+    WentForaging,
+    BackFromForaging,   // a = footprints it brought back
 };
 
 struct Event {
@@ -101,6 +107,18 @@ struct Tuning {
     float hermitTrust = 30;
     float couchSnackShare = 0.5f;   // share of meals that were berries
     float runnerDiscipline = 40;
+
+    // temperament from the DNA: how far each gene can push its meter, either way
+    float appetiteEffect = 0.15f;   // hunger drain x0.85 .. x1.15
+    float playfulEffect = 0.15f;    // happiness drain
+    float shyEffect = 0.15f;        // Trust from steady care x1.15 (bold) .. x0.85 (shy)
+
+    // forage trips, by distance (near, a walk, far)
+    int64_t forageSecs[3] = {30 * 60, 60 * 60, 2 * 3600};
+    uint32_t forageFootprints[3] = {2, 4, 7};
+    float foragePhotoChance[3] = {0.10f, 0.20f, 0.35f};
+    uint32_t firstVisitFootprints = 5;
+    float forageBurrChance = 0.4f;  // comes back with burrs (a mess to clean)
 };
 
 // ---------------------------------------------------------------- state
@@ -166,6 +184,27 @@ struct State {
 
     uint16_t careMistakes = 0;
     uint64_t rng = 0x9E3779B97F4A7C15ull;
+
+    // ---- added in save version 2. New fields go at the end, so an older save is a
+    // prefix of this struct and load() can migrate it (see save.cpp).
+    Genome genome{};
+
+    // the trail map: the latest scan's strongest networks. Survives generations.
+    static constexpr int kMaxTrails = 5;
+    Trail trails[kMaxTrails] = {};
+    uint8_t trailCount = 0;
+
+    // landmarks ever visited (a ring of hashes), for "NEW" badges and first-visit rewards
+    static constexpr int kVisitedCap = 32;
+    uint8_t visitedHead = 0;
+    uint16_t trailsVisited = 0;  // all-time count of first visits
+    uint32_t visited[kVisitedCap] = {};
+
+    // a forage trip in progress
+    bool foraging = false;
+    int8_t forageRssi = 0;
+    uint32_t forageHash = 0;  // also the last trip's place, once it is back
+    int64_t forageUntil = 0;
 };
 
 // ---------------------------------------------------------------- sim
@@ -199,6 +238,10 @@ public:
     Result finishedGame(bool won, bool photoGame);
     // While it is away: leave food out. Counts once per local day.
     Result leaveFoodOut();
+    // A Wi-Fi scan finished: replace the trail map with the strongest networks seen.
+    void scoutTrails(const Sighting* seen, size_t n);
+    // Send it off to trail i on the map. Refused while it's too shy, too young or unwell.
+    Result sendForaging(int trail);
 
     // ---- queries
     const State& state() const { return s_; }
@@ -208,6 +251,9 @@ public:
     int64_t ageSecs() const { return s_.now - s_.born; }
     int localHour() const;
     int photoCount() const;
+    Traits traits() const { return decode(s_.genome); }
+    bool trailVisited(uint32_t hash) const;
+    int64_t forageSecsLeft() const { return s_.foraging ? s_.forageUntil - s_.now : 0; }
 
     // Events since the last drain, oldest first.
     size_t drainEvents(Event* out, size_t max);
@@ -226,6 +272,8 @@ private:
     void addDiscipline(float d);
     void awardPhoto(int index);
     void awardRandomPhoto();
+    void finishForaging();
+    void markVisited(uint32_t hash);
 
     Tuning tune_{};
     State s_{};

@@ -29,6 +29,7 @@ void Sim::newGame(int64_t nowEpoch, int32_t tzOffsetSecs, uint64_t seed) {
     s_.born = nowEpoch;
     s_.tzOffset = tzOffsetSecs;
     s_.rng = seed ? seed : 0x9E3779B97F4A7C15ull;
+    s_.genome = randomGenome(s_.rng);
     evHead_ = evCount_ = 0;
 }
 
@@ -52,7 +53,7 @@ int Sim::localHour() const {
 }
 
 bool Sim::active() const {
-    return s_.stage != Stage::Egg && s_.stage != Stage::Away;
+    return s_.stage != Stage::Egg && s_.stage != Stage::Away && !s_.foraging;
 }
 
 void Sim::step() {
@@ -64,6 +65,20 @@ void Sim::step() {
     }
 
     updateStage();
+
+    // Temperament from the DNA nudges how fast it gets hungry, bored and trusting.
+    const Traits dna = decode(s_.genome);
+    const float hungerMult = 1 + tune_.appetiteEffect * (2 * dna.appetite - 1);
+    const float happyMult = 1 + tune_.playfulEffect * (2 * dna.playful - 1);
+    const float trustMult = 1 + tune_.shyEffect * (1 - 2 * dna.shy);
+
+    if (s_.foraging) {
+        // Out on a trail: it gets hungry walking, but it's having too much fun to get bored.
+        // No sleep, calls, mischief or sickness until it's home.
+        s_.hunger = clampf(s_.hunger - hungerMult * dt / tune_.hungerSecsPerHeart, 0, 4);
+        if (s_.now >= s_.forageUntil) finishForaging();
+        return;
+    }
     if (!active()) return;
 
     // ---- sleep
@@ -93,8 +108,8 @@ void Sim::step() {
     // ---- meters
     float drain = s_.asleep ? 0.5f : 1.0f;
     float sickMult = s_.sick ? 2.0f : 1.0f;
-    s_.hunger = clampf(s_.hunger - drain * dt / tune_.hungerSecsPerHeart, 0, 4);
-    s_.happiness = clampf(s_.happiness - drain * sickMult * dt / tune_.happySecsPerHeart, 0, 4);
+    s_.hunger = clampf(s_.hunger - drain * hungerMult * dt / tune_.hungerSecsPerHeart, 0, 4);
+    s_.happiness = clampf(s_.happiness - drain * sickMult * happyMult * dt / tune_.happySecsPerHeart, 0, 4);
 
     bool starving = s_.hunger <= 0.0f;
     bool miserable = s_.happiness <= 0.0f;
@@ -103,7 +118,7 @@ void Sim::step() {
     // Steady, ordinary care is what builds Trust most: awake, fed, content, clean, well.
     bool wellCared = !s_.asleep && s_.hunger >= 2.0f && s_.happiness >= 2.0f && !s_.sick &&
                      !(s_.messes > 0 && (s_.now - s_.oldestMessAt) >= tune_.messOldAfter);
-    if (wellCared) addTrust(tune_.trustPerWellCaredHour * dt / 3600.0f);
+    if (wellCared) addTrust(tune_.trustPerWellCaredHour * trustMult * dt / 3600.0f);
 
     // ---- sickness
     bool oldMess = s_.messes > 0 && (s_.now - s_.oldestMessAt) >= tune_.messOldAfter;
@@ -246,7 +261,15 @@ AdultForm Sim::chooseAdultForm() const {
 
 void Sim::layEgg() {
     State keep = s_;
+    bool bestParent = keep.adult == AdultForm::Guardian || keep.adult == AdultForm::Legend;
     s_ = State{};
+    s_.genome = inherit(keep.genome, keep.rng, bestParent);
+    // The map and the places it has been are the family's, like the photos.
+    std::memcpy(s_.trails, keep.trails, sizeof s_.trails);
+    s_.trailCount = keep.trailCount;
+    std::memcpy(s_.visited, keep.visited, sizeof s_.visited);
+    s_.visitedHead = keep.visitedHead;
+    s_.trailsVisited = keep.trailsVisited;
     s_.generation = static_cast<uint16_t>(keep.generation + 1);
     s_.now = keep.now;
     s_.born = keep.now;
@@ -394,6 +417,96 @@ Result Sim::leaveFoodOut() {
     return Result::Ok;
 }
 
+// ---------------------------------------------------------------- trails
+
+void Sim::scoutTrails(const Sighting* seen, size_t n) {
+    // Keep the strongest signals, one entry per network name.
+    State& s = s_;
+    s.trailCount = 0;
+    for (size_t i = 0; i < n; i++) {
+        const Sighting& w = seen[i];
+        if (w.hash == 0) continue;
+        int at = -1;
+        for (int k = 0; k < s.trailCount; k++)
+            if (s.trails[k].hash == w.hash) at = k;
+        if (at >= 0) {  // the same name twice (a mesh, or two bands): keep the stronger
+            if (w.rssi > s.trails[at].rssi) s.trails[at].rssi = w.rssi;
+            continue;
+        }
+        if (s.trailCount < State::kMaxTrails) {
+            s.trails[s.trailCount++] = Trail{w.hash, w.rssi, {}};
+            continue;
+        }
+        int weakest = 0;
+        for (int k = 1; k < s.trailCount; k++)
+            if (s.trails[k].rssi < s.trails[weakest].rssi) weakest = k;
+        if (w.rssi > s.trails[weakest].rssi) s.trails[weakest] = Trail{w.hash, w.rssi, {}};
+    }
+    // nearest first
+    std::sort(s.trails, s.trails + s.trailCount, [](const Trail& a, const Trail& b) { return a.rssi > b.rssi; });
+    int fresh = 0;
+    for (int k = 0; k < s.trailCount; k++) fresh += !trailVisited(s.trails[k].hash);
+    emit(EventType::TrailsScouted, static_cast<uint8_t>(fresh));
+}
+
+Result Sim::sendForaging(int trail) {
+    if (!active() || s_.asleep) return Result::NotNow;
+    if (trail < 0 || trail >= s_.trailCount) return Result::NotNow;
+    // Too little to wander off, too wary of you to go where you point, or not up to it.
+    if (s_.stage == Stage::Baby || trustLevel() == TrustLevel::Hiding || s_.sick || s_.misbehaving ||
+        s_.hunger < 1.0f)
+        return Result::Refused;
+    const Trail& t = s_.trails[trail];
+    s_.foraging = true;
+    s_.forageHash = t.hash;
+    s_.forageRssi = t.rssi;
+    s_.forageUntil = s_.now + tune_.forageSecs[static_cast<int>(trailDistance(t.rssi))];
+    s_.calling = false;
+    s_.lastCallEnd = s_.now;
+    emit(EventType::WentForaging);
+    return Result::Ok;
+}
+
+void Sim::finishForaging() {
+    s_.foraging = false;
+    const int d = static_cast<int>(trailDistance(s_.forageRssi));
+    const LandmarkKind kind = landmarkKind(s_.forageHash);
+
+    uint32_t fp = tune_.forageFootprints[d];
+    if (!trailVisited(s_.forageHash)) {  // somewhere new
+        fp += tune_.firstVisitFootprints;
+        addTrust(1);
+        markVisited(s_.forageHash);
+    }
+    s_.footprints += fp;
+    s_.happiness = clampf(s_.happiness + 1, 0, 4);
+
+    float photo = tune_.foragePhotoChance[d];
+    if (kind == LandmarkKind::Cave || kind == LandmarkKind::Lookout) photo += 0.15f;  // good spots for a sighting
+    if (rand01() < photo) awardRandomPhoto();
+    if (kind == LandmarkKind::BerryPatch) s_.hunger = clampf(s_.hunger + 1, 0, 4);  // it snacked on the way
+    bool wet = kind == LandmarkKind::Falls || kind == LandmarkKind::Pond || kind == LandmarkKind::HotSpring;
+    if (!wet && rand01() < tune_.forageBurrChance) {  // burrs and mud to brush out
+        if (s_.messes == 0) s_.oldestMessAt = s_.now;
+        if (s_.messes < 255) s_.messes++;
+    }
+    s_.lastCallEnd = s_.now;
+    emit(EventType::BackFromForaging, static_cast<uint8_t>(std::min<uint32_t>(fp, 255)));
+}
+
+bool Sim::trailVisited(uint32_t hash) const {
+    if (hash == 0) return false;
+    for (uint32_t v : s_.visited)
+        if (v == hash) return true;
+    return false;
+}
+
+void Sim::markVisited(uint32_t hash) {
+    s_.visited[s_.visitedHead] = hash;
+    s_.visitedHead = static_cast<uint8_t>((s_.visitedHead + 1) % State::kVisitedCap);
+    if (s_.trailsVisited < 0xFFFF) s_.trailsVisited++;
+}
+
 // ---------------------------------------------------------------- queries
 
 TrustLevel Sim::trustLevel() const {
@@ -502,6 +615,9 @@ const char* toString(EventType e) {
         case EventType::LaidEgg: return "laid an egg";
         case EventType::WentToSleep: return "asleep";
         case EventType::WokeUp: return "awake";
+        case EventType::TrailsScouted: return "trails scouted";
+        case EventType::WentForaging: return "went foraging";
+        case EventType::BackFromForaging: return "back from foraging";
     }
     return "?";
 }

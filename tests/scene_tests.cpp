@@ -290,7 +290,7 @@ static void testAnswerCall() {
 }
 
 static void testOverlays() {
-    std::printf("long-press the status strip for stats; Photos opens the gallery; a tap closes them\n");
+    std::printf("long-press the status strip for stats; More > Photos opens the gallery; a tap closes them\n");
     Driver d;
     d.send(TouchPhase::Down, 0, 120, 20);
     for (int i = 0; i < 50; i++) d.step();
@@ -301,6 +301,7 @@ static void testOverlays() {
     CHECK(d.scene.overlay() == Scene::Overlay::None);
 
     d.openTray();
+    d.pressSlot(Scene::Slot::More);
     d.pressSlot(Scene::Slot::Photos);
     CHECK(d.scene.overlay() == Scene::Overlay::Gallery);
     d.tap(240, 240);
@@ -354,6 +355,11 @@ static void testTouchTargets() {
     for (int i = 0; i < d.scene.slotCount(); i++) CHECK(big(d.scene.slotArea(i)));
     d.pressSlot(Scene::Slot::Feed);
     for (int i = 0; i < d.scene.slotCount(); i++) CHECK(big(d.scene.slotArea(i)));
+    d.pressSlot(Scene::Slot::Back);
+    d.pressSlot(Scene::Slot::More);
+    for (int i = 0; i < d.scene.slotCount(); i++) CHECK(big(d.scene.slotArea(i)));
+    for (int i = 0; i < State::kMaxTrails; i++) CHECK(big(d.scene.trailRowArea(i)));
+    CHECK(big(d.scene.rescanArea()));
     d.sim.mutableState().trust = 10;  // hiding behind the tree
     CHECK(big(d.scene.squatchArea()));
 }
@@ -390,6 +396,105 @@ static void testDrawsEveryState() {
     CHECK(c.pixel(240, 4) != daySky);  // the night sky is not the day sky
 }
 
+// Raise the Driver's baby, looked after, until it's a Child at 11:00.
+static void growToChild(Driver& d) {
+    for (int h = 0; h < 49; h++) {
+        State& s = d.sim.mutableState();
+        s.hunger = s.happiness = 4;
+        s.sick = s.misbehaving = s.calling = false;
+        s.messes = 0;
+        d.sim.tick(3600);
+    }
+    d.sim.mutableState().trust = 50;
+    d.settle();
+}
+
+static void testTrailMap() {
+    std::printf("More > Trails opens the trail map and asks for a Wi-Fi scan\n");
+    Driver d;
+    d.openTray();
+    d.pressSlot(Scene::Slot::More);
+    d.pressSlot(Scene::Slot::Trails);
+    CHECK(d.scene.overlay() == Scene::Overlay::Trails);
+    CHECK(d.scene.takeScanRequest());
+    CHECK(!d.scene.takeScanRequest());  // once
+    CHECK(d.scene.scanning());
+
+    std::printf("the scan's results arrive as trails, with a note about new ones\n");
+    Sighting seen[] = {{trailHash("Ranger Station"), -48}, {trailHash("Pinecone Cafe"), -72}};
+    d.sim.scoutTrails(seen, 2);
+    d.step();
+    CHECK(!d.scene.scanning());
+    CHECK(std::strstr(d.scene.trailNote(), "2 NEW TRAILS") != nullptr);
+
+    std::printf("a baby is too little to go\n");
+    d.tap(d.scene.trailRowArea(0));
+    CHECK(!d.sim.state().foraging);
+    CHECK(std::strstr(d.scene.trailNote(), "TOO LITTLE") != nullptr);
+    CHECK(d.scene.overlay() == Scene::Overlay::Trails);
+
+    std::printf("LOOK AGAIN scans again; tapping outside closes the map\n");
+    d.tap(d.scene.rescanArea());
+    CHECK(d.scene.takeScanRequest());
+    d.tap(10, 476);
+    CHECK(d.scene.overlay() == Scene::Overlay::None);
+
+    std::printf("a Child that trusts you sets off, is gone from the clearing, and comes back\n");
+    growToChild(d);
+    CHECK(d.sim.state().stage == Stage::Child);
+    d.openTray();
+    if (d.slotOf(Scene::Slot::Trails) < 0) d.pressSlot(Scene::Slot::More);
+    d.pressSlot(Scene::Slot::Trails);
+    CHECK(d.scene.overlay() == Scene::Overlay::Trails);
+    d.tap(d.scene.trailRowArea(0));
+    CHECK(d.sim.state().foraging);
+    CHECK(d.scene.overlay() == Scene::Overlay::None);
+    CHECK(d.scene.toast() && std::strstr(d.scene.toast(), "OFF TO") != nullptr);
+    CHECK(d.scene.squatchArea().w == 0);  // nobody to tap
+    std::vector<uint16_t> fb(Scene::kSize * Scene::kSize);
+    Canvas c(fb.data(), Scene::kSize, Scene::kSize);
+    d.scene.draw(c);  // with the "back in" banner
+    d.sim.tick(31 * 60);
+    d.settle();
+    CHECK(!d.sim.state().foraging);
+    bool heardBack = false;  // after any toasts already in line
+    for (int i = 0; i < 600 && !heardBack; i++) {
+        d.step(16);
+        heardBack = d.scene.toast() && std::strstr(d.scene.toast(), "BACK FROM") != nullptr;
+    }
+    CHECK(heardBack);
+    CHECK(d.scene.squatchArea().w > 0);
+}
+
+static void testDrawsEveryCoat() {
+    std::printf("every coat draws, and rare coats really look different\n");
+    std::vector<uint16_t> fb(Scene::kSize * Scene::kSize);
+    Canvas c(fb.data(), Scene::kSize, Scene::kSize);
+    Driver d;
+    growToChild(d);
+    d.sim.mutableState().trust = 80;  // out front
+    const uint8_t rarityGene[] = {0, 200, 230, 230, 248, 248, 255};
+    const uint8_t variantGene[] = {0, 0, 0, 1, 0, 1, 0};
+    Rgb body[7];
+    for (int v = 0; v < 7; v++) {
+        for (uint8_t extra = 0; extra < 4; extra++) {
+            Genome& g = d.sim.mutableState().genome;
+            g.g[kGeneRarity] = rarityGene[v];
+            g.g[kGeneVariant] = variantGene[v];
+            g.g[kGeneShag] = static_cast<uint8_t>(extra << 6);
+            g.g[kGeneMarkings] = static_cast<uint8_t>(extra << 6);
+            g.g[kGeneShade] = 160;
+            d.step();
+            d.scene.draw(c);
+        }
+        Scene::Rect r = d.scene.squatchArea();
+        body[v] = c.pixel(r.cx() - r.w / 3, r.y + r.h * 2 / 3);  // a shoulder, clear of the face
+    }
+    CHECK(body[2] != body[6]);  // Swamp red vs Golden
+    CHECK(body[3] != body[0]);  // Snowcoat vs an ordinary brown
+    CHECK(body[4] != body[3]);  // Albino vs Snowcoat
+}
+
 int main() {
     testTap();
     testLongPressThenDrag();
@@ -408,6 +513,8 @@ int main() {
     testAsleep();
     testTouchTargets();
     testDrawsEveryState();
+    testTrailMap();
+    testDrawsEveryCoat();
 
     std::printf("\n%d checks, %d failed\n", gChecks, gFailures);
     return gFailures ? 1 : 0;

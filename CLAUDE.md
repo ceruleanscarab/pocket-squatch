@@ -11,6 +11,10 @@ https://claude.ai/code/artifact/85ce4636-3c76-49ca-9444-d65b9a6a3e2e
 - Elders lay an egg; the photo gallery and footprints carry across generations.
 - Battery from day one: screen-off sleep, touch to wake.
 - Fresh codebase (not a fork of pocket-tank / Pocket Trubbles).
+- Every pet has DNA (`sim/include/squatch/dna.hpp`): looks, temperament and rarity, half inherited by the
+  next egg. Temperament effects stay small (`Tuning::*Effect`) so care, not luck, decides the adult form.
+- Trails come from Wi-Fi scans: only hashes of network names are stored, never the names, and the radio is
+  on only for the scan itself. Bluetooth visitors come later, once there's a second board.
 - Accessibility matters: touch targets of 64 px or more, no fast double-taps, no timing-critical
   gestures outside optional mini-games, and a half-speed meter option.
 
@@ -37,7 +41,9 @@ Wiki: https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-4B
 - Every scene touch target is checked at 64 px or more in `tests/scene_tests.cpp`; add new ones there.
 - Balance numbers live in `Tuning`. After changing any of them, run `./build/squatch-harness --runs 50`
   and `./build/squatch-tests`; every scripted player should still mostly reach its adult form.
-- Changing `State` means bumping `kSaveVersion` in `save.hpp`.
+- Changing `State` means bumping `kSaveVersion` in `save.hpp`. Add new fields only at the end of `State`, so
+  older saves stay a prefix and `load()` can migrate them (see the version 1 case in `save.cpp`).
+- On the board, anything using Wi-Fi brackets its work with `radio::take()` / `radio::give()`.
 - Tests are plain C++ with a `CHECK` macro, no external dependencies. Run `./build/squatch-scene-tests`
   after scene changes.
 
@@ -49,3 +55,5 @@ Wiki: https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-4B
 4. Real art for egg, baby, child; then the other stages.
 5. Mini-games (Hide and Seek, Berry Catch, Blurry Photo) and the photo gallery.
 6. Sound (ES8311 over I2S), battery level and sleep via the AXP2101, then the 3D-printed stump case.
+- DNA and rarity, and the Wi-Fi trail map with forage trips — done (firmware scan not yet run on hardware).
+- Later: Bluetooth visitors between two boards.

@@ -18,7 +18,7 @@ void init(i2c_master_bus_handle_t bus, const char* posixTz);
 bool known();
 
 // In the background: join Wi-Fi, fetch the time over NTP, store it in the RTC, and turn
-// Wi-Fi off again. Does nothing if ssid is empty.
+// Wi-Fi off again. Does nothing if ssid is empty. Call radio::begin() first.
 void syncFromNetwork(const char* ssid, const char* password);
 
 // Sets the system clock without touching the RTC, for when no real time is available.

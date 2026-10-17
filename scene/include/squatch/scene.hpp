@@ -30,13 +30,14 @@ public:
         int cy() const { return y + h / 2; }
     };
 
-    enum class Overlay : uint8_t { None, Stats, Gallery };
+    enum class Overlay : uint8_t { None, Stats, Gallery, Trails };
 
     // Things you can pick up from the tray and give to Squatch.
     enum class Item : uint8_t { None, Berries, Fish, Roots, Brush, Poultice, Pinecone };
 
-    // Tray buttons. The main page holds the first six; Feed opens the food page.
-    enum class Slot : uint8_t { Feed, Clean, Medicine, Play, Light, Photos, Back, Berries, Fish, Roots };
+    // Tray buttons. The main page holds six; Feed opens the food page and More opens
+    // Photos and Trails.
+    enum class Slot : uint8_t { Feed, Clean, Medicine, Play, Light, More, Back, Berries, Fish, Roots, Photos, Trails };
 
     explicit Scene(Sim& sim);
 
@@ -46,6 +47,9 @@ public:
 
     // True once after anything that changed the pet, so the front end saves promptly.
     bool takeSaveRequest();
+    // True once when the trail map wants a fresh Wi-Fi scan. The front end scans (or
+    // pretends to, on the PC) and passes the results to Sim::scoutTrails().
+    bool takeScanRequest();
 
     // ---- layout queries, for the tests and the front end
     Rect squatchArea() const;  // where tapping or dropping reaches the pet (or egg)
@@ -53,6 +57,11 @@ public:
     Rect messArea(int i) const;
     Rect handleArea() const;   // the tray's pull tab
     Rect footprintArea() const;
+    // The trail map: one row per trail, and the button that scans again.
+    Rect trailRowArea(int i) const;
+    Rect rescanArea() const;
+    bool scanning() const { return scanning_; }
+    const char* trailNote() const { return trailNote_; }  // the map's status line
     int slotCount() const;
     Rect slotArea(int i) const;
     Slot slotAt(int i) const;
@@ -97,6 +106,10 @@ private:
     void doScold();
     void doAnswerCall();
     void doLeaveFood();
+    void doForage(int trail);
+    void openTrails();
+    void requestScan();
+    void note(const char* text);
     void tapPet();
     void sayNotNow();
     void saved(Result r);
@@ -121,6 +134,7 @@ private:
     float darkness() const;  // 0 day .. 1 night
     int visibleMesses() const;
     bool foodLeftToday() const;
+    void furColours(Rgb& fur, Rgb& face, Rgb& mark) const;
 
     // ---- drawing
     Rgb sh(Rgb c) const;  // shade a scenery colour for the time of day
@@ -144,6 +158,9 @@ private:
     void drawSlotIcon(Canvas& c, Slot s, float x, float y);
     void drawStats(Canvas& c);
     void drawGallery(Canvas& c);
+    void drawTrails(Canvas& c);
+    void drawForagingBanner(Canvas& c);
+    void drawLandmarkIcon(Canvas& c, LandmarkKind k, float x, float y, float size);
 
     Sim& sim_;
     GestureReader gestures_;
@@ -157,7 +174,8 @@ private:
 
     // tray
     float trayAnim_ = 0, trayTarget_ = 0;
-    bool foodPage_ = false;
+    enum class Page : uint8_t { Main, Food, More };
+    Page page_ = Page::Main;
     Item held_ = Item::None;
     DragMode drag_ = DragMode::None;
     float dragX_ = 0, dragY_ = 0;
@@ -165,6 +183,13 @@ private:
     bool strokeDone_ = false, swipeCleaned_ = false;
 
     Overlay overlay_ = Overlay::None;
+
+    // the trail map
+    bool scanRequested_ = false, scanning_ = false;
+    uint32_t scanSince_ = 0, lastScanMs_ = 0;
+    bool everScanned_ = false;
+    char trailNote_[40] = {};
+    uint32_t nextGlint_ = 0;  // a Golden coat's sparkle
 
     // pet animation
     React react_ = React::None;

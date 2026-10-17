@@ -7,6 +7,8 @@
 //   squatch-pc --shot FILE.bmp   draw one frame to a BMP and exit, without a window
 //
 // Mouse: the left button is a finger. A right click is a two-finger tap (scold).
+// The trail map's Wi-Fi scan is pretend on the PC: a few made-up networks with signals
+// that change from scan to scan.
 // Dev keys: ] and [ change the speed of time (1x, 60x, 600x, 3600x); P saves a screenshot.
 //
 // The front end owns everything the scene must not touch: the window, the real clock,
@@ -81,6 +83,22 @@ bool saveBmp(std::vector<uint16_t>& fb, const char* path) {
     return ok;
 }
 
+// Stand-ins for the networks a real scan would find around the house.
+const char* const kPretendNetworks[] = {
+    "Squatchnet",   "Ranger Station 5G", "Pinecone Cafe Guest", "Old Mill Library",
+    "Basecamp-2.4", "FBI Surveillance Van", "Trailhead Brewing", "Lookout Tower",
+};
+
+void pretendScan(Sim& sim) {
+    Sighting seen[8];
+    size_t n = 0;
+    for (const char* name : kPretendNetworks) {
+        if (std::rand() % 3 == 0) continue;  // not every network answers every time
+        seen[n++] = Sighting{trailHash(name), static_cast<int8_t>(-38 - std::rand() % 55)};
+    }
+    sim.scoutTrails(seen, n);
+}
+
 void usage() {
     std::printf("usage: squatch-pc [--new] [--save FILE] [--zoom N] [--shot FILE.bmp]\n");
 }
@@ -118,6 +136,7 @@ int main(int argc, char** argv) {
         std::printf("a new egg\n");
     }
 
+    std::srand(static_cast<unsigned>(now));
     Scene scene(sim);
     std::vector<uint16_t> fb(kSize * kSize);
     Canvas canvas(fb.data(), kSize, kSize);
@@ -152,6 +171,7 @@ int main(int argc, char** argv) {
     int speed = 0;
     double carry = 0;  // sim seconds not yet ticked
     uint32_t last = SDL_GetTicks(), lastSave = last, lastTitle = 0;
+    uint32_t scanDoneAt = 0;  // a pretend scan in progress finishes at this time
     bool running = true, mouseDown = false;
 
     auto touch = [&](TouchPhase ph, uint8_t id, int x, int y) {
@@ -206,6 +226,11 @@ int main(int argc, char** argv) {
             int64_t whole = static_cast<int64_t>(carry);
             sim.tick(whole);
             carry -= static_cast<double>(whole);
+        }
+        if (scene.takeScanRequest()) scanDoneAt = ms + 1500;  // a real scan takes a second or two
+        if (scanDoneAt && ms >= scanDoneAt) {
+            pretendScan(sim);
+            scanDoneAt = 0;
         }
         scene.update(ms);
         if (scene.takeSaveRequest() || ms - lastSave >= 60000) {

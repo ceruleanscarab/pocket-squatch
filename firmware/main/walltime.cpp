@@ -14,6 +14,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "freertos/task.h"
+#include "radio.hpp"
 
 namespace walltime {
 
@@ -103,8 +104,7 @@ void onNetEvent(void*, esp_event_base_t base, int32_t id, void*) {
 
 void networkTask(void*) {
     gNet = xEventGroupCreate();
-    esp_netif_init();
-    esp_event_loop_create_default();
+    radio::take();  // a trail scan may have the radio
     esp_netif_t* netif = esp_netif_create_default_wifi_sta();
     wifi_init_config_t init = WIFI_INIT_CONFIG_DEFAULT();
     esp_wifi_init(&init);
@@ -134,12 +134,13 @@ void networkTask(void*) {
         ESP_LOGW(TAG, "couldn't join Wi-Fi \"%s\"", gSsid);
     }
 
-    // Wi-Fi only ever runs for this; switch it off to save the battery.
+    // Wi-Fi only runs for this and for trail scans; switch it off to save the battery.
     esp_event_handler_instance_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID, wifiHandler);
     esp_event_handler_instance_unregister(IP_EVENT, IP_EVENT_STA_GOT_IP, ipHandler);
     esp_wifi_stop();
     esp_wifi_deinit();
     esp_netif_destroy_default_wifi(netif);
+    radio::give();
     vTaskDelete(nullptr);
 }
 

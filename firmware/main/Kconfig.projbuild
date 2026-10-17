@@ -11,6 +11,14 @@ menu "Pocket Squatch"
         string "Wi-Fi password"
         default ""
 
+    config SQUATCH_TRAILS
+        bool "Trail map: listen for nearby Wi-Fi networks"
+        default y
+        help
+            Opening the trail map scans for nearby networks (without joining any) and
+            turns each one into a place in the forest. Only a hash of each network's
+            name is kept. Wi-Fi is on only for the two seconds of the scan.
+
     config SQUATCH_TZ
         string "Time zone (POSIX TZ string)"
         default "MST7MDT,M3.2.0,M11.1.0"

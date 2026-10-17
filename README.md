@@ -10,7 +10,7 @@ Steps 1 to 3 of the build plan: the **simulation core** with a **fast-forward ha
 
 | Folder | What's in it |
 | --- | --- |
-| `sim/` | The game: meters, Trust, discipline, life stages, adult forms, sickness, running away, generations, save files. No hardware code; later it builds as an ESP-IDF component unchanged. |
+| `sim/` | The game: meters, Trust, discipline, life stages, adult forms, sickness, running away, generations, DNA and rarity, the trail map, save files. No hardware code; it builds as an ESP-IDF component unchanged. |
 | `scene/` | The screen: an anti-aliased software renderer into an RGB565 framebuffer, touch-to-gesture recognition, and the clearing with Squatch, the status strip and the care tray. Also hardware-free, so the board will draw the same pixels. |
 | `pc/` | `squatch-pc`: shows the scene in an SDL window, with the mouse as a finger, the real clock and a save file. |
 | `firmware/` | The ESP-IDF project for the board: the same sim and scene, with the panel, touch, flash saves and the clock. |
@@ -35,18 +35,44 @@ cmake --build build -j
 
 | You do | With the mouse | It does |
 | --- | --- | --- |
-| Open or close the care tray | click the tab at the bottom, or drag up from the bottom edge (down to close) | Feed, Clean, Heal, Play, Light, Photos |
+| Open or close the care tray | click the tab at the bottom, or drag up from the bottom edge (down to close) | Feed, Clean, Heal, Play, Light, More (Photos and Trails) |
 | Give something | click a tray item, then click Squatch, or drag the item onto it | food, brush, poultice, a pinecone to play catch |
 | Pet it | drag slowly across it | only once it trusts you |
 | Clean a mess | drag across it, or click it | |
 | Answer a call | click the pulsing footprints (top right) or Squatch | |
 | Scold | right-click (a two-finger tap) | only fair while it's misbehaving |
-| Stats | click or hold the status strip | |
+| Stats | click or hold the status strip | including its coat, rarity and DNA code |
+| Trail map | More, then Trails | nearby Wi-Fi as places to explore; click one to send it foraging |
 | Leave food out while it's away | drop food on the stump | three separate days bring it back |
 
 Dev keys: `]` and `[` change the speed of time (1x, 60x, 600x, 3600x), `P` saves a screenshot. `--new` starts over, `--save FILE` picks another save, `--zoom 2` makes the window bigger, and `--shot FILE.bmp` draws one frame without opening a window.
 
 Where Squatch stands follows Trust: hiding behind the left tree with only its eyes showing, wandering the back of the clearing, or out front, waving. The sky follows the clock, from dawn to stars and a campfire in the evening. The art is placeholder shapes at roughly the planned 192×192 sprite size, ready to be swapped for real sprites in step 4. Play is a stand-in game of catch until the mini-games arrive in step 5.
+
+## DNA and rarity
+
+Every egg gets a genome of 16 one-byte genes (`sim/include/squatch/dna.hpp`), rolled when it's laid. They decide:
+
+| Gene | What it does |
+| --- | --- |
+| Hue and shade | Fur colour, from light tan to dark brown |
+| Shag | Neat, or tufts down the sides and a mop on top (0 to 3) |
+| Build | Slim to stocky |
+| Markings | None, a pale chest blaze, a dark eye mask, or speckles |
+| Shy, playful, appetite | Up to ±15% on how fast it learns to trust you, gets bored, and gets hungry |
+| Rarity | Common 60%, Uncommon 25% (charcoal and blond coats too), Rare 10%, Epic 4%, Mythic 1% |
+
+Rare pets are a rusty **Swamp** or a white **Snowcoat**, Epic ones an **Albino** or a Snowcoat, and a Mythic is always **Golden**, with a sparkle. A rare egg glows faintly before it hatches, and the hatching toast says what came out. How it's raised still shows: the adult form tints an ordinary coat a little, and Elders go grey.
+
+When an Elder lays the next egg, each gene comes from the parent or is rolled fresh, half and half, so families look alike. A parent that grew into a Guardian or a Legend rolls the rarity gene twice and keeps the better one, so good care slowly breeds rarer pets.
+
+## The trail map
+
+**More → Trails** opens the map and listens for Wi-Fi networks, without joining any. Each network name is hashed into a fixed forest place, like *Whispering Falls* or *Old Ranger Cabin* (eight kinds), and its signal strength sets how far away it is. Only the hashes are stored, never the names. Up to five of the strongest show at a time, with a **NEW** badge on places it has never been, and **LOOK AGAIN** scans again. Taking the board somewhere new finds new trails.
+
+Tap a trail to send Squatch foraging: half an hour for a near one, an hour for a walk, two hours for a far one. It won't go while it's a Baby, still hiding from you, sick, misbehaving or hungry. While it's out, the clearing shows its footprints and a countdown, and it comes back with footprints (more the first time it visits a place), a little happiness, sometimes a sighting photo (best from caves and lookouts), berries in its belly from a berry patch, and now and then burrs to clean up. The map and the places it has been carry over to the next generation, like the photos.
+
+On the PC the scan is pretend: a handful of made-up networks with signals that change from scan to scan.
 
 ## On the board
 
@@ -66,6 +92,7 @@ In WSL the board's USB port has to be passed through first (`usbipd attach --wsl
 | Touch | GT911, read every frame (its interrupt line isn't wired to the ESP32). Fingers become the scene's touch events, so gestures work exactly as on the PC. |
 | Saves | One NVS blob in flash, in the same format as `squatch.sav`, written after every care action and every 5 minutes. |
 | Clock | The PCF85063 RTC keeps time on the battery. With Wi-Fi configured, the board fetches the time over NTP at start-up, stores it in the RTC and turns Wi-Fi off. The time zone is a POSIX TZ string (default US Mountain). |
+| Trails | Opening the trail map starts a background Wi-Fi scan (about two seconds, then Wi-Fi goes off again). The clock sync and scans take turns with the radio (`radio.cpp`). Turn it off in menuconfig with *Trail map: listen for nearby Wi-Fi networks*. |
 
 Pins and the panel's start-up commands come from Waveshare's board support package (Apache-2.0). That package also brings LVGL, which the scene doesn't need, so `firmware/main/board.c` is a small copy of just the display, backlight and touch parts.
 
@@ -94,7 +121,9 @@ Follow one pet day by day, with every event:
 ## How the sim works
 
 - `Sim::tick(seconds)` moves the world forward in fixed one-minute steps. Catching up after the device was off is the same call with a bigger number, and gives exactly the same result as running in real time (there's a test for that).
-- All randomness comes from a seeded generator stored in the save, so a run can be replayed.
+- All randomness comes from a seeded generator stored in the save, so a run can be replayed. The DNA comes from it too.
+- `scoutTrails()` takes a scan's results and `sendForaging()` sends it off; while it's out it gets hungry but nothing else happens to it until it's back.
+- Saves are version 2. A version 1 save (from before DNA) still loads: new fields only ever go at the end of `State`, so an old save is a prefix, and the pet gets DNA when it loads.
 - Every balance number is in `Tuning` (`sim/include/squatch/sim.hpp`). Change one, rerun the harness, and see what it does to the adult-form spread.
 - Actions (`feed`, `clean`, `medicine`, `answerCall`, `scold`, `pet`, `brush`, `lights`, `finishedGame`, `leaveFoodOut`) return `Ok`, `NotNow` or `Refused`, so the UI can react.
 - The sim queues `Event`s (hatched, got sick, ran away, photo earned…) for the UI and sound to drain each frame.
@@ -112,4 +141,5 @@ It never dies: untreated sickness or long neglect makes it run away, and leaving
 1. **Finish step 3 on a real board:** check the picture, touch orientation, frame rate, saves surviving a power cycle, and the clock.
 2. **Step 4:** real art for the egg, baby and child.
 3. Not yet in the scene: the naming screen at hatching and the half-speed meter setting.
+4. Later: Bluetooth visitors, so two boards' Squatches can meet (needs a second board).
 4. **Step 6:** sound through the ES8311, and battery level and sleep through the AXP2101.

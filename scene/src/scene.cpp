@@ -32,14 +32,21 @@ constexpr uint32_t kToastMs = 2600;
 constexpr Rgb kNight = 0x0A1030;
 constexpr Rgb kGrass = 0x5E9E4A, kClearing = 0x86B85A, kBackTrees = 0x2F5D50;
 constexpr Rgb kTrunk = 0x6B4A2F, kLeaves1 = 0x2E6B3F, kLeaves2 = 0x3A7F4A;
-constexpr Rgb kFur = 0x8A5A3B, kFace = 0xC79A72, kEye = 0x1A120C;
+constexpr Rgb kEye = 0x1A120C;  // fur and face colours come from the DNA (furColours)
 constexpr Rgb kUiDark = 0x1B2416, kUiLight = 0xF3EBD9, kGold = 0xF2C14E;
 constexpr Rgb kTray = 0x2B2118, kButton = 0x4A3A2C;
 
 constexpr Scene::Slot kMainSlots[] = {Scene::Slot::Feed, Scene::Slot::Clean, Scene::Slot::Medicine,
-                                      Scene::Slot::Play, Scene::Slot::Light, Scene::Slot::Photos};
+                                      Scene::Slot::Play, Scene::Slot::Light, Scene::Slot::More};
 constexpr Scene::Slot kFoodSlots[] = {Scene::Slot::Back, Scene::Slot::Berries, Scene::Slot::Fish,
                                       Scene::Slot::Roots};
+constexpr Scene::Slot kMoreSlots[] = {Scene::Slot::Back, Scene::Slot::Photos, Scene::Slot::Trails};
+
+// ---- the trail map overlay
+constexpr int kMapX = 24, kMapY = 24, kMapW = 432, kMapH = 448;
+constexpr int kRowY = 76, kRowH = 64;
+constexpr uint32_t kScanTimeoutMs = 12000;
+constexpr uint32_t kRescanAfterMs = 60000;  // opening the map scans again only after a minute
 
 Scene::Item itemFor(Scene::Slot s) {
     switch (s) {
@@ -86,6 +93,28 @@ void drawFootprint(Canvas& c, float x, float y, float k, Rgb col, float a = 1) {
     for (const auto& t : toes) c.fillCircle(x + t[0] * k, y + t[1] * k, t[2] * k, col, a);
 }
 
+// Hue in degrees, saturation and value 0..1.
+Rgb hsv(float h, float sat, float val) {
+    h = std::fmod(h, 360.0f);
+    if (h < 0) h += 360;
+    float c = val * sat, x = c * (1 - std::fabs(std::fmod(h / 60, 2.0f) - 1)), m = val - c;
+    float r = 0, g = 0, b = 0;
+    if (h < 60) r = c, g = x;
+    else if (h < 120) r = x, g = c;
+    else if (h < 180) g = c, b = x;
+    else if (h < 240) g = x, b = c;
+    else if (h < 300) r = x, b = c;
+    else r = c, b = x;
+    auto ch = [](float v) { return static_cast<Rgb>(std::max(0.0f, std::min(255.0f, v * 255 + 0.5f))); };
+    return ch(r + m) << 16 | ch(g + m) << 8 | ch(b + m);
+}
+
+// Upper case copy, for building toasts from names like "Snowcoat".
+void upper(char* s) {
+    for (; *s; s++)
+        if (*s >= 'a' && *s <= 'z') *s = static_cast<char>(*s - 'a' + 'A');
+}
+
 const char* trustName(TrustLevel t) {
     switch (t) {
         case TrustLevel::Hiding: return "HIDING";
@@ -107,6 +136,12 @@ bool Scene::takeSaveRequest() {
     return r;
 }
 
+bool Scene::takeScanRequest() {
+    bool r = scanRequested_;
+    scanRequested_ = false;
+    return r;
+}
+
 // ================================================================ input
 
 void Scene::touch(const TouchEvent& e) {
@@ -116,6 +151,22 @@ void Scene::touch(const TouchEvent& e) {
 }
 
 void Scene::handle(const Gesture& g) {
+    if (overlay_ == Overlay::Trails) {
+        if (g.type != GestureType::Tap) return;
+        for (int i = 0; i < sim_.state().trailCount; i++) {
+            if (trailRowArea(i).contains(g.x, g.y)) {
+                doForage(i);
+                return;
+            }
+        }
+        if (rescanArea().contains(g.x, g.y)) {
+            if (!scanning_) requestScan();
+            return;
+        }
+        Rect panel{kMapX, kMapY, kMapW, kMapH};
+        if (!panel.contains(g.x, g.y) || g.y < kRowY) overlay_ = Overlay::None;  // outside, or the title
+        return;
+    }
     if (overlay_ != Overlay::None) {
         if (g.type == GestureType::Tap) overlay_ = Overlay::None;  // a tap anywhere closes it
         return;
@@ -148,7 +199,7 @@ void Scene::onTap(int x, int y) {
         trayTarget_ = trayOpen() ? 0.0f : 1.0f;
         if (!trayOpen()) {
             held_ = Item::None;
-            foodPage_ = false;
+            page_ = Page::Main;
         }
         return;
     }
@@ -173,13 +224,18 @@ void Scene::onTap(int x, int y) {
 void Scene::pressSlot(Slot s) {
     switch (s) {
         case Slot::Feed:
-            foodPage_ = true;
+            page_ = Page::Food;
+            held_ = Item::None;
+            break;
+        case Slot::More:
+            page_ = Page::More;
             held_ = Item::None;
             break;
         case Slot::Back:
-            foodPage_ = false;
+            page_ = Page::Main;
             held_ = Item::None;
             break;
+        case Slot::Trails: openTrails(); break;
         case Slot::Light:
             sim_.lights(!sim_.state().lightsOn);
             say(sim_.state().lightsOn ? "LIGHTS ON" : "LIGHTS OFF", true);
@@ -211,7 +267,7 @@ void Scene::onDragStart(const Gesture& g) {
     if (trayOpen() && g.startY >= trayTop() - 44 && dy > 0 && vertical) {
         trayTarget_ = 0;
         held_ = Item::None;
-        foodPage_ = false;
+        page_ = Page::Main;
         return;
     }
     if (trayOpen() && g.startY >= trayTop()) {
@@ -307,7 +363,8 @@ void Scene::saved(Result r) {
 
 void Scene::sayNotNow() {
     const State& s = sim_.state();
-    if (s.stage == Stage::Egg) say("IT HASN'T HATCHED YET", true);
+    if (s.foraging) say("IT'S OUT ON A TRAIL", true);
+    else if (s.stage == Stage::Egg) say("IT HASN'T HATCHED YET", true);
     else if (s.stage == Stage::Away) say("IT'S NOT HERE", true);
     else if (s.asleep) say("SHH, IT'S ASLEEP", true);
 }
@@ -434,6 +491,56 @@ void Scene::doLeaveFood() {
     }
 }
 
+void Scene::openTrails() {
+    overlay_ = Overlay::Trails;
+    trailNote_[0] = '\0';
+    if (!everScanned_ || now_ - lastScanMs_ >= kRescanAfterMs) requestScan();
+}
+
+void Scene::requestScan() {
+    scanRequested_ = scanning_ = true;
+    everScanned_ = true;
+    scanSince_ = lastScanMs_ = now_;
+    note("LISTENING FOR TRAILS...");
+}
+
+void Scene::note(const char* text) { std::snprintf(trailNote_, sizeof trailNote_, "%s", text); }
+
+void Scene::doForage(int trail) {
+    const State& s = sim_.state();
+    Result r = sim_.sendForaging(trail);
+    saved(r);
+    char name[24], buf[40];
+    if (r == Result::Ok) {
+        landmarkName(s.forageHash, name, sizeof name);
+        std::snprintf(buf, sizeof buf, "OFF TO %s!", name);
+        overlay_ = Overlay::None;
+        trayTarget_ = 0;
+        say(buf, true);
+        return;
+    }
+    if (s.foraging) {
+        landmarkName(s.forageHash, name, sizeof name);
+        std::snprintf(buf, sizeof buf, "IT'S OUT AT %s", name);
+        note(buf);
+    } else if (r == Result::NotNow) {
+        if (s.stage == Stage::Egg) note("IT HASN'T HATCHED YET");
+        else if (s.stage == Stage::Away) note("IT'S NOT HERE");
+        else if (s.asleep) note("IT'S ASLEEP: TRY IN THE MORNING");
+        else note("NOT RIGHT NOW");
+    } else if (s.stage == Stage::Baby) {
+        note("TOO LITTLE TO GO ALONE");
+    } else if (sim_.trustLevel() == TrustLevel::Hiding) {
+        note("TOO SHY TO GO WHERE YOU POINT");
+    } else if (s.sick) {
+        note("IT'S NOT WELL ENOUGH");
+    } else if (s.misbehaving) {
+        note("NOT WHILE IT'S MISBEHAVING");
+    } else {
+        note("FEED IT BEFORE A LONG WALK");
+    }
+}
+
 void Scene::tapPet() {
     const State& s = sim_.state();
     if (s.stage == Stage::Egg) {
@@ -478,12 +585,26 @@ void Scene::update(uint32_t nowMs) {
 void Scene::handleEvent(const Event& e) {
     char buf[40];
     switch (e.type) {
-        case EventType::Hatched:
-            say("IT HATCHED!");
+        case EventType::Hatched: {
             for (int i = 0; i < 10; i++)
                 spawn(ParticleKind::Shell, kEggX, kEggY, (rand01() - 0.5f) * 260, -150 - rand01() * 150, 1200);
             react(React::Happy, 1200);
+            Traits t = sim_.traits();
+            if (t.variant != Variant::None) {
+                char kind[16];
+                std::snprintf(kind, sizeof kind, "%s", toString(t.variant));
+                upper(kind);
+                std::snprintf(buf, sizeof buf, "IT HATCHED: A%s %s %s!", t.rarity == Rarity::Epic ? "N" : "",
+                              t.rarity == Rarity::Mythic ? "MYTHIC" : (t.rarity == Rarity::Epic ? "EPIC" : "RARE"),
+                              kind);
+                say(buf);
+            } else if (t.rarity == Rarity::Uncommon) {
+                say("IT HATCHED, WITH AN UNUSUAL COAT!");
+            } else {
+                say("IT HATCHED!");
+            }
             break;
+        }
         case EventType::StageChanged: {
             Stage st = static_cast<Stage>(e.a);
             if (st == Stage::Child || st == Stage::Teen || st == Stage::Elder) {
@@ -516,6 +637,26 @@ void Scene::handleEvent(const Event& e) {
             say("NEW SIGHTING PHOTO!");
             break;
         case EventType::LaidEgg: say("A NEW EGG!"); break;
+        case EventType::TrailsScouted:
+            scanning_ = false;
+            if (sim_.state().trailCount == 0) note("NO TRAILS HERE: TRY SOMEWHERE ELSE");
+            else if (e.a == 0) note("NO NEW TRAILS, BUT OLD FRIENDS");
+            else {
+                std::snprintf(buf, sizeof buf, "%u NEW TRAIL%s NEARBY!", static_cast<unsigned>(e.a), e.a == 1 ? "" : "S");
+                note(buf);
+            }
+            saveRequested_ = true;
+            break;
+        case EventType::BackFromForaging: {
+            char name[24];
+            landmarkName(sim_.state().forageHash, name, sizeof name);
+            std::snprintf(buf, sizeof buf, "BACK FROM %s", name);
+            say(buf);
+            spawn(ParticleKind::PlusOne, 430, 46, 0, -30, 1200);
+            react(React::Happy, 1600);
+            saveRequested_ = true;
+            break;
+        }
         default: break;
     }
 }
@@ -562,6 +703,11 @@ void Scene::animate(float dt) {
 
     if (react_ != React::None && now_ >= reactUntil_) react_ = React::None;
 
+    if (scanning_ && now_ - scanSince_ >= kScanTimeoutMs) {
+        scanning_ = false;
+        note("COULDN'T LISTEN FOR TRAILS");
+    }
+
     if (now_ >= nextBlink_) {
         blinkUntil_ = now_ + 140;
         nextBlink_ = now_ + 2500 + static_cast<uint32_t>(rand01() * 3000);
@@ -604,6 +750,11 @@ void Scene::animate(float dt) {
             spawn(ParticleKind::Pinecone, x, y, dir * (80 + rand01() * 80), -260, 1400);
             nextThrow_ = now_ + 1800;
         }
+        if (sim_.traits().variant == Variant::Golden && !hiding() && now_ >= nextGlint_) {
+            spawn(ParticleKind::Sparkle, squatchX() + (rand01() - 0.5f) * 100 * k,
+                  squatchFoot() - rand01() * 170 * k, 0, -20, 700);
+            nextGlint_ = now_ + 500 + static_cast<uint32_t>(rand01() * 900);
+        }
         if (s.sick && !s.asleep && now_ >= nextSneeze_) {
             if (!hiding()) {
                 react(React::Sneeze, 500);
@@ -635,9 +786,9 @@ void Scene::animate(float dt) {
 
 // ================================================================ where things are
 
-bool Scene::hatched() const {
+bool Scene::hatched() const {  // and here in the clearing
     Stage st = sim_.state().stage;
-    return st != Stage::Egg && st != Stage::Away;
+    return st != Stage::Egg && st != Stage::Away && !sim_.state().foraging;
 }
 
 bool Scene::hiding() const { return hatched() && sim_.trustLevel() == TrustLevel::Hiding; }
@@ -698,7 +849,7 @@ bool Scene::foodLeftToday() const {
 
 Scene::Rect Scene::squatchArea() const {
     Stage st = sim_.state().stage;
-    if (st == Stage::Away) return {0, 0, 0, 0};
+    if (st == Stage::Away || sim_.state().foraging) return {0, 0, 0, 0};
     if (st == Stage::Egg) return {184, 222, 112, 128};
     if (hiding()) return {static_cast<int>(kHideX) - 40, static_cast<int>(kHideY) - 40, 80, 80};
     float k = squatchScale(), hr = headRatio(st);
@@ -719,14 +870,71 @@ Scene::Rect Scene::handleArea() const {
 
 Scene::Rect Scene::footprintArea() const { return {S - 96, 0, 96, kStripTouchH}; }
 
-int Scene::slotCount() const { return foodPage_ ? 4 : 6; }
+int Scene::slotCount() const {
+    switch (page_) {
+        case Page::Food: return 4;
+        case Page::More: return 3;
+        case Page::Main: break;
+    }
+    return 6;
+}
 
 Scene::Rect Scene::slotArea(int i) const {
     int w = S / slotCount();
     return {i * w, static_cast<int>(trayTop()) + 20, w, kTrayH - 20};
 }
 
-Scene::Slot Scene::slotAt(int i) const { return foodPage_ ? kFoodSlots[i] : kMainSlots[i]; }
+Scene::Slot Scene::slotAt(int i) const {
+    switch (page_) {
+        case Page::Food: return kFoodSlots[i];
+        case Page::More: return kMoreSlots[i];
+        case Page::Main: break;
+    }
+    return kMainSlots[i];
+}
+
+Scene::Rect Scene::trailRowArea(int i) const { return {kMapX + 12, kRowY + i * kRowH, kMapW - 24, kRowH}; }
+
+Scene::Rect Scene::rescanArea() const { return {S / 2 - 120, kRowY + State::kMaxTrails * kRowH + 4, 240, 64}; }
+
+void Scene::furColours(Rgb& fur, Rgb& face, Rgb& mark) const {
+    const State& s = sim_.state();
+    const Traits t = sim_.traits();
+    switch (t.variant) {
+        case Variant::Swamp: fur = hsv(t.hue, 0.68f, 0.42f + t.shade * 0.15f); break;
+        case Variant::Snowcoat: fur = 0xDCE4EA; break;
+        case Variant::Albino: fur = 0xF1ECE4; break;
+        case Variant::Golden: fur = 0xD9A93A; break;
+        case Variant::None: fur = hsv(t.hue, 0.62f - t.shade * 0.25f, 0.2f + t.shade * 0.52f); break;
+    }
+    face = t.variant == Variant::Albino ? 0xF2C9C2 : mix(fur, 0xEED3B0, t.variant == Variant::None ? 0.55f : 0.45f);
+
+    // How it was raised still shows, a little, on top of the coat it was born with.
+    Rgb form = 0;
+    float amount = 0.3f;
+    switch (s.adult) {
+        case AdultForm::Guardian: form = 0x7B4F33; break;
+        case AdultForm::RidgeRunner: form = 0x9B5E34; break;
+        case AdultForm::CouchSquatch: form = 0xA0724E; break;
+        case AdultForm::Hermit: form = 0x5E4A3A; break;
+        case AdultForm::Legend:
+            form = 0xD8CFC4;
+            amount = 0.5f;
+            break;
+        case AdultForm::None: amount = 0; break;
+    }
+    if (t.variant == Variant::None && amount > 0) fur = mix(fur, form, amount);
+    if (s.stage == Stage::Elder) fur = mix(fur, 0xA89F96, 0.5f);
+    if (s.sick) {
+        fur = mix(fur, 0x9DB58A, 0.35f);
+        face = mix(face, 0xC8D6B0, 0.45f);
+    }
+    switch (t.markings) {
+        case 1: mark = mix(face, 0xFFFFFF, 0.25f + 0.35f * t.markShade); break;  // pale chest blaze
+        case 2: mark = mix(fur, 0x1E140C, 0.45f * t.markShade); break;           // dark eye mask
+        default: mark = mix(fur, t.shade > 0.6f ? 0x3A2818 : 0xE8D2B4, 0.35f * t.markShade); break;
+    }
+}
 
 // ================================================================ drawing
 
@@ -752,7 +960,7 @@ void Scene::draw(Canvas& c) {
             }
         }
     }
-    if (s.stage == Stage::Away) drawAwayTrail(c);
+    if (s.stage == Stage::Away || s.foraging) drawAwayTrail(c);
     if (hiding()) drawHidingHead(c);
     drawTree(c, kLeftTreeX, kLeftTreeBase, 1.0f);
     drawTree(c, kRightTreeX, kRightTreeBase, 0.95f);
@@ -768,6 +976,7 @@ void Scene::draw(Canvas& c) {
     if (now_ < flashUntil_) c.tint(0xFFFFFF, static_cast<float>(flashUntil_ - now_) / 400.0f * 0.8f);
 
     drawStrip(c);
+    if (s.foraging) drawForagingBanner(c);
     drawToast(c);
     drawTray(c);
     if (drag_ == DragMode::Item && held_ != Item::None) {
@@ -776,6 +985,7 @@ void Scene::draw(Canvas& c) {
     }
     if (overlay_ == Overlay::Stats) drawStats(c);
     if (overlay_ == Overlay::Gallery) drawGallery(c);
+    if (overlay_ == Overlay::Trails) drawTrails(c);
 }
 
 void Scene::drawSky(Canvas& c) {
@@ -881,6 +1091,16 @@ void Scene::drawEgg(Canvas& c) {
     if (react_ == React::Wobble && now_ < reactUntil_)
         wob = static_cast<float>(std::sin(t_ * 24)) * 5 * static_cast<float>(reactUntil_ - now_) / 700.0f;
     float x = kEggX + wob, y = kEggY;
+    const Traits t = sim_.traits();
+    if (t.rarity >= Rarity::Rare) {  // something special inside
+        Rgb tint = 0xFFD34D;
+        if (t.variant == Variant::Swamp) tint = 0xE08A55;
+        if (t.variant == Variant::Snowcoat) tint = 0xBFE3FF;
+        if (t.variant == Variant::Albino) tint = 0xFFE6F0;
+        float strength = t.rarity == Rarity::Rare ? 0.3f : (t.rarity == Rarity::Epic ? 0.42f : 0.55f);
+        float pulse = 0.75f + 0.25f * static_cast<float>(std::sin(t_ * 2));
+        c.glow(kEggX, y, 90, tint, strength * pulse);
+    }
     c.fillEllipse(kEggX, y + 52, 46, 8, 0x000000, 0.18f);
     c.fillEllipse(x, y, 40, 52, sh(0xE8E0C8));
     c.fillEllipse(x + 6, y + 14, 30, 34, sh(0xDDD3B8));
@@ -900,7 +1120,8 @@ void Scene::drawEgg(Canvas& c) {
 
 struct Scene::Look {
     float x, foot, ground, s, head;
-    Rgb fur, face;
+    Rgb fur, face, mark;
+    uint8_t markings, shag;
     float blink, lookX, armL, armR;
     float mouth;  // -1 frown, 0 flat, 1 smile, 2 chewing
     float breath, wide;
@@ -916,27 +1137,16 @@ void Scene::drawPet(Canvas& c) {
     L.head = headRatio(s.stage);
     L.wide = 1;
 
-    Rgb fur = kFur;
-    switch (s.adult) {
-        case AdultForm::Guardian: fur = 0x7B4F33; break;
-        case AdultForm::RidgeRunner: fur = 0x9B5E34; break;
-        case AdultForm::CouchSquatch:
-            fur = 0xA0724E;
-            L.wide = 1.15f;
-            break;
-        case AdultForm::Hermit: fur = 0x5E4A3A; break;
-        case AdultForm::Legend: fur = 0xD8CFC4; break;
-        case AdultForm::None: break;
-    }
-    if (s.stage == Stage::Elder) fur = mix(fur, 0xA89F96, 0.6f);
-    Rgb face = kFace;
-    if (s.sick) {
-        fur = mix(fur, 0x9DB58A, 0.35f);
-        face = mix(face, 0xC8D6B0, 0.45f);
-    }
+    const Traits dna = sim_.traits();
+    L.wide = dna.build * (s.adult == AdultForm::CouchSquatch ? 1.15f : 1.0f);
+    L.markings = dna.markings;
+    L.shag = dna.shag;
+    Rgb fur, face, mark;
+    furColours(fur, face, mark);
     // Shaded for the night, but less than the scenery, so it stays easy to see.
     L.fur = mix(fur, kNight, dark_ * 0.35f);
     L.face = mix(face, kNight, dark_ * 0.35f);
+    L.mark = mix(mark, kNight, dark_ * 0.35f);
 
     float t = static_cast<float>(t_);
     L.blink = (s.asleep || now_ < blinkUntil_) ? 1.0f : 0.0f;
@@ -995,8 +1205,31 @@ void Scene::drawSquatch(Canvas& c, const Look& L) {
     c.fillEllipse(x - 26 * s * w, f - 9 * s, 24 * s, 11 * s, dark);
     c.fillEllipse(x + 26 * s * w, f - 9 * s, 24 * s, 11 * s, dark);
 
-    c.fillEllipse(x, f - 66 * s * b, 56 * s * w, 62 * s * b, L.fur);
+    const float bodyY = f - 66 * s * b, bodyRx = 56 * s * w, bodyRy = 62 * s * b;
+    c.fillEllipse(x, bodyY, bodyRx, bodyRy, L.fur);
+    // Shaggy coats stick out in tufts down both sides.
+    if (L.shag > 0) {
+        const int n = 2 + L.shag * 2;
+        const float len = (5 + 3.5f * L.shag) * s, half = 7 * s;
+        for (float side : {-1.0f, 1.0f}) {
+            for (int j = 0; j < n; j++) {
+                float a = (0.2f + 0.65f * j / (n - 1)) * kPi;
+                float px = x + side * bodyRx * std::sin(a), py = bodyY - bodyRy * std::cos(a);
+                float nx = side * std::sin(a) / bodyRx, ny = -std::cos(a) / bodyRy;
+                float nl = std::hypot(nx, ny);
+                nx /= nl;
+                ny /= nl;
+                c.fillTriangle(px - ny * half - nx * 2, py + nx * half - ny * 2, px + ny * half - nx * 2,
+                               py - nx * half - ny * 2, px + nx * len, py + ny * len, L.fur);
+            }
+        }
+    }
     c.fillEllipse(x, f - 56 * s, 34 * s * w, 40 * s * b, L.face);
+    if (L.markings == 1) c.fillEllipse(x, f - 64 * s, 16 * s * w, 24 * s * b, L.mark);  // chest blaze
+    if (L.markings == 3) {  // speckles on the shoulders
+        const float dots[][2] = {{-38, -92}, {-30, -76}, {-44, -70}, {36, -94}, {28, -80}, {42, -72}, {-20, -104}};
+        for (const auto& d : dots) c.fillCircle(x + d[0] * s * w, f + d[1] * s * b, 3.4f * s, L.mark);
+    }
 
     auto arm = [&](float side, float raise) {
         float sx = x + side * 44 * s * w, sy = f - 102 * s * b;
@@ -1017,7 +1250,17 @@ void Scene::drawSquatch(Canvas& c, const Look& L) {
         c.fillCircle(x + side * hr * 0.92f, hy + hr * 0.07f, hr * 0.12f, L.face);
     }
     c.fillCircle(x, hy, hr, L.fur);
+    if (L.shag > 1) {  // a wild coat gets a mop on top
+        for (int j = -L.shag; j <= L.shag; j++) {
+            float a = j * 0.32f;
+            float px = x + std::sin(a) * hr, py = hy - std::cos(a) * hr;
+            c.fillTriangle(px - std::cos(a) * hr * 0.2f, py - std::sin(a) * hr * 0.2f, px + std::cos(a) * hr * 0.2f,
+                           py + std::sin(a) * hr * 0.2f, px + std::sin(a) * hr * 0.3f, py - std::cos(a) * hr * 0.3f,
+                           L.fur);
+        }
+    }
     c.fillEllipse(fx, hy + hr * 0.2f, hr * 0.7f, hr * 0.62f, L.face);
+    if (L.markings == 2) c.fillEllipse(fx, hy + hr * 0.07f, hr * 0.56f, hr * 0.22f, L.mark);  // eye mask
 
     if (L.angry) {
         c.line(fx - hr * 0.52f, hy - hr * 0.24f, fx - hr * 0.1f, hy - hr * 0.06f, hr * 0.13f, dark);
@@ -1051,8 +1294,11 @@ void Scene::drawSquatch(Canvas& c, const Look& L) {
 
 void Scene::drawHidingHead(Canvas& c) {
     if (react_ == React::Flinch) return;  // ducked out of sight
-    c.fillCircle(kHideX, kHideY, 24, sh(mix(kFur, 0x000000, 0.45f)));
-    c.fillEllipse(kHideX, kHideY - 22, 10, 7, sh(mix(kFur, 0x000000, 0.45f)));
+    Rgb fur, face, mark;
+    furColours(fur, face, mark);
+    Rgb shadow = sh(mix(fur, 0x000000, 0.45f));  // in the tree's shade
+    c.fillCircle(kHideX, kHideY, 24, shadow);
+    c.fillEllipse(kHideX, kHideY - 22, 10, 7, shadow);
 }
 
 void Scene::drawHidingEyes(Canvas& c) {
@@ -1199,6 +1445,100 @@ void Scene::drawTray(Canvas& c) {
     }
 }
 
+void Scene::drawForagingBanner(Canvas& c) {
+    const State& s = sim_.state();
+    char name[24], buf[64];
+    landmarkName(s.forageHash, name, sizeof name);
+    int mins = static_cast<int>((sim_.forageSecsLeft() + 59) / 60);
+    std::snprintf(buf, sizeof buf, "%s - %d MIN", name, std::max(1, mins));
+    int scale = Canvas::textWidth(buf, 2) <= 440 ? 2 : 1;
+    float w = static_cast<float>(Canvas::textWidth(buf, scale)) + 24;
+    c.fillRoundRect(240 - w / 2, 88, w, 26, 13, kUiDark, 0.7f);
+    c.text(240, 101 - Canvas::textHeight(scale) / 2.0f, buf, scale, kUiLight, Align::Center);
+}
+
+void Scene::drawLandmarkIcon(Canvas& c, LandmarkKind k, float x, float y, float z) {
+    c.fillCircle(x, y, 24 * z, 0x35603F);
+    switch (k) {
+        case LandmarkKind::Falls:
+            c.fillRect(x - 14 * z, y - 18 * z, 8 * z, 30 * z, 0x6B6B5A);
+            c.fillRect(x - 6 * z, y - 18 * z, 10 * z, 34 * z, 0xA8E0F0);
+            c.fillEllipse(x, y + 16 * z, 16 * z, 5 * z, 0xD6F2FA);
+            break;
+        case LandmarkKind::Cabin:
+            c.fillRect(x - 14 * z, y - 4 * z, 28 * z, 18 * z, 0x8A5A2B);
+            c.fillTriangle(x - 18 * z, y - 4 * z, x + 18 * z, y - 4 * z, x, y - 20 * z, 0x5E3B1A);
+            c.fillRect(x - 4 * z, y + 4 * z, 8 * z, 10 * z, 0x2A1A10);
+            break;
+        case LandmarkKind::Cave:
+            c.fillEllipse(x, y + 4 * z, 20 * z, 16 * z, 0x6B6B5A);
+            c.fillEllipse(x, y + 10 * z, 10 * z, 10 * z, 0x1A120C);
+            break;
+        case LandmarkKind::BerryPatch:
+            c.fillCircle(x, y + 4 * z, 15 * z, 0x2E6B3F);
+            drawItem(c, Item::Berries, x, y + 2 * z, 0.9f * z);
+            break;
+        case LandmarkKind::Lookout:
+            c.line(x - 10 * z, y + 18 * z, x - 4 * z, y - 8 * z, 3 * z, 0x8A5A2B);
+            c.line(x + 10 * z, y + 18 * z, x + 4 * z, y - 8 * z, 3 * z, 0x8A5A2B);
+            c.fillRect(x - 10 * z, y - 18 * z, 20 * z, 10 * z, 0x6B4A2F);
+            c.fillTriangle(x - 13 * z, y - 18 * z, x + 13 * z, y - 18 * z, x, y - 25 * z, 0x5E3B1A);
+            break;
+        case LandmarkKind::HotSpring:
+            c.fillEllipse(x, y + 10 * z, 18 * z, 7 * z, 0x7FC4D6);
+            for (int i = -1; i <= 1; i++) c.line(x + i * 7 * z, y + 2 * z, x + i * 7 * z + 3 * z, y - 14 * z, 2.5f * z, 0xF3EBD9, 0.8f);
+            break;
+        case LandmarkKind::Pond:
+            c.fillEllipse(x, y + 6 * z, 19 * z, 10 * z, 0x5F87A3);
+            c.line(x + 8 * z, y + 2 * z, x + 10 * z, y - 16 * z, 2 * z, 0x5C8F3E);
+            c.fillEllipse(x + 10 * z, y - 16 * z, 3 * z, 6 * z, 0x8A5A2B);
+            break;
+        case LandmarkKind::Ridge:
+            c.fillTriangle(x - 20 * z, y + 14 * z, x - 2 * z, y - 16 * z, x + 10 * z, y + 14 * z, 0x6B6B5A);
+            c.fillTriangle(x - 4 * z, y + 14 * z, x + 10 * z, y - 6 * z, x + 20 * z, y + 14 * z, 0x55554A);
+            c.fillTriangle(x - 6 * z, y - 10 * z, x - 2 * z, y - 16 * z, x + 2 * z, y - 10 * z, 0xF3EBD9);
+            break;
+    }
+}
+
+void Scene::drawTrails(Canvas& c) {
+    const State& s = sim_.state();
+    const Rgb ink = 0x3B2A1E, faint = 0x8A7A66;
+    c.tint(0x000000, 0.55f);
+    c.fillRoundRect(kMapX, kMapY, kMapW, kMapH, 20, kUiLight);
+    c.text(240, kMapY + 10, "TRAIL MAP", 2, ink, Align::Center);
+
+    for (int i = 0; i < s.trailCount; i++) {
+        const Trail& tr = s.trails[i];
+        Rect r = trailRowArea(i);
+        bool out = s.foraging && s.forageHash == tr.hash;
+        c.fillRoundRect(r.x, r.y + 3, r.w, r.h - 6, 12, out ? 0xF2D98A : 0xE6DCC6);
+        drawLandmarkIcon(c, landmarkKind(tr.hash), r.x + 34.0f, r.cy(), 0.95f);
+        char name[24];
+        landmarkName(tr.hash, name, sizeof name);
+        c.text(r.x + 68, r.y + 14, name, 2, ink);
+        char sub[32];
+        std::snprintf(sub, sizeof sub, "%s%s", toString(trailDistance(tr.rssi)), out ? "  - IT'S HERE NOW" : "");
+        c.text(r.x + 68, r.y + 36, sub, 2, faint);
+        if (!sim_.trailVisited(tr.hash)) {  // a place it's never been
+            c.fillRoundRect(r.x + r.w - 64, r.y + 20, 52, 24, 12, kGold);
+            c.text(r.x + r.w - 38.0f, r.y + 25, "NEW", 2, ink, Align::Center);
+        }
+    }
+    if (s.trailCount == 0) {
+        c.text(240, kRowY + 60, scanning_ ? "LISTENING..." : "NO TRAILS YET", 2, faint, Align::Center);
+        c.text(240, kRowY + 90, "NEARBY WI-FI BECOMES PLACES TO EXPLORE", 1, faint, Align::Center);
+    }
+
+    if (trailNote_[0]) {  // under the title, above the rows
+        int scale = Canvas::textWidth(trailNote_, 2) <= kMapW - 24 ? 2 : 1;
+        c.text(240, kMapY + 30.0f, trailNote_, scale, 0x5E8A3C, Align::Center);
+    }
+    Rect b = rescanArea();
+    c.fillRoundRect(b.x, b.y + 4, b.w, b.h - 8, 14, scanning_ ? 0xB8AE9A : kButton);
+    c.text(b.cx(), b.cy() - 7.0f, scanning_ ? "LISTENING..." : "LOOK AGAIN", 2, kUiLight, Align::Center);
+}
+
 void Scene::drawSlotIcon(Canvas& c, Slot s, float x, float y) {
     Item it = itemFor(s);
     if (it != Item::None) {
@@ -1225,6 +1565,14 @@ void Scene::drawSlotIcon(Canvas& c, Slot s, float x, float y) {
             c.fillRect(x - 8, y - 17, 16, 6, 0xCFC7B5);
             c.fillCircle(x, y + 2, 9, 0x2A1E14);
             c.fillCircle(x, y + 2, 5, 0x6E8FA8);
+            break;
+        case Slot::More:
+            for (int i = -1; i <= 1; i++) c.fillCircle(x + i * 14.0f, y, 5, kUiLight);
+            break;
+        case Slot::Trails:  // a signpost
+            c.line(x, y + 22, x, y - 18, 5, 0xA0703F);
+            c.fillTriangle(x - 2, y - 20, x + 24, y - 13, x - 2, y - 6, 0xCFC7B5);
+            c.fillTriangle(x + 2, y - 4, x - 24, y + 3, x + 2, y + 10, 0xCFC7B5);
             break;
         case Slot::Back:
             c.line(x - 14, y, x + 14, y, 5, kUiLight);
@@ -1283,7 +1631,7 @@ void Scene::drawStats(Canvas& c) {
     const char* name = s.name[0] ? s.name : "NO NAME YET";
     c.text(240, 98, name, Canvas::textWidth(name, 3) <= 380 ? 3 : 2, ink, Align::Center);
 
-    char lines[7][40];
+    char lines[9][40];
     int n = 0;
     Stage stage = s.stage == Stage::Away ? s.stageBeforeAway : s.stage;
     if (s.adult != AdultForm::None)
@@ -1297,7 +1645,15 @@ void Scene::drawStats(Canvas& c) {
     std::snprintf(lines[n++], 40, "TRUST: %s", s.stage == Stage::Away ? "AWAY" : trustName(sim_.trustLevel()));
     std::snprintf(lines[n++], 40, "PHOTOS: %d OF %d", sim_.photoCount(), Sim::kPhotoCount);
     std::snprintf(lines[n++], 40, "FOOTPRINTS: %u", static_cast<unsigned>(s.footprints));
-    for (int i = 0; i < n; i++) c.text(64, 148 + i * 30.0f, lines[i], 2, ink);
+    const Traits t = sim_.traits();
+    if (t.variant != Variant::None)
+        std::snprintf(lines[n++], 40, "COAT: %s %s", toString(t.rarity), toString(t.variant));
+    else
+        std::snprintf(lines[n++], 40, "COAT: %s", toString(t.rarity));
+    char code[12];
+    dnaCode(s.genome, code, sizeof code);
+    std::snprintf(lines[n++], 40, "DNA: %s  TRAILS: %u", code, static_cast<unsigned>(s.trailsVisited));
+    for (int i = 0; i < n; i++) c.text(64, 140 + i * 25.0f, lines[i], 2, ink);
     c.text(240, 360, "TAP TO CLOSE", 2, 0x8A7A66, Align::Center);
 }
 
@@ -1334,6 +1690,8 @@ const char* toString(Scene::Slot s) {
         case Scene::Slot::Play: return "PLAY";
         case Scene::Slot::Light: return "LIGHT";
         case Scene::Slot::Photos: return "PHOTOS";
+        case Scene::Slot::More: return "MORE";
+        case Scene::Slot::Trails: return "TRAILS";
         case Scene::Slot::Back: return "BACK";
         case Scene::Slot::Berries: return "BERRIES";
         case Scene::Slot::Fish: return "FISH";

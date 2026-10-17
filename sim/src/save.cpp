@@ -1,5 +1,6 @@
 #include "squatch/save.hpp"
 
+#include <cstddef>
 #include <cstring>
 
 namespace squatch {
@@ -30,10 +31,18 @@ LoadResult load(const uint8_t* data, size_t len, State& s) {
     SaveHeader h{};
     std::memcpy(&h, data, sizeof(SaveHeader));
     if (h.magic != kSaveMagic) return LoadResult::BadMagic;
-    if (h.version != kSaveVersion) return LoadResult::UnknownVersion;  // migrations go here
-    if (h.size != sizeof(State) || len < sizeof(SaveHeader) + h.size) return LoadResult::BadSize;
+    if (h.version == 0 || h.version > kSaveVersion) return LoadResult::UnknownVersion;
+
+    // Fields are only ever added at the end of State, so an older save is a prefix of
+    // today's State: version 1 ended with rng, just before the genome.
+    const size_t expected = h.version == 1 ? offsetof(State, genome) : sizeof(State);
+    if (h.size != expected || len < sizeof(SaveHeader) + h.size) return LoadResult::BadSize;
     if (crc32(data + sizeof(SaveHeader), h.size) != h.crc) return LoadResult::BadChecksum;
-    std::memcpy(&s, data + sizeof(SaveHeader), sizeof(State));
+
+    State loaded{};  // defaults for anything the old version didn't have
+    std::memcpy(&loaded, data + sizeof(SaveHeader), h.size);
+    if (h.version == 1) loaded.genome = randomGenome(loaded.rng);  // a pet from before DNA gets some now
+    s = loaded;
     return LoadResult::Ok;
 }
 

@@ -14,11 +14,13 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "radio.hpp"
 #include "squatch/canvas.hpp"
 #include "squatch/scene.hpp"
 #include "squatch/sim.hpp"
 #include "storage.hpp"
 #include "walltime.hpp"
+#include "wifiscan.hpp"
 
 using namespace squatch;
 
@@ -164,6 +166,12 @@ void gameLoop(void*) {
             lastTz = wall;
         }
 
+        // The trail map asked for a Wi-Fi scan; its results arrive a couple of seconds later.
+        if (gScene.takeScanRequest()) wifiscan::request();
+        squatch::Sighting heard[20];
+        size_t heardCount = 0;
+        if (wifiscan::take(heard, 20, heardCount)) gSim.scoutTrails(heard, heardCount);
+
         gScene.update(ms);
         if (gScene.takeSaveRequest() || wall - lastSave >= kAutosaveSecs) {
             storage::savePet(gSim.state());
@@ -191,6 +199,7 @@ void gameLoop(void*) {
 extern "C" void app_main(void) {
     storage::init();
     ESP_ERROR_CHECK(board_init());
+    radio::begin();
     walltime::init(board_i2c(), CONFIG_SQUATCH_TZ);
     walltime::syncFromNetwork(CONFIG_SQUATCH_WIFI_SSID, CONFIG_SQUATCH_WIFI_PASSWORD);
 

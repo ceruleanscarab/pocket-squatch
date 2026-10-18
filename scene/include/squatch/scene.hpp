@@ -79,6 +79,15 @@ public:
     const Weather& weather() const { return weather_; }
     void setFahrenheit(bool on) { fahrenheit_ = on; }
 
+    // ---- the seasons, from the local date: autumn leaves (late September to November), and
+    // for Halloween (October 15-31) a jack-o'-lantern to tap, bats at dusk, a harvest moon,
+    // and a witch's hat for the last week.
+    bool autumn() const;
+    bool halloween() const;
+    bool hatWeek() const;
+    Rect pumpkinArea() const;
+    void previewDate(int month, int day);  // for trying the seasons out; 0 goes back to the real date
+
     // ---- settings and the screen timeout
     void setSettings(const Settings& s);  // e.g. as loaded at start-up; out-of-range steps are clamped
     const Settings& settings() const { return settings_; }
@@ -211,6 +220,12 @@ private:
     void drawSky(Canvas& c);
     void drawStars(Canvas& c);
     void drawClouds(Canvas& c);
+    void drawPumpkin(Canvas& c, bool lit);
+    void drawBats(Canvas& c);
+    void drawFallenLeaves(Canvas& c);
+    void drawFallingLeaves(Canvas& c);
+    void localDate(int& month, int& day) const;
+    void tapPumpkin();
     void drawFog(Canvas& c);
     void drawSnowCover(Canvas& c);
     void drawPrecipitation(Canvas& c);
@@ -281,6 +296,9 @@ private:
     int cueCount_ = 0;
     uint32_t nextKnockSound_ = 0;
     Weather weather_;
+    int previewMonth_ = 0, previewDay_ = 0;
+    int64_t greetedDay_ = -1;
+    uint32_t giggleAt_ = 0;
     bool fahrenheit_ = false;
     uint32_t nextLightning_ = 0, lightningUntil_ = 0;
     bool settingsChanged_ = false;

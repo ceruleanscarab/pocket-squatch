@@ -811,6 +811,53 @@ static void testWeather() {
     d.scene.setSceneryCache(true);
 }
 
+static void testHalloween() {
+    std::printf("seasons: autumn leaves, Halloween's pumpkin says BOO, and the hat comes out the last week\n");
+    Driver d;
+    for (int i = 0; i < 5000 && d.scene.toast(); i++) d.step();
+    d.scene.previewDate(7, 4);
+    CHECK(!d.scene.autumn() && !d.scene.halloween());
+    d.scene.previewDate(9, 25);
+    CHECK(d.scene.autumn() && !d.scene.halloween());
+    d.scene.previewDate(10, 20);
+    CHECK(d.scene.halloween() && !d.scene.hatWeek());
+    d.scene.previewDate(10, 28);
+    CHECK(d.scene.halloween() && d.scene.hatWeek());
+    d.scene.previewDate(11, 1);
+    CHECK(d.scene.autumn() && !d.scene.halloween());
+
+    CHECK(d.scene.pumpkinArea().w >= 64 && d.scene.pumpkinArea().h >= 64);
+    Cue c;
+    while (d.scene.takeCue(c)) {}
+    d.scene.previewDate(7, 4);
+    d.tap(d.scene.pumpkinArea());
+    CHECK(!d.scene.toast() || std::strcmp(d.scene.toast(), "BOO!") != 0);  // no pumpkin in July
+    d.scene.previewDate(10, 20);
+    d.tap(d.scene.pumpkinArea());
+    CHECK(d.scene.toast() && std::strcmp(d.scene.toast(), "BOO!") == 0);
+    bool boo = false;
+    while (d.scene.takeCue(c)) boo |= c == Cue::Boo;
+    CHECK(boo);
+
+    // The real date: Halloween 2027 starts at 1824940800 (UTC midnight, Oct 31).
+    Sim sim;
+    sim.newGame(1824940800 + 20 * 3600, 0, 3);
+    Scene scene(sim);
+    CHECK(scene.halloween() && scene.hatWeek());
+
+    std::vector<uint16_t> a(Scene::kSize * Scene::kSize), b(a.size());
+    Canvas ca(a.data(), Scene::kSize, Scene::kSize), cb(b.data(), Scene::kSize, Scene::kSize);
+    d.scene.previewDate(10, 31);
+    d.scene.setSceneryCache(true);
+    d.scene.draw(ca);
+    d.scene.setSceneryCache(false);
+    d.scene.draw(cb);
+    int diff = 0;
+    for (size_t i = 0; i < a.size(); i++) diff += a[i] != b[i];
+    CHECK(diff == 0);
+    d.scene.setSceneryCache(true);
+}
+
 int main() {
     testTap();
     testLongPressThenDrag();
@@ -837,6 +884,7 @@ int main() {
     testNaming();
     testSceneryCache();
     testWeather();
+    testHalloween();
 
     std::printf("\n%d checks, %d failed\n", gChecks, gFailures);
     return gFailures ? 1 : 0;

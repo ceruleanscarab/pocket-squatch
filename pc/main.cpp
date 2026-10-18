@@ -7,6 +7,7 @@
 //   squatch-pc --shot FILE.bmp   draw one frame to a BMP and exit, without a window
 //   squatch-pc --battery 80      show a pretend battery at 80% (add c for charging: 80c)
 //   squatch-pc --weather snow    pretend weather: clear, cloudy, fog, drizzle, rain, snow, storm
+//   squatch-pc --date 10-31      pretend it's this month and day, to see the seasons
 //
 // Sound plays through the PC's speakers, at the volume chosen on the settings page.
 // Settings (brightness, screen timeout, volume) are kept next to the save, in FILE.settings.
@@ -133,7 +134,7 @@ void pretendScan(Sim& sim) {
 }
 
 void usage() {
-    std::printf("usage: squatch-pc [--new] [--save FILE] [--zoom N] [--shot FILE.bmp] [--battery N[c]] [--weather SKY]\n");
+    std::printf("usage: squatch-pc [--new] [--save FILE] [--zoom N] [--shot FILE.bmp] [--battery N[c]] [--weather SKY] [--date MM-DD]\n");
 }
 
 }  // namespace
@@ -146,11 +147,18 @@ int main(int argc, char** argv) {
     int battery = -1;  // the PC has no battery unless one is pretended
     bool charging = false;
     Weather weather;
+    int month = 0, day = 0;
     for (int i = 1; i < argc; i++) {
         if (!std::strcmp(argv[i], "--new")) fresh = true;
         else if (!std::strcmp(argv[i], "--save") && i + 1 < argc) savePath = argv[++i];
         else if (!std::strcmp(argv[i], "--zoom") && i + 1 < argc) zoom = std::max(1, std::atoi(argv[++i]));
         else if (!std::strcmp(argv[i], "--shot") && i + 1 < argc) shotPath = argv[++i];
+        else if (!std::strcmp(argv[i], "--date") && i + 1 < argc) {
+            if (std::sscanf(argv[++i], "%d-%d", &month, &day) != 2) {
+                usage();
+                return 2;
+            }
+        }
         else if (!std::strcmp(argv[i], "--weather") && i + 1 < argc) {
             if (!parseSky(argv[++i], weather.sky)) {
                 usage();
@@ -189,6 +197,7 @@ int main(int argc, char** argv) {
     Scene scene(sim);
     scene.setBattery(battery, charging);
     if (weather.sky != Sky::Unknown) scene.setWeather(weather);
+    if (month) scene.previewDate(month, day);
     const std::string settingsPath = std::string(savePath) + ".settings";
     Scene::Settings settings;
     if (readSettings(settingsPath, settings)) scene.setSettings(settings);

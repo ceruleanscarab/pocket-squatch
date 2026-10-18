@@ -18,6 +18,7 @@ constexpr float kLeftTreeX = 48, kLeftTreeBase = 344;
 constexpr float kRightTreeX = 432, kRightTreeBase = 334;
 constexpr float kStumpX = 388, kStumpY = 362;
 constexpr float kFireX = 96, kFireY = 392;
+constexpr float kPumpkinX = 448, kPumpkinY = 392;
 constexpr float kHideX = 74, kHideY = 290;   // peeking out from behind the left tree
 constexpr float kEggX = 240, kEggY = 288;
 constexpr float kFriendlyFoot = 345, kWanderFoot = 302;
@@ -265,6 +266,62 @@ void Scene::setWeather(const Weather& w) {
     nextLightning_ = now_ + 4000;
 }
 
+void Scene::localDate(int& month, int& day) const {
+    if (previewMonth_) {
+        month = previewMonth_;
+        day = previewDay_;
+        return;
+    }
+    const State& s = sim_.state();
+    int64_t z = (s.now + s.tzOffset) / 86400 + 719468;  // days, shifted to 0000-03-01 (H. Hinnant's civil_from_days)
+    const int64_t era = (z >= 0 ? z : z - 146096) / 146097;
+    const int64_t doe = z - era * 146097;
+    const int64_t yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    const int64_t doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    const int64_t mp = (5 * doy + 2) / 153;
+    day = static_cast<int>(doy - (153 * mp + 2) / 5 + 1);
+    month = static_cast<int>(mp < 10 ? mp + 3 : mp - 9);
+}
+
+bool Scene::autumn() const {
+    int m, d;
+    localDate(m, d);
+    return (m == 9 && d >= 22) || m == 10 || m == 11;
+}
+
+bool Scene::halloween() const {
+    int m, d;
+    localDate(m, d);
+    return m == 10 && d >= 15;
+}
+
+bool Scene::hatWeek() const {
+    int m, d;
+    localDate(m, d);
+    return m == 10 && d >= 25;
+}
+
+void Scene::previewDate(int month, int day) {
+    previewMonth_ = month;
+    previewDay_ = day;
+    sceneryKey_ = -1;
+}
+
+Scene::Rect Scene::pumpkinArea() const {
+    return {static_cast<int>(kPumpkinX) - 32, static_cast<int>(kPumpkinY) - 38, 64, 64};
+}
+
+void Scene::tapPumpkin() {
+    say("BOO!", true);
+    cue(Cue::Boo);
+    for (int i = 0; i < 6; i++)
+        spawn(ParticleKind::Sparkle, kPumpkinX + (rand01() - 0.5f) * 40, kPumpkinY - 20 - rand01() * 20, 0, -40, 700);
+    if (hatched() && !hiding() && !sim_.state().asleep) {
+        react(React::Flinch, 700);
+        giggleAt_ = now_ + 800;  // then it giggles
+    }
+}
+
 float Scene::overcast() const {
     switch (weather_.sky) {
         case Sky::Cloudy: return 0.35f;
@@ -422,6 +479,10 @@ void Scene::onTap(int x, int y) {
             doClean(kMessSpots[i][0], kMessSpots[i][1]);
             return;
         }
+    }
+    if (halloween() && pumpkinArea().contains(x, y)) {
+        tapPumpkin();
+        return;
     }
     if (squatchArea().contains(x, y)) tapPet();
 }
@@ -797,6 +858,23 @@ void Scene::update(uint32_t nowMs) {
         for (size_t i = 0; i < n; i++) handleEvent(ev[i]);
 
     animate(dt);
+
+    // Halloween: a greeting once on the day, and the giggle after a fright.
+    {
+        int m, d;
+        localDate(m, d);
+        const int64_t day = (sim_.state().now + sim_.state().tzOffset) / 86400;
+        if (m == 10 && d == 31 && greetedDay_ != day && !screenOff_ && overlay_ == Overlay::None) {
+            greetedDay_ = day;
+            say("HAPPY HALLOWEEN!");
+            cue(Cue::Boo);
+        }
+    }
+    if (giggleAt_ && now_ >= giggleAt_) {
+        giggleAt_ = 0;
+        react(React::Happy, 900);
+        cue(Cue::Happy);
+    }
 
     // A pet with no name gets asked for one, a moment after hatching (or at start-up).
     if (!askedName_ && !sim_.state().name[0] && hatched() && overlay_ == Overlay::None && !screenOff_ &&
@@ -1218,7 +1296,8 @@ void Scene::draw(Canvas& c) {
     c.setShade(0x02040C, shade);
 
     // The scenery: from the cache when it's still the same minute, else drawn afresh.
-    const int key = (static_cast<int>(hourOfDay() * 60) * 2 + (s.lightsOn ? 1 : 0)) * 8 + static_cast<int>(weather_.sky);
+    const int key = ((static_cast<int>(hourOfDay() * 60) * 2 + (s.lightsOn ? 1 : 0)) * 8 + static_cast<int>(weather_.sky)) * 2 +
+                    (foodLeftToday() ? 1 : 0);
     if (cacheScenery_ && c.width() == S && c.height() == S) {
         if (scenery_.size() != static_cast<size_t>(S * S)) scenery_.assign(static_cast<size_t>(S * S), 0);
         if (key != sceneryKey_) {
@@ -1232,6 +1311,7 @@ void Scene::draw(Canvas& c) {
         drawScenery(c);
     }
     drawStars(c);
+    if (halloween()) drawBats(c);
     for (int i = 0; i < visibleMesses(); i++) {
         float x = kMessSpots[i][0], y = kMessSpots[i][1];
         c.fillEllipse(x, y, 17, 8, sh(0x4E3219));
@@ -1256,6 +1336,8 @@ void Scene::draw(Canvas& c) {
     drawCampfire(c, h >= 17 && h < 23);
     drawParticles(c);
     drawPrecipitation(c);
+    const Sky sky = weather_.sky;
+    if (autumn() && sky != Sky::Rain && sky != Sky::Drizzle && sky != Sky::Storm && sky != Sky::Snow) drawFallingLeaves(c);
 
     c.setShade(0, 0);  // the screen's own furniture isn't shaded
     if (weather_.sky == Sky::Storm && now_ >= nextLightning_) {
@@ -1286,6 +1368,7 @@ void Scene::drawScenery(Canvas& c) {
     drawClouds(c);
     drawGround(c);
     if (weather_.sky == Sky::Snow) drawSnowCover(c);
+    else if (autumn()) drawFallenLeaves(c);
     drawCampfire(c, false);
     const float h = hourOfDay();
     if (h >= 17 && h < 23) c.glow(kFireX, kFireY - 20, 90, 0xFFB347, 0.15f + 0.35f * dark_);  // the fire's light
@@ -1293,7 +1376,68 @@ void Scene::drawScenery(Canvas& c) {
     drawTree(c, kLeftTreeX, kLeftTreeBase, 1.0f);
     drawTree(c, kRightTreeX, kRightTreeBase, 0.95f);
     drawLantern(c);
+    if (halloween()) drawPumpkin(c, dark_ > 0.25f);
     if (weather_.sky == Sky::Fog) drawFog(c);
+}
+
+void Scene::drawPumpkin(Canvas& c, bool lit) {
+    const float x = kPumpkinX, y = kPumpkinY;
+    if (lit) c.glow(x, y - 4, 46, 0xFF9A2E, 0.55f * dark_);
+    c.fillEllipse(x, y + 16, 22, 5, 0x000000, 0.2f);
+    const Rgb skin = sh(0xE37B1C), rib = sh(0xC4620F);
+    c.fillEllipse(x - 9, y, 11, 16, skin);
+    c.fillEllipse(x + 9, y, 11, 16, skin);
+    c.fillEllipse(x, y, 13, 17, rib);
+    c.fillEllipse(x, y, 10, 16, skin);
+    c.line(x, y - 15, x + 3, y - 23, 4, sh(0x4E6B2A));  // stalk
+    const Rgb face = lit ? 0xFFD36B : sh(0x5A2A08);
+    c.fillTriangle(x - 10, y - 2, x - 3, y - 2, x - 6.5f, y - 9, face);
+    c.fillTriangle(x + 3, y - 2, x + 10, y - 2, x + 6.5f, y - 9, face);
+    c.fillTriangle(x - 3, y + 1, x + 3, y + 1, x, y + 5, face);
+    c.fillRoundRect(x - 11, y + 6, 22, 5, 2, face);
+    c.fillRect(x - 4, y + 6, 3, 2, skin);
+    c.fillRect(x + 2, y + 9, 3, 2, skin);
+}
+
+// Leaves on the ground, scattered over the clearing (part of the scenery).
+void Scene::drawFallenLeaves(Canvas& c) {
+    const Rgb cols[] = {0xC8502A, 0xD98B2B, 0xB8862E, 0x9C3B22};
+    for (int i = 0; i < 34; i++) {
+        const uint32_t h = static_cast<uint32_t>(i + 7) * 2654435761u;
+        const float x = static_cast<float>(h % 470) + 5, y = kHorizon + 40 + static_cast<float>((h >> 9) % 250);
+        c.fillEllipse(x, y, 4.5f, 2.6f, sh(cols[i % 4]), 0.9f);
+    }
+}
+
+void Scene::drawFallingLeaves(Canvas& c) {
+    const Rgb cols[] = {0xD9622B, 0xE8A23A, 0xC8B03A, 0xB0402A};
+    const float t = static_cast<float>(t_);
+    const float wind = std::min(weather_.windKmh, 40.0f) * 1.5f;
+    for (int i = 0; i < 12; i++) {
+        const uint32_t h = static_cast<uint32_t>(i + 3) * 2654435761u;
+        const float vy = 22.0f + static_cast<float>(i % 4) * 7;
+        const float y = std::fmod(static_cast<float>(h % 1000) * 0.5f + t * vy, 520.0f) - 20;
+        const float sway = std::sin(t * 1.1f + static_cast<float>(i) * 1.7f) * 18;
+        const float x = std::fmod(static_cast<float>((h >> 10) % 480) + t * wind + sway + 4800.0f, 480.0f);
+        const float turn = std::fabs(std::sin(t * 2.3f + static_cast<float>(i)));  // tumbling
+        c.fillEllipse(x, y, 2 + 3.5f * turn, 2.6f, cols[i % 4], 0.95f);
+    }
+}
+
+// Bats over the trees at dusk and after dark, in Halloween time.
+void Scene::drawBats(Canvas& c) {
+    if (dark_ < 0.2f) return;
+    const float t = static_cast<float>(t_);
+    const Rgb col = mix(0x2A1E2E, 0x0A0810, dark_);
+    for (int i = 0; i < 4; i++) {
+        const float speed = 38.0f + static_cast<float>(i) * 9;
+        const float x = std::fmod(t * speed + static_cast<float>(i) * 151, 600.0f) - 60;
+        const float y = 70.0f + static_cast<float>(i) * 22 + std::sin(t * 1.3f + static_cast<float>(i)) * 14;
+        const float flap = std::sin(t * 14 + static_cast<float>(i)) * 6;
+        c.fillTriangle(x - 2, y, x - 14, y - 4 + flap, x - 9, y + 4, col);
+        c.fillTriangle(x + 2, y, x + 14, y - 4 + flap, x + 9, y + 4, col);
+        c.fillEllipse(x, y + 1, 3.2f, 4, col);
+    }
 }
 
 void Scene::drawClouds(Canvas& c) {
@@ -1390,7 +1534,7 @@ void Scene::drawSky(Canvas& c) {
 
     if (dark_ > 0.3f && o < 0.45f) {
         float a = (dark_ - 0.3f) / 0.7f * (1 - o);
-        c.fillCircle(330, 70, 18, 0xF4F1DE, a);
+        c.fillCircle(330, 70, 18, halloween() ? 0xF5B95E : 0xF4F1DE, a);  // a harvest moon at Halloween
         c.fillCircle(338, 64, 15, mix(keys[i].top, keys[i + 1].top, t), a);  // crescent
     } else if (overcast() < 0.45f) {
         c.fillCircle(150, 76, 22, 0xFFE9A8, (1 - dark_ / 0.3f) * (1 - overcast()));
@@ -1506,6 +1650,7 @@ struct Scene::Look {
     float mouth;  // -1 frown, 0 flat, 1 smile, 2 chewing
     float breath, wide;
     bool angry;
+    bool hat;  // a witch's hat, Halloween week
 };
 
 void Scene::drawPet(Canvas& c) {
@@ -1534,6 +1679,7 @@ void Scene::drawPet(Canvas& c) {
     L.breath = 1 + 0.018f * std::sin(t * (s.asleep ? 1.6f : 2.6f));
     L.mouth = s.happiness >= 2 ? 1.0f : (s.happiness < 1 ? -1.0f : 0.0f);
     L.angry = s.misbehaving;
+    L.hat = hatWeek();
 
     if (sim_.trustLevel() == TrustLevel::Wandering && !s.asleep && std::fabs(wanderTarget_ - wanderX_) > 1) {
         L.foot -= std::fabs(std::sin(t * 8)) * 4 * L.s;  // walking bob
@@ -1669,6 +1815,14 @@ void Scene::drawSquatch(Canvas& c, const Look& L) {
         float curve = L.mouth * hr * 0.06f;
         c.line(fx - mw, my - curve, fx, my + curve, hr * 0.06f, 0x3A1E14);
         c.line(fx, my + curve, fx + mw, my - curve, hr * 0.06f, 0x3A1E14);
+    }
+
+    if (L.hat) {  // a little witch's hat, tipped back a bit
+        const float by = hy - hr * 0.78f, tilt = hr * 0.35f;
+        const Rgb hat = 0x3B2452, band = 0xE37B1C;
+        c.fillTriangle(x - hr * 0.55f, by, x + hr * 0.55f, by, x + tilt, by - hr * 1.25f, hat);
+        c.fillRoundRect(x - hr * 0.52f, by - hr * 0.2f, hr * 1.04f, hr * 0.16f, hr * 0.05f, band);
+        c.fillEllipse(x, by + hr * 0.02f, hr * 0.95f, hr * 0.17f, hat);
     }
 }
 

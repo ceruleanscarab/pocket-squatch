@@ -34,6 +34,7 @@ enum class Cue : uint8_t {
     Photo,
     Warning,     // low battery
     Thunder,
+    Boo,         // the jack-o'-lantern
     Count
 };
 

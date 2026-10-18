@@ -52,7 +52,11 @@ jobs:
         shell: bash
         run: |
           . $IDF_PATH/export.sh
-          idf.py -C firmware build
+          set -o pipefail
+          idf.py -C firmware build 2>&1 | tee lcd4b.log || {
+            grep -E "error:|Error|undefined reference" lcd4b.log | head -20 | while read -r line; do echo "::error::$line"; done
+            exit 1
+          }
 
       - name: Build firmware (1.8" AMOLED board)
         shell: bash

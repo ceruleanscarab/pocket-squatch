@@ -4,14 +4,14 @@ android {
     namespace "com.ceruleanscarab.pocketsquatch"
     compileSdkVersion 34
     // Use the NDK the build machine already has (GitHub's runners set this), else AGP's default.
-    if (System.getenv("ANDROID_NDK_LATEST_HOME")) ndkPath System.getenv("ANDROID_NDK_LATEST_HOME")
+    if (System.getenv("ANDROID_NDK_LATEST_HOME")) ndkPath = System.getenv("ANDROID_NDK_LATEST_HOME")
     defaultConfig {
         applicationId "com.ceruleanscarab.pocketsquatch"
         minSdkVersion 21
         targetSdkVersion 34
         // CI sets these from the run number, so each build installs over the last.
-        versionCode (System.getenv("VERSION_CODE") ?: "1").toInteger()
-        versionName "0.1." + (System.getenv("VERSION_CODE") ?: "0")
+        versionCode = (System.getenv("VERSION_CODE") ?: "1").toInteger()
+        versionName = "0.1." + (System.getenv("VERSION_CODE") ?: "0")
         externalNativeBuild {
             cmake {
                 arguments "-DANDROID_STL=c++_static", "-DSDL_STATIC=OFF", "-DSDL_SHARED=ON"
@@ -35,7 +35,7 @@ android {
     buildTypes {
         release {
             minifyEnabled false
-            signingConfig System.getenv("SQUATCH_KEYSTORE") ? signingConfigs.release : signingConfigs.debug
+            signingConfig = System.getenv("SQUATCH_KEYSTORE") ? signingConfigs.release : signingConfigs.debug
         }
     }
     externalNativeBuild {

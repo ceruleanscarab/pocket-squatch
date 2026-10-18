@@ -15,11 +15,13 @@ menu "Pocket Squatch"
     endchoice
 
     config SQUATCH_WIFI_SSID
-        string "Wi-Fi network (for setting the clock)"
+        string "Wi-Fi network name (for the clock and the weather)"
         default ""
         help
-            Used only to fetch the time at start-up, then Wi-Fi is switched off again.
-            Leave empty to rely on the board's battery-backed clock alone.
+            The network the board joins for a few seconds at a time: at start-up to set
+            the clock, and about once an hour for the weather. Wi-Fi is switched off
+            again in between. Leave empty to rely on the board's battery-backed clock
+            alone (and no weather). The name must match exactly, capitals included.
 
     config SQUATCH_WIFI_PASSWORD
         string "Wi-Fi password"

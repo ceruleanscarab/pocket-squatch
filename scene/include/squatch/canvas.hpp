@@ -18,12 +18,18 @@ enum class Align : uint8_t { Left, Center, Right };
 
 class Canvas {
 public:
-    Canvas(uint16_t* pixels, int width, int height) : px_(pixels), w_(width), h_(height) {}
+    // width and height are the buffer's real size in pixels. With scale 2 or 3 everything is
+    // drawn that many times larger and sharper (a phone's screen), while callers keep drawing
+    // in the same coordinates: width() and height() are the buffer's size divided by scale.
+    Canvas(uint16_t* pixels, int width, int height, int scale = 1)
+        : px_(pixels), w_(width), h_(height), k_(scale < 1 ? 1 : scale) {}
 
-    int width() const { return w_; }
-    int height() const { return h_; }
+    int width() const { return w_ / k_; }
+    int height() const { return h_ / k_; }
+    int scale() const { return k_; }
+    int pixelCount() const { return w_ * h_; }
     uint16_t* pixels() { return px_; }
-    Rgb pixel(int x, int y) const;  // for tests
+    Rgb pixel(int x, int y) const;  // for tests, in drawing coordinates
 
     void clear(Rgb c);
     void verticalGradient(int y0, int y1, Rgb top, Rgb bottom);
@@ -63,7 +69,8 @@ private:
     uint16_t ink(Rgb c) const;  // c, shaded, as RGB565
 
     uint16_t* px_;
-    int w_, h_;
+    int w_, h_;  // real pixels
+    int k_;      // drawing coordinates to real pixels
     Rgb shadeC_ = 0;
     float shadeA_ = 0;
 };

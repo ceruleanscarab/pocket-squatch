@@ -966,6 +966,37 @@ static void testGames() {
     }
 }
 
+static void testSharperScale() {
+    std::printf("drawing at 2x and 3x gives the same picture, just sharper (the phone app)\n");
+    Driver d;
+    std::vector<uint16_t> one(Scene::kSize * Scene::kSize);
+    Canvas c1(one.data(), Scene::kSize, Scene::kSize);
+    d.scene.draw(c1);
+    for (int k = 2; k <= 3; k++) {
+        const int px = Scene::kSize * k;
+        std::vector<uint16_t> big(static_cast<size_t>(px) * px), plain(big.size());
+        Canvas ck(big.data(), px, px, k), cp(plain.data(), px, px, k);
+        CHECK(ck.width() == Scene::kSize && ck.height() == Scene::kSize && ck.scale() == k);
+        d.scene.setSceneryCache(true);
+        d.scene.draw(ck);
+        d.scene.draw(ck);  // from the cache, at this size
+        d.scene.setSceneryCache(false);
+        d.scene.draw(cp);
+        d.scene.setSceneryCache(true);
+        int diff = 0;
+        for (size_t i = 0; i < big.size(); i++) diff += big[i] != plain[i];
+        CHECK(diff == 0);
+        // Flat areas match the 1x picture: sky, grass, the status strip.
+        const int pts[][2] = {{240, 120}, {60, 420}, {240, 20}, {300, 400}};
+        for (auto& p : pts) {
+            Rgb a = c1.pixel(p[0], p[1]), b = ck.pixel(p[0], p[1]);
+            int dr = static_cast<int>((a >> 16) & 255) - static_cast<int>((b >> 16) & 255);
+            int dg = static_cast<int>((a >> 8) & 255) - static_cast<int>((b >> 8) & 255);
+            CHECK(dr * dr + dg * dg < 400);
+        }
+    }
+}
+
 int main() {
     testTap();
     testLongPressThenDrag();
@@ -994,6 +1025,7 @@ int main() {
     testWeather();
     testHalloween();
     testGames();
+    testSharperScale();
 
     std::printf("\n%d checks, %d failed\n", gChecks, gFailures);
     return gFailures ? 1 : 0;

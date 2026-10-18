@@ -1311,9 +1311,13 @@ void Scene::draw(Canvas& c) {
     const int key = ((static_cast<int>(hourOfDay() * 60) * 2 + (s.lightsOn ? 1 : 0)) * 8 + static_cast<int>(weather_.sky)) * 2 +
                     (foodLeftToday() ? 1 : 0);
     if (cacheScenery_ && c.width() == S && c.height() == S) {
-        if (scenery_.size() != static_cast<size_t>(S * S)) scenery_.assign(static_cast<size_t>(S * S), 0);
+        const size_t n = static_cast<size_t>(c.pixelCount());
+        if (scenery_.size() != n) {
+            scenery_.assign(n, 0);
+            sceneryKey_ = -1;
+        }
         if (key != sceneryKey_) {
-            Canvas sc(scenery_.data(), S, S);
+            Canvas sc(scenery_.data(), S * c.scale(), S * c.scale(), c.scale());
             sc.setShade(0x02040C, shade);
             drawScenery(sc);
             sceneryKey_ = key;

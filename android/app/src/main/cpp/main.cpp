@@ -104,6 +104,98 @@ void pretendScan(Sim& sim) {
 Synth gSynth;
 void audioCallback(void*, Uint8* stream, int len) { gSynth.render(reinterpret_cast<int16_t*>(stream), len / 2); }
 
+// Where things go on the phone's screen, in real pixels: the clearing as large as fits in
+// a portrait screen, drawn at 2x or 3x for sharpness, inside a wooden handheld frame.
+struct Layout {
+    int w = 0, h = 0;            // the whole screen
+    int sx = 0, sy = 0, sq = 0;  // the clearing's square
+    int k = 1;                   // the scene's drawing scale
+    int bx = 0, by = 0, bw = 0, bh = 0, titleH = 0;
+
+    void fit(int width, int height) {
+        w = width;
+        h = height;
+        sq = std::min(static_cast<int>(w * 0.9f), static_cast<int>(h * 0.62f));
+        if (w > h) sq = std::min(static_cast<int>(h * 0.8f), static_cast<int>(w * 0.6f));  // landscape, just in case
+        k = std::max(1, std::min(3, (sq + kSize - 1) / kSize));
+        const int m = sq / 20;
+        titleH = w > h ? h / 10 : static_cast<int>(h * 0.14f);
+        bw = sq + 2 * m;
+        bh = sq + 2 * m;
+        bx = (w - bw) / 2;
+        by = w > h ? titleH : std::max(titleH, (h - bh) / 2 - h / 40);  // a little above the middle
+        if (w <= h) titleH = by;
+        sx = bx + m;
+        sy = by + m;
+    }
+    // A screen point to the scene's 480x480; false outside the clearing.
+    bool toScene(float px, float py, int& x, int& y) const {
+        const float lx = (px - sx) * kSize / sq, ly = (py - sy) * kSize / sq;
+        x = std::max(0, std::min(kSize - 1, static_cast<int>(lx)));
+        y = std::max(0, std::min(kSize - 1, static_cast<int>(ly)));
+        return lx >= 0 && ly >= 0 && lx < kSize && ly < kSize;
+    }
+};
+
+// The handheld around the clearing: a forest-night backdrop, a wooden case with a dark
+// bezel, the title above and a row of pines along the bottom. Drawn once per screen size.
+// A smooth vertical gradient straight into the 16-bit pixels, dithered so it doesn't band.
+void ditheredGradient(uint16_t* px, int w, int h, Rgb top, Rgb bottom) {
+    static const uint8_t kBayer[4][4] = {{0, 8, 2, 10}, {12, 4, 14, 6}, {3, 11, 1, 9}, {15, 7, 13, 5}};
+    for (int y = 0; y < h; y++) {
+        const float t = static_cast<float>(y) / std::max(1, h - 1);
+        const float r = ((top >> 16) & 255) + (static_cast<float>((bottom >> 16) & 255) - ((top >> 16) & 255)) * t;
+        const float g = ((top >> 8) & 255) + (static_cast<float>((bottom >> 8) & 255) - ((top >> 8) & 255)) * t;
+        const float b = (top & 255) + (static_cast<float>(bottom & 255) - (top & 255)) * t;
+        for (int x = 0; x < w; x++) {
+            const float d = (kBayer[y & 3][x & 3] + 0.5f) / 16.0f;
+            const int r5 = std::min(31, static_cast<int>(r / 255 * 31 + d));
+            const int g6 = std::min(63, static_cast<int>(g / 255 * 63 + d));
+            const int b5 = std::min(31, static_cast<int>(b / 255 * 31 + d));
+            px[y * w + x] = static_cast<uint16_t>(r5 << 11 | g6 << 5 | b5);
+        }
+    }
+}
+
+void drawFrame(Canvas& c, const Layout& L) {
+    ditheredGradient(c.pixels(), L.w, L.h, 0x1E3A2B, 0x0C1A13);
+    for (int i = 0; i < 40; i++) {  // a few stars
+        const float x = static_cast<float>((i * 977) % L.w), y = static_cast<float>((i * 613) % std::max(1, L.titleH));
+        c.fillCircle(x, y, 1.5f + (i % 3), 0xF3EBD9, 0.35f);
+    }
+    // Pines along the bottom.
+    const float base = static_cast<float>(L.h), unit = L.w / 9.0f;
+    for (int i = -1; i < 11; i++) {
+        const float x = i * unit + (i % 2) * unit * 0.4f, tall = unit * (1.4f + 0.5f * ((i * 7) % 3));
+        c.fillTriangle(x - unit * 0.55f, base, x + unit * 0.55f, base, x, base - tall, i % 2 ? 0x0F2219 : 0x132A1F);
+    }
+    // The case: wood, a lighter edge on top, grain, and the bezel.
+    const float r = L.bw * 0.07f;
+    c.fillRoundRect(L.bx + 6, L.by + 10, L.bw, L.bh, r, 0x000000, 0.35f);  // its shadow
+    c.fillRoundRect(L.bx, L.by, L.bw, L.bh, r, 0x6B4A2F);
+    c.fillRoundRect(L.bx + 4, L.by + 4, L.bw - 8, L.bh * 0.5f, r * 0.9f, 0x7E5836, 0.6f);
+    for (int i = 1; i < 9; i++) {
+        const float y = L.by + L.bh * i / 9.0f;
+        c.line(L.bx + r * 0.6f, y, L.bx + L.bw - r * 0.6f, y + ((i % 3) - 1) * 4.0f, 2, 0x5A3D26, 0.45f);
+    }
+    const float pad = L.sq * 0.012f;
+    c.fillRoundRect(L.sx - pad, L.sy - pad, L.sq + 2 * pad, L.sq + 2 * pad, pad * 2, 0x0B0F0C);
+    // The title, as big as fits.
+    const char* title = "POCKET SQUATCH";
+    int ts = std::max(2, static_cast<int>(L.w * 0.78f) / std::max(1, Canvas::textWidth(title, 1)));
+    ts = std::min(ts, std::max(2, L.titleH / 12));
+    const float ty = (L.titleH - Canvas::textHeight(ts)) / 2.0f;
+    c.text(L.w / 2.0f + ts * 0.5f, ty + ts * 0.5f, title, ts, 0x000000, Align::Center, 0.5f);
+    c.text(L.w / 2.0f, ty, title, ts, 0xF2C14E, Align::Center);
+    // Footprints walking off under the case.
+    const float fy = L.by + L.bh + (L.h - L.by - L.bh) * 0.35f, step = L.w / 7.0f, fs = L.w / 90.0f;
+    for (int i = 0; i < 5; i++) {
+        const float x = step * (1.2f + i), y = fy + (i % 2 ? -fs * 2.5f : fs * 2.5f);
+        c.fillEllipse(x, y, fs * 1.6f, fs * 2.4f, 0x3B2A1E, 0.8f);
+        for (int t = -1; t <= 1; t++) c.fillCircle(x + t * fs * 1.1f, y - fs * 3.2f, fs * 0.55f, 0x3B2A1E, 0.8f);
+    }
+}
+
 // SDL's finger ids are long numbers; the scene wants finger 0 and 1.
 struct Fingers {
     SDL_FingerID ids[2] = {0, 0};
@@ -167,10 +259,29 @@ int main(int, char**) {
         SDL_Log("window: %s", SDL_GetError());
         return 1;
     }
-    SDL_RenderSetLogicalSize(renderer, kSize, kSize);
-    SDL_Texture* tex = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGB565, SDL_TEXTUREACCESS_STREAMING, kSize, kSize);
-    std::vector<uint16_t> fb(kSize * kSize);
-    Canvas canvas(fb.data(), kSize, kSize);
+    // The layout, the frame and the scene's texture, rebuilt whenever the screen size changes.
+    Layout L;
+    SDL_Texture* tex = nullptr;
+    SDL_Texture* frameTex = nullptr;
+    std::vector<uint16_t> fb, frame;
+    auto relayout = [&]() {
+        int w = 0, h = 0;
+        SDL_GetRendererOutputSize(renderer, &w, &h);
+        if (w == L.w && h == L.h && tex) return;
+        L.fit(w, h);
+        if (tex) SDL_DestroyTexture(tex);
+        if (frameTex) SDL_DestroyTexture(frameTex);
+        const int px = kSize * L.k;
+        tex = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGB565, SDL_TEXTUREACCESS_STREAMING, px, px);
+        fb.assign(static_cast<size_t>(px) * px, 0);
+        frame.assign(static_cast<size_t>(w) * h, 0);
+        Canvas fc(frame.data(), w, h);
+        drawFrame(fc, L);
+        frameTex = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGB565, SDL_TEXTUREACCESS_STATIC, w, h);
+        SDL_UpdateTexture(frameTex, nullptr, frame.data(), w * 2);
+        SDL_Log("screen %dx%d: the clearing at %d px, drawn at %dx", w, h, L.sq, L.k);
+    };
+    relayout();
 
     SDL_AudioDeviceID audio = 0;
     if (SDL_InitSubSystem(SDL_INIT_AUDIO) == 0) {
@@ -194,15 +305,14 @@ int main(int, char**) {
         writeSettings(settingsPath, scene.settings());
         lastSave = SDL_GetTicks();
     };
-    auto touch = [&](TouchPhase ph, int slot, float nx, float ny) {
-        int w = 0, h = 0;
-        SDL_GetWindowSize(window, &w, &h);
-        float lx = 0, ly = 0;
-        SDL_RenderWindowToLogical(renderer, static_cast<int>(nx * w), static_cast<int>(ny * h), &lx, &ly);
-        int x = std::max(0, std::min(kSize - 1, static_cast<int>(lx)));
-        int y = std::max(0, std::min(kSize - 1, static_cast<int>(ly)));
+    // A finger in screen terms to the scene's; a press outside the clearing isn't a touch.
+    auto touch = [&](TouchPhase ph, int slot, float nx, float ny) -> bool {
+        int x = 0, y = 0;
+        const bool inside = L.toScene(nx * L.w, ny * L.h, x, y);
+        if (ph == TouchPhase::Down && !inside) return false;
         scene.touch(TouchEvent{ph, static_cast<uint8_t>(slot), static_cast<int16_t>(x), static_cast<int16_t>(y),
                                SDL_GetTicks()});
+        return true;
     };
 
     while (running) {
@@ -224,7 +334,8 @@ int main(int, char**) {
                     break;
                 case SDL_FINGERDOWN: {
                     int slot = fingers.slotFor(e.tfinger.fingerId, true);
-                    if (slot >= 0) touch(TouchPhase::Down, slot, e.tfinger.x, e.tfinger.y);
+                    if (slot >= 0 && !touch(TouchPhase::Down, slot, e.tfinger.x, e.tfinger.y))
+                        fingers.down[slot] = false;  // on the frame, not the clearing
                     break;
                 }
                 case SDL_FINGERMOTION: {
@@ -282,20 +393,25 @@ int main(int, char**) {
         if (scene.takeSettingsChanged()) writeSettings(settingsPath, scene.settings());
         if (scene.takeSaveRequest() || ms - lastSave >= kAutosaveMs) saveAll();
 
+        relayout();
+        Canvas canvas(fb.data(), kSize * L.k, kSize * L.k, L.k);
         if (scene.screenOff()) std::fill(fb.begin(), fb.end(), 0);
         else scene.draw(canvas);
         const Uint8 level = static_cast<Uint8>(255 * scene.brightnessPercent() / 100);
         SDL_SetTextureColorMod(tex, level, level, level);
-        SDL_UpdateTexture(tex, nullptr, fb.data(), kSize * 2);
+        SDL_UpdateTexture(tex, nullptr, fb.data(), kSize * L.k * 2);
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);
-        SDL_RenderCopy(renderer, tex, nullptr, nullptr);
+        SDL_RenderCopy(renderer, frameTex, nullptr, nullptr);
+        const SDL_Rect dst{L.sx, L.sy, L.sq, L.sq};
+        SDL_RenderCopy(renderer, tex, nullptr, &dst);
         SDL_RenderPresent(renderer);  // vsync paces the loop
     }
 
     saveAll();
     if (audio) SDL_CloseAudioDevice(audio);
     SDL_DestroyTexture(tex);
+    SDL_DestroyTexture(frameTex);
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
     SDL_Quit();

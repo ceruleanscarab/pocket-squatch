@@ -147,11 +147,13 @@ Rgb mix(Rgb a, Rgb b, float t) {
 
 uint16_t Canvas::ink(Rgb c) const { return to565(shadeA_ > 0 ? mix(c, shadeC_, shadeA_) : c); }
 
-Rgb Canvas::pixel(int x, int y) const { return from565(px_[y * w_ + x]); }
+Rgb Canvas::pixel(int x, int y) const { return from565(px_[y * k_ * w_ + x * k_]); }
 
 void Canvas::clear(Rgb c) { std::fill(px_, px_ + w_ * h_, ink(c)); }
 
 void Canvas::verticalGradient(int y0, int y1, Rgb top, Rgb bottom) {
+    y0 *= k_;
+    y1 *= k_;
     y0 = std::max(y0, 0);
     y1 = std::min(y1, h_);
     for (int y = y0; y < y1; y++) {
@@ -234,6 +236,7 @@ void Canvas::fillShape(float x0, float y0, float x1, float y1, Rgb c, float a, D
 void Canvas::fillRect(float x, float y, float w, float h, Rgb c, float a) { fillRoundRect(x, y, w, h, 0, c, a); }
 
 void Canvas::fillRoundRect(float x, float y, float w, float h, float r, Rgb c, float a) {
+    x *= k_, y *= k_, w *= k_, h *= k_, r *= k_;
     float hx = w / 2, hy = h / 2, cx = x + hx, cy = y + hy;
     r = std::min(r, std::min(hx, hy));
     fillShape(x, y, x + w, y + h, c, a, [=](float px, float py) {
@@ -244,11 +247,13 @@ void Canvas::fillRoundRect(float x, float y, float w, float h, float r, Rgb c, f
 }
 
 void Canvas::fillCircle(float cx, float cy, float r, Rgb c, float a) {
+    cx *= k_, cy *= k_, r *= k_;
     fillShape(cx - r, cy - r, cx + r, cy + r, c, a,
               [=](float px, float py) { return length(px - cx, py - cy) - r; });
 }
 
 void Canvas::fillEllipse(float cx, float cy, float rx, float ry, Rgb c, float a) {
+    cx *= k_, cy *= k_, rx *= k_, ry *= k_;
     if (rx <= 0 || ry <= 0) return;
     float inner = -std::min(rx, ry);
     fillShape(cx - rx, cy - ry, cx + rx, cy + ry, c, a, [=](float px, float py) {
@@ -262,6 +267,7 @@ void Canvas::fillEllipse(float cx, float cy, float rx, float ry, Rgb c, float a)
 }
 
 void Canvas::ring(float cx, float cy, float r, float thickness, Rgb c, float a) {
+    cx *= k_, cy *= k_, r *= k_, thickness *= k_;
     float o = r + thickness / 2;
     fillShape(cx - o, cy - o, cx + o, cy + o, c, a,
               [=](float px, float py) { return std::fabs(length(px - cx, py - cy) - r) - thickness / 2; },
@@ -269,6 +275,7 @@ void Canvas::ring(float cx, float cy, float r, float thickness, Rgb c, float a) 
 }
 
 void Canvas::glow(float cx, float cy, float r, Rgb c, float a) {
+    cx *= k_, cy *= k_, r *= k_;
     const int a256 = alpha256(a);
     if (a256 <= 0 || r <= 0) return;
     const uint16_t c565 = ink(c);
@@ -291,6 +298,7 @@ void Canvas::glow(float cx, float cy, float r, Rgb c, float a) {
 }
 
 void Canvas::fillTriangle(float x0, float y0, float x1, float y1, float x2, float y2, Rgb c, float a) {
+    x0 *= k_, y0 *= k_, x1 *= k_, y1 *= k_, x2 *= k_, y2 *= k_;
     float area = (x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0);
     if (std::fabs(area) < 1e-3f) return;
     if (area < 0) {  // make the winding consistent so "outside" is always positive
@@ -316,6 +324,7 @@ void Canvas::fillTriangle(float x0, float y0, float x1, float y1, float x2, floa
 }
 
 void Canvas::line(float x0, float y0, float x1, float y1, float width, Rgb c, float a) {
+    x0 *= k_, y0 *= k_, x1 *= k_, y1 *= k_, width *= k_;
     float hw = width / 2;
     float dx = x1 - x0, dy = y1 - y0, len2 = dx * dx + dy * dy;
     fillShape(std::min(x0, x1) - hw, std::min(y0, y1) - hw, std::max(x0, x1) + hw, std::max(y0, y1) + hw, c, a,
@@ -335,26 +344,27 @@ float Canvas::text(float x, float y, const char* s, int scale, Rgb c, Align alig
     float w = static_cast<float>(textWidth(s, scale));
     if (align == Align::Center) x -= w / 2;
     if (align == Align::Right) x -= w;
-    x = std::round(x);
-    y = std::round(y);
+    x = std::round(x * k_);
+    y = std::round(y * k_);
+    const int dot = scale * k_;
     // Whole-pixel squares need no anti-aliasing: fill each dot's rows directly.
     const uint16_t c565 = ink(c);
     const int a256 = alpha256(a);
-    for (; s && *s; s++, x += 6 * scale) {
+    for (; s && *s; s++, x += 6 * dot) {
         const char* rows = glyphRows(*s);
         if (!rows || a256 <= 0) continue;
         for (int r = 0; r < 7; r++) {
             for (int col = 0; col < 5; col++) {
                 if (rows[r * 5 + col] != '#') continue;
-                int px0 = static_cast<int>(x) + col * scale, py0 = static_cast<int>(y) + r * scale;
-                int px1 = std::min(w_, px0 + scale), py1 = std::min(h_, py0 + scale);
+                int px0 = static_cast<int>(x) + col * dot, py0 = static_cast<int>(y) + r * dot;
+                int px1 = std::min(w_, px0 + dot), py1 = std::min(h_, py0 + dot);
                 px0 = std::max(0, px0);
                 for (int py = std::max(0, py0); py < py1; py++)
                     if (px1 > px0) blendRun(px_ + py * w_ + px0, px1 - px0, c565, a256);
             }
         }
     }
-    return x;
+    return x / k_;
 }
 
 }  // namespace squatch

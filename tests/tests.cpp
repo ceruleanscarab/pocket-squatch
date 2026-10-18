@@ -42,10 +42,10 @@ static bool sameState(const State& a, const State& b) {
            a.careMistakes == b.careMistakes && a.pendingSecs == b.pendingSecs;
 }
 
-static void testEggHatchesAfterADay() {
-    std::printf("egg hatches after one day\n");
+static void testEggHatches() {
+    std::printf("egg hatches when the egg stage ends (an hour)\n");
     Sim sim = fresh();
-    sim.tick(kDay - 60);
+    sim.tick(sim.tuning().eggEnd - 60);
     CHECK(sim.state().stage == Stage::Egg);
     sim.tick(60);
     CHECK(sim.state().stage == Stage::Baby);
@@ -398,7 +398,7 @@ static void testForageRefusals() {
 }
 
 int main() {
-    testEggHatchesAfterADay();
+    testEggHatches();
     testCatchUpMatchesRealTime();
     testSaveRoundTrip();
     testRunsAwayAndComesBack();

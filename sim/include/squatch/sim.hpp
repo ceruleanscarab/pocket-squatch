@@ -62,7 +62,7 @@ struct Event {
 // can try alternatives without touching the logic.
 struct Tuning {
     // stage boundaries, in seconds of age
-    int64_t eggEnd = 1 * 86400;
+    int64_t eggEnd = 3600;  // an hour: long enough to wonder about it, short enough to see it hatch
     int64_t babyEnd = 3 * 86400;
     int64_t childEnd = 6 * 86400;
     int64_t teenEnd = 10 * 86400;

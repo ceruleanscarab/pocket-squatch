@@ -11,6 +11,8 @@ namespace {
 const char* TAG = "storage";
 const char* kNamespace = "squatch";
 const char* kKey = "pet";
+const char* kSettingsKey = "settings";
+constexpr uint8_t kSettingsVersion = 1;
 }  // namespace
 
 void init() {
@@ -42,6 +44,28 @@ void savePet(const squatch::State& s) {
     nvs_handle_t h;
     if (nvs_open(kNamespace, NVS_READWRITE, &h) != ESP_OK) return;
     if (nvs_set_blob(h, kKey, buf, len) != ESP_OK || nvs_commit(h) != ESP_OK) ESP_LOGW(TAG, "save failed");
+    nvs_close(h);
+}
+
+bool loadSettings(squatch::Scene::Settings& out) {
+    nvs_handle_t h;
+    if (nvs_open(kNamespace, NVS_READONLY, &h) != ESP_OK) return false;
+    uint8_t b[3] = {};
+    size_t len = sizeof b;
+    esp_err_t err = nvs_get_blob(h, kSettingsKey, b, &len);
+    nvs_close(h);
+    if (err != ESP_OK || len != sizeof b || b[0] != kSettingsVersion) return false;
+    out.brightness = b[1];
+    out.timeout = b[2];
+    return true;
+}
+
+void saveSettings(const squatch::Scene::Settings& s) {
+    const uint8_t b[3] = {kSettingsVersion, s.brightness, s.timeout};
+    nvs_handle_t h;
+    if (nvs_open(kNamespace, NVS_READWRITE, &h) != ESP_OK) return;
+    if (nvs_set_blob(h, kSettingsKey, b, sizeof b) != ESP_OK || nvs_commit(h) != ESP_OK)
+        ESP_LOGW(TAG, "settings not saved");
     nvs_close(h);
 }
 

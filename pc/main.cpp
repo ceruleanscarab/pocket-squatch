@@ -7,6 +7,9 @@
 //   squatch-pc --shot FILE.bmp   draw one frame to a BMP and exit, without a window
 //   squatch-pc --battery 80      show a pretend battery at 80% (add c for charging: 80c)
 //
+// Settings (brightness, screen timeout) are kept next to the save, in FILE.settings.
+// Brightness dims the window, and when the screen times out it goes black until a click.
+//
 // Mouse: the left button is a finger. A right click is a two-finger tap (scold).
 // The trail map's Wi-Fi scan is pretend on the PC: a few made-up networks with signals
 // that change from scan to scan.
@@ -73,6 +76,26 @@ void writeSave(const char* path, const State& s) {
     if (!ok) return;
     std::remove(path);  // rename won't replace an existing file on Windows
     std::rename(tmp.c_str(), path);
+}
+
+bool readSettings(const std::string& path, Scene::Settings& out) {
+    std::FILE* f = std::fopen(path.c_str(), "r");
+    if (!f) return false;
+    int b = 0, t = 0;
+    bool ok = std::fscanf(f, "brightness %d timeout %d", &b, &t) == 2;
+    std::fclose(f);
+    if (ok) {
+        out.brightness = static_cast<uint8_t>(std::max(0, b));
+        out.timeout = static_cast<uint8_t>(std::max(0, t));
+    }
+    return ok;
+}
+
+void writeSettings(const std::string& path, const Scene::Settings& s) {
+    std::FILE* f = std::fopen(path.c_str(), "w");
+    if (!f) return;
+    std::fprintf(f, "brightness %d timeout %d\n", s.brightness, s.timeout);
+    std::fclose(f);
 }
 
 bool saveBmp(std::vector<uint16_t>& fb, const char* path) {
@@ -147,6 +170,9 @@ int main(int argc, char** argv) {
     std::srand(static_cast<unsigned>(now));
     Scene scene(sim);
     scene.setBattery(battery, charging);
+    const std::string settingsPath = std::string(savePath) + ".settings";
+    Scene::Settings settings;
+    if (readSettings(settingsPath, settings)) scene.setSettings(settings);
     std::vector<uint16_t> fb(kSize * kSize);
     Canvas canvas(fb.data(), kSize, kSize);
 
@@ -247,7 +273,12 @@ int main(int argc, char** argv) {
             lastSave = ms;
         }
 
-        scene.draw(canvas);
+        if (scene.takeSettingsChanged()) writeSettings(settingsPath, scene.settings());
+
+        if (scene.screenOff()) std::fill(fb.begin(), fb.end(), 0);
+        else scene.draw(canvas);
+        const Uint8 level = static_cast<Uint8>(255 * scene.brightnessPercent() / 100);
+        SDL_SetTextureColorMod(tex, level, level, level);  // a stand-in for the panel's brightness
         SDL_UpdateTexture(tex, nullptr, fb.data(), kSize * 2);
         SDL_RenderClear(renderer);
         SDL_RenderCopy(renderer, tex, nullptr, nullptr);

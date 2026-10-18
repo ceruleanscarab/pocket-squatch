@@ -360,6 +360,11 @@ static void testTouchTargets() {
     for (int i = 0; i < d.scene.slotCount(); i++) CHECK(big(d.scene.slotArea(i)));
     for (int i = 0; i < State::kMaxTrails; i++) CHECK(big(d.scene.trailRowArea(i)));
     CHECK(big(d.scene.rescanArea()));
+    for (int row = 0; row < 2; row++) {
+        CHECK(big(d.scene.settingButtonArea(row, false)));
+        CHECK(big(d.scene.settingButtonArea(row, true)));
+    }
+    CHECK(big(d.scene.settingsDoneArea()));
     d.sim.mutableState().trust = 10;  // hiding behind the tree
     CHECK(big(d.scene.squatchArea()));
 }
@@ -516,6 +521,69 @@ static void testBattery() {
     CHECK(!d.scene.toast() || std::strstr(d.scene.toast(), "BATTERY LOW") == nullptr);  // only once
 }
 
+static void testSettings() {
+    std::printf("settings change brightness and the screen timeout; a tap on a dark screen only wakes it\n");
+    Driver d;
+    CHECK(d.scene.brightnessPercent() == 80);
+    CHECK(d.scene.screenTimeoutMs() == 60000);
+    d.openTray();
+    d.pressSlot(Scene::Slot::More);
+    d.pressSlot(Scene::Slot::Settings);
+    CHECK(d.scene.overlay() == Scene::Overlay::Settings);
+    std::vector<uint16_t> fb(Scene::kSize * Scene::kSize);
+    Canvas c(fb.data(), Scene::kSize, Scene::kSize);
+    d.scene.draw(c);
+
+    d.tap(d.scene.settingButtonArea(0, true));
+    CHECK(d.scene.brightnessPercent() == 100);
+    CHECK(d.scene.takeSettingsChanged());
+    d.tap(d.scene.settingButtonArea(0, true));  // already at the top
+    CHECK(d.scene.brightnessPercent() == 100);
+    CHECK(!d.scene.takeSettingsChanged());
+    for (int i = 0; i < 9; i++) d.tap(d.scene.settingButtonArea(0, false));
+    CHECK(d.scene.brightnessPercent() == 20);  // never all the way dark
+    d.tap(d.scene.settingButtonArea(1, false));
+    CHECK(d.scene.screenTimeoutMs() == 30000);
+    CHECK(d.scene.overlay() == Scene::Overlay::Settings);  // still open after all that
+    d.tap(d.scene.settingsDoneArea());
+    CHECK(d.scene.overlay() == Scene::Overlay::None);
+
+    // 30 seconds without a touch: dark.
+    for (int i = 0; i < 29; i++) d.step(1000);
+    CHECK(!d.scene.screenOff());
+    d.step(1000);
+    d.step(1000);
+    CHECK(d.scene.screenOff());
+    d.tap(10, 10);  // the strip: would open the stats page if the screen were on
+    CHECK(!d.scene.screenOff());
+    CHECK(d.scene.overlay() == Scene::Overlay::None);
+    d.tap(10, 10);
+    CHECK(d.scene.overlay() == Scene::Overlay::Stats);  // the next tap works as usual
+    d.tap(10, 10);
+
+    // A finger held still doesn't let it go dark.
+    d.send(TouchPhase::Down, 0, 240, 300);
+    for (int i = 0; i < 40; i++) d.step(1000);
+    CHECK(!d.scene.screenOff());
+    d.send(TouchPhase::Up, 0, 240, 300);
+    for (int i = 0; i < 31; i++) d.step(1000);
+    CHECK(d.scene.screenOff());
+
+    // Low battery wakes it.
+    d.scene.setBattery(10, false);
+    CHECK(!d.scene.screenOff());
+
+    // Never: stays on; settings load clamped.
+    Scene::Settings st;
+    st.brightness = 200;
+    st.timeout = Scene::kTimeoutSteps - 1;
+    d.scene.setSettings(st);
+    CHECK(d.scene.brightnessPercent() == 100);
+    CHECK(d.scene.screenTimeoutMs() == 0);
+    for (int i = 0; i < 4000; i++) d.step(1000);
+    CHECK(!d.scene.screenOff());
+}
+
 int main() {
     testTap();
     testLongPressThenDrag();
@@ -537,6 +605,7 @@ int main() {
     testTrailMap();
     testDrawsEveryCoat();
     testBattery();
+    testSettings();
 
     std::printf("\n%d checks, %d failed\n", gChecks, gFailures);
     return gFailures ? 1 : 0;

@@ -56,7 +56,9 @@ Wiki: https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-4B
 5. Mini-games (Hide and Seek, Berry Catch, Blurry Photo) and the photo gallery.
 6. Sound (ES8311 over I2S), battery level and sleep via the AXP2101, then the 3D-printed stump case.
 - DNA and rarity, and the Wi-Fi trail map with forage trips — done (firmware scan not yet run on hardware).
-- Battery level via the AXP2101 (`firmware/main/power.cpp`, `Scene::setBattery`) — done; sleep still to come.
+- Battery level via the AXP2101 (`firmware/main/power.cpp`, `Scene::setBattery`) — done.
+- Settings page (brightness, screen timeout; `Scene::Settings`, kept outside the pet's save) and screen-off — done;
+  the CPU still runs while the screen is off, so light sleep is still to come.
 - The Waveshare ESP32-S3-Touch-AMOLED-1.8 is a second board target (`board_amoled18.c`, menuconfig Board); it ran
   first on 2026-10-17 at 7-9 fps, so drawing speed is worth improving.
 - Later: Bluetooth visitors between two boards.

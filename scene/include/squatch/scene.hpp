@@ -30,14 +30,25 @@ public:
         int cy() const { return y + h / 2; }
     };
 
-    enum class Overlay : uint8_t { None, Stats, Gallery, Trails };
+    enum class Overlay : uint8_t { None, Stats, Gallery, Trails, Settings };
 
     // Things you can pick up from the tray and give to Squatch.
     enum class Item : uint8_t { None, Berries, Fish, Roots, Brush, Poultice, Pinecone };
 
     // Tray buttons. The main page holds six; Feed opens the food page and More opens
-    // Photos and Trails.
-    enum class Slot : uint8_t { Feed, Clean, Medicine, Play, Light, More, Back, Berries, Fish, Roots, Photos, Trails };
+    // Photos, Trails and Settings.
+    enum class Slot : uint8_t {
+        Feed, Clean, Medicine, Play, Light, More, Back, Berries, Fish, Roots, Photos, Trails, Settings
+    };
+
+    // The device's settings. They belong to the toy, not the pet, so they aren't in the
+    // pet's save: the front end keeps them (flash on the board, a file on the PC).
+    struct Settings {
+        uint8_t brightness = 3;  // a step of brightnessPercent(): 20, 40, 60, 80, 100%
+        uint8_t timeout = 2;     // a step of screenTimeoutMs(): 15 s, 30 s, 1, 2, 5, 10 min, never
+    };
+    static constexpr int kBrightnessSteps = 5;
+    static constexpr int kTimeoutSteps = 7;
 
     explicit Scene(Sim& sim);
 
@@ -55,6 +66,22 @@ public:
     // means there's no battery to show (the PC, or none connected).
     void setBattery(int percent, bool charging);
     int batteryPercent() const { return batteryPct_; }
+
+    // ---- settings and the screen timeout
+    void setSettings(const Settings& s);  // e.g. as loaded at start-up; out-of-range steps are clamped
+    const Settings& settings() const { return settings_; }
+    bool takeSettingsChanged();           // true once after the player changes one
+    int brightnessPercent() const;
+    uint32_t screenTimeoutMs() const;     // 0: never
+    // After the timeout with no touch the screen should go dark; the front end turns the
+    // panel off and stops drawing. The touch that wakes it does nothing else, so a tap on
+    // a dark screen can't feed or scold by accident. News (hatching, a knock at the door,
+    // getting sick, low battery...) wakes it too.
+    bool screenOff() const { return screenOff_; }
+    void wake();
+    // The settings page: row 0 brightness, row 1 screen timeout, each with - and +.
+    Rect settingButtonArea(int row, bool plus) const;
+    Rect settingsDoneArea() const;
 
     // ---- layout queries, for the tests and the front end
     Rect squatchArea() const;  // where tapping or dropping reaches the pet (or egg)
@@ -113,6 +140,7 @@ private:
     void doLeaveFood();
     void doForage(int trail);
     void openTrails();
+    void changeSetting(int row, int by);
     void requestScan();
     void note(const char* text);
     void tapPet();
@@ -165,6 +193,7 @@ private:
     void drawStats(Canvas& c);
     void drawGallery(Canvas& c);
     void drawTrails(Canvas& c);
+    void drawSettings(Canvas& c);
     void drawForagingBanner(Canvas& c);
     void drawLandmarkIcon(Canvas& c, LandmarkKind k, float x, float y, float size);
 
@@ -195,6 +224,12 @@ private:
     uint32_t scanSince_ = 0, lastScanMs_ = 0;
     bool everScanned_ = false;
     char trailNote_[40] = {};
+
+    Settings settings_;
+    bool settingsChanged_ = false;
+    bool screenOff_ = false, waking_ = false;
+    uint32_t lastInputMs_ = 0;
+    uint8_t fingers_ = 0;  // a bit for each finger down
 
     int batteryPct_ = -1;
     bool charging_ = false;

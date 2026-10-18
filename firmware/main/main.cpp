@@ -31,6 +31,8 @@ const char* TAG = "squatch";
 constexpr int64_t kAutosaveSecs = 5 * 60;  // plus right after every care action
 constexpr int kMaxFingers = 2;
 constexpr uint32_t kBatteryEveryMs = 2000;
+constexpr uint32_t kSettingsSaveAfterMs = 3000;  // after the last change, so each tap isn't a flash write
+constexpr uint32_t kDarkPollMs = 50;             // how often touch is checked while the screen is off
 
 // Charge currents for the battery each board is usually fitted with. The AXP2101's own
 // default is over an amp, far too strong for these small cells.
@@ -118,7 +120,7 @@ void showMessage(const char* text) {
     c.clear(0x0B1026);
     c.text(BOARD_WIDTH / 2, BOARD_HEIGHT / 2 - 7, text, 2, 0xF3EBD9, Align::Center);
     board_present();
-    board_backlight(100);
+    board_backlight(gScene.brightnessPercent());
 }
 
 // Load the pet and catch up on the time the board was off, or lay a first egg.
@@ -163,6 +165,8 @@ void gameLoop(void*) {
     uint32_t frames = 0, drawMs = 0;
     uint32_t lastBattery = 0;
     power::Battery battery{false, -1, false, false};
+    int lit = -1;                // the panel's brightness now, in percent
+    uint32_t settingsDirty = 0;  // when the settings last changed and weren't saved yet
 
     for (;;) {
         const uint32_t ms = millis();
@@ -195,6 +199,25 @@ void gameLoop(void*) {
             storage::savePet(gSim.state());
             lastSave = wall;
         }
+        if (gScene.takeSettingsChanged()) settingsDirty = ms ? ms : 1;
+        if (settingsDirty && ms - settingsDirty >= kSettingsSaveAfterMs) {
+            storage::saveSettings(gScene.settings());
+            settingsDirty = 0;
+        }
+
+        // Screen off: dark panel, no drawing, and touch checked a little less often.
+        // The pet's time, the battery and saves all carry on above.
+        if (gScene.screenOff()) {
+            if (lit != 0) {
+                board_backlight(0);
+                lit = 0;
+                ESP_LOGI(TAG, "screen off");
+            }
+            vTaskDelay(pdMS_TO_TICKS(kDarkPollMs));
+            statsFrom = millis();
+            frames = drawMs = 0;
+            continue;
+        }
 
         const uint32_t t0 = millis();
         Canvas canvas(board_draw_buffer(), BOARD_WIDTH, BOARD_HEIGHT);
@@ -202,7 +225,12 @@ void gameLoop(void*) {
         drawMs += millis() - t0;
         board_present();
 
-        if (++frames == 1) board_backlight(100);  // light up once there's a picture
+        ++frames;
+        if (lit != gScene.brightnessPercent()) {  // after a fresh picture, so waking never shows a stale one
+            if (lit == 0) ESP_LOGI(TAG, "screen on");
+            lit = gScene.brightnessPercent();
+            board_backlight(lit);
+        }
         if (ms - statsFrom >= 10000) {
             if (battery.present)
                 ESP_LOGI(TAG, "%.1f fps, %lu ms per draw, battery %d%%%s", frames * 1000.0f / (ms - statsFrom),
@@ -221,6 +249,8 @@ void gameLoop(void*) {
 
 extern "C" void app_main(void) {
     storage::init();
+    Scene::Settings settings;
+    if (storage::loadSettings(settings)) gScene.setSettings(settings);
     ESP_ERROR_CHECK(board_init());
     gHavePower = power::init(board_i2c(), kChargeMa, kTrickleMa);
     radio::begin();

@@ -40,7 +40,16 @@ constexpr Scene::Slot kMainSlots[] = {Scene::Slot::Feed, Scene::Slot::Clean, Sce
                                       Scene::Slot::Play, Scene::Slot::Light, Scene::Slot::More};
 constexpr Scene::Slot kFoodSlots[] = {Scene::Slot::Back, Scene::Slot::Berries, Scene::Slot::Fish,
                                       Scene::Slot::Roots};
-constexpr Scene::Slot kMoreSlots[] = {Scene::Slot::Back, Scene::Slot::Photos, Scene::Slot::Trails};
+constexpr Scene::Slot kMoreSlots[] = {Scene::Slot::Back, Scene::Slot::Photos, Scene::Slot::Trails,
+                                      Scene::Slot::Settings};
+
+// ---- the settings page
+constexpr int kSetX = 24, kSetY = 40, kSetW = 432, kSetH = 400;
+constexpr int kSetRowY[] = {124, 244};  // the - and + buttons of each row
+constexpr int kBrightness[Scene::kBrightnessSteps] = {20, 40, 60, 80, 100};
+constexpr uint32_t kTimeoutSecs[Scene::kTimeoutSteps] = {15, 30, 60, 120, 300, 600, 0};
+constexpr const char* kTimeoutNames[Scene::kTimeoutSteps] = {"15 SEC", "30 SEC", "1 MIN", "2 MIN",
+                                                             "5 MIN",  "10 MIN", "NEVER"};
 
 // ---- the trail map overlay
 constexpr int kMapX = 24, kMapY = 24, kMapW = 432, kMapH = 448;
@@ -140,9 +149,47 @@ void Scene::setBattery(int percent, bool charging) {
     batteryPct_ = percent < 0 ? -1 : std::min(percent, 100);
     charging_ = charging && batteryPct_ >= 0;
     bool low = batteryPct_ >= 0 && batteryPct_ <= 15 && !charging_;
-    if (low && !warnedLowBattery_) say("BATTERY LOW: PLUG ME IN", true);
+    if (low && !warnedLowBattery_) {
+        say("BATTERY LOW: PLUG ME IN", true);
+        wake();
+    }
     warnedLowBattery_ = low || (warnedLowBattery_ && batteryPct_ >= 0 && batteryPct_ < 25 && !charging_);
 }
+
+void Scene::setSettings(const Settings& s) {
+    settings_.brightness = std::min<uint8_t>(s.brightness, kBrightnessSteps - 1);
+    settings_.timeout = std::min<uint8_t>(s.timeout, kTimeoutSteps - 1);
+}
+
+bool Scene::takeSettingsChanged() {
+    bool r = settingsChanged_;
+    settingsChanged_ = false;
+    return r;
+}
+
+int Scene::brightnessPercent() const { return kBrightness[settings_.brightness]; }
+
+uint32_t Scene::screenTimeoutMs() const { return kTimeoutSecs[settings_.timeout] * 1000; }
+
+void Scene::wake() {
+    screenOff_ = false;
+    lastInputMs_ = now_;
+}
+
+void Scene::changeSetting(int row, int by) {
+    uint8_t& v = row == 0 ? settings_.brightness : settings_.timeout;
+    const int top = (row == 0 ? kBrightnessSteps : kTimeoutSteps) - 1;
+    int next = std::max(0, std::min(top, v + by));
+    if (next == v) return;
+    v = static_cast<uint8_t>(next);
+    settingsChanged_ = true;
+}
+
+Scene::Rect Scene::settingButtonArea(int row, bool plus) const {
+    return {plus ? kSetX + kSetW - 24 - 96 : kSetX + 24, kSetRowY[row], 96, 72};
+}
+
+Scene::Rect Scene::settingsDoneArea() const { return {S / 2 - 120, kSetY + kSetH - 84, 240, 72}; }
 
 bool Scene::takeScanRequest() {
     bool r = scanRequested_;
@@ -153,6 +200,15 @@ bool Scene::takeScanRequest() {
 // ================================================================ input
 
 void Scene::touch(const TouchEvent& e) {
+    lastInputMs_ = e.ms;
+    const uint8_t bit = static_cast<uint8_t>(1u << (e.id & 7));
+    if (e.phase == TouchPhase::Down) fingers_ |= bit;
+    else if (e.phase == TouchPhase::Up) fingers_ &= static_cast<uint8_t>(~bit);
+    if (screenOff_ || waking_) {  // this touch only wakes the screen
+        screenOff_ = false;
+        waking_ = fingers_ != 0;
+        return;
+    }
     gestures_.touch(e);
     Gesture g;
     while (gestures_.poll(g)) handle(g);
@@ -173,6 +229,20 @@ void Scene::handle(const Gesture& g) {
         }
         Rect panel{kMapX, kMapY, kMapW, kMapH};
         if (!panel.contains(g.x, g.y) || g.y < kRowY) overlay_ = Overlay::None;  // outside, or the title
+        return;
+    }
+    if (overlay_ == Overlay::Settings) {
+        if (g.type != GestureType::Tap) return;
+        for (int row = 0; row < 2; row++) {
+            for (int plus = 0; plus < 2; plus++) {
+                if (settingButtonArea(row, plus).contains(g.x, g.y)) {
+                    changeSetting(row, plus ? 1 : -1);
+                    return;
+                }
+            }
+        }
+        Rect panel{kSetX, kSetY, kSetW, kSetH};
+        if (settingsDoneArea().contains(g.x, g.y) || !panel.contains(g.x, g.y)) overlay_ = Overlay::None;
         return;
     }
     if (overlay_ != Overlay::None) {
@@ -250,6 +320,7 @@ void Scene::pressSlot(Slot s) {
             saveRequested_ = true;
             break;
         case Slot::Photos: overlay_ = Overlay::Gallery; break;
+        case Slot::Settings: overlay_ = Overlay::Settings; break;
         default: {
             Item it = itemFor(s);
             held_ = (held_ == it) ? Item::None : it;  // tap again to put it back
@@ -574,6 +645,7 @@ void Scene::tapPet() {
 
 void Scene::update(uint32_t nowMs) {
     uint32_t dtMs = started_ ? nowMs - now_ : 0;
+    if (!started_) lastInputMs_ = nowMs;
     started_ = true;
     now_ = nowMs;
     float dt = static_cast<float>(std::min<uint32_t>(dtMs, 100)) / 1000.0f;
@@ -588,9 +660,23 @@ void Scene::update(uint32_t nowMs) {
         for (size_t i = 0; i < n; i++) handleEvent(ev[i]);
 
     animate(dt);
+
+    const uint32_t timeout = screenTimeoutMs();
+    if (!screenOff_ && timeout && fingers_ == 0 && nowMs - lastInputMs_ >= timeout) screenOff_ = true;
 }
 
 void Scene::handleEvent(const Event& e) {
+    switch (e.type) {  // news worth lighting the screen for
+        case EventType::Hatched:
+        case EventType::StageChanged:
+        case EventType::CallStarted:
+        case EventType::GotSick:
+        case EventType::RanAway:
+        case EventType::Returned:
+        case EventType::LaidEgg:
+        case EventType::BackFromForaging: wake(); break;
+        default: break;
+    }
     char buf[40];
     switch (e.type) {
         case EventType::Hatched: {
@@ -881,7 +967,7 @@ Scene::Rect Scene::footprintArea() const { return {S - 96, 0, 96, kStripTouchH};
 int Scene::slotCount() const {
     switch (page_) {
         case Page::Food: return 4;
-        case Page::More: return 3;
+        case Page::More: return 4;
         case Page::Main: break;
     }
     return 6;
@@ -994,6 +1080,7 @@ void Scene::draw(Canvas& c) {
     if (overlay_ == Overlay::Stats) drawStats(c);
     if (overlay_ == Overlay::Gallery) drawGallery(c);
     if (overlay_ == Overlay::Trails) drawTrails(c);
+    if (overlay_ == Overlay::Settings) drawSettings(c);
 }
 
 void Scene::drawSky(Canvas& c) {
@@ -1564,6 +1651,43 @@ void Scene::drawTrails(Canvas& c) {
     c.text(b.cx(), b.cy() - 7.0f, scanning_ ? "LISTENING..." : "LOOK AGAIN", 2, kUiLight, Align::Center);
 }
 
+void Scene::drawSettings(Canvas& c) {
+    const Rgb ink = 0x3B2A1E, faint = 0x8A7A66, off = 0xD9CFBC;
+    c.tint(0x000000, 0.55f);
+    c.fillRoundRect(kSetX, kSetY, kSetW, kSetH, 20, kUiLight);
+    c.text(240, kSetY + 14, "SETTINGS", 2, ink, Align::Center);
+
+    const char* labels[2] = {"BRIGHTNESS", "SCREEN OFF AFTER"};
+    for (int row = 0; row < 2; row++) {
+        const int y = kSetRowY[row];
+        c.text(240, y - 26.0f, labels[row], 2, faint, Align::Center);
+        const int value = row == 0 ? settings_.brightness : settings_.timeout;
+        const int top = (row == 0 ? kBrightnessSteps : kTimeoutSteps) - 1;
+        for (int plus = 0; plus < 2; plus++) {
+            Rect b = settingButtonArea(row, plus);
+            bool can = plus ? value < top : value > 0;
+            c.fillRoundRect(b.x + 4, b.y + 4, b.w - 8, b.h - 8, 14, can ? kButton : off);
+            float cx = b.cx(), cy = b.cy();
+            c.line(cx - 14, cy, cx + 14, cy, 5, kUiLight);
+            if (plus) c.line(cx, cy - 14, cx, cy + 14, 5, kUiLight);
+        }
+        char buf[16];
+        if (row == 0) std::snprintf(buf, sizeof buf, "%d%%", brightnessPercent());
+        else std::snprintf(buf, sizeof buf, "%s", kTimeoutNames[value]);
+        c.text(240, y + 14.0f, buf, 3, ink, Align::Center);
+        // one pip per step, filled up to the setting
+        const int steps = top + 1;
+        const float pip = 14, gap = 6, w = steps * pip + (steps - 1) * gap;
+        for (int i = 0; i < steps; i++)
+            c.fillRoundRect(240 - w / 2 + i * (pip + gap), y + 48.0f, pip, 8, 4, i <= value ? kGold : off);
+    }
+    c.text(240, kSetRowY[1] + 92.0f, "A TAP WAKES IT UP AGAIN", 2, faint, Align::Center);
+
+    Rect d = settingsDoneArea();
+    c.fillRoundRect(d.x, d.y + 4, d.w, d.h - 8, 14, kButton);
+    c.text(d.cx(), d.cy() - 7.0f, "DONE", 2, kUiLight, Align::Center);
+}
+
 void Scene::drawSlotIcon(Canvas& c, Slot s, float x, float y) {
     Item it = itemFor(s);
     if (it != Item::None) {
@@ -1598,6 +1722,14 @@ void Scene::drawSlotIcon(Canvas& c, Slot s, float x, float y) {
             c.line(x, y + 22, x, y - 18, 5, 0xA0703F);
             c.fillTriangle(x - 2, y - 20, x + 24, y - 13, x - 2, y - 6, 0xCFC7B5);
             c.fillTriangle(x + 2, y - 4, x - 24, y + 3, x + 2, y + 10, 0xCFC7B5);
+            break;
+        case Slot::Settings:  // a gear
+            for (int i = 0; i < 8; i++) {
+                float a = i * 0.785398f;
+                c.line(x, y, x + std::cos(a) * 21, y + std::sin(a) * 21, 8, 0xCFC7B5);
+            }
+            c.fillCircle(x, y, 15, 0xCFC7B5);
+            c.fillCircle(x, y, 6, kButton);
             break;
         case Slot::Back:
             c.line(x - 14, y, x + 14, y, 5, kUiLight);
@@ -1719,6 +1851,7 @@ const char* toString(Scene::Slot s) {
         case Scene::Slot::Photos: return "PHOTOS";
         case Scene::Slot::More: return "MORE";
         case Scene::Slot::Trails: return "TRAILS";
+        case Scene::Slot::Settings: return "SETTINGS";
         case Scene::Slot::Back: return "BACK";
         case Scene::Slot::Berries: return "BERRIES";
         case Scene::Slot::Fish: return "FISH";

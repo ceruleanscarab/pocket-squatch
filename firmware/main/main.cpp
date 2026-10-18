@@ -14,6 +14,7 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "power.hpp"
 #include "radio.hpp"
 #include "squatch/canvas.hpp"
 #include "squatch/scene.hpp"
@@ -29,8 +30,18 @@ namespace {
 const char* TAG = "squatch";
 constexpr int64_t kAutosaveSecs = 5 * 60;  // plus right after every care action
 constexpr int kMaxFingers = 2;
+constexpr uint32_t kBatteryEveryMs = 2000;
+
+// Charge currents for the battery each board is usually fitted with. The AXP2101's own
+// default is over an amp, far too strong for these small cells.
+#if CONFIG_SQUATCH_BOARD_AMOLED_18
+constexpr int kChargeMa = 150, kTrickleMa = 25;  // pocket-tank's setting for the 1.8's ~200 mAh cell
+#else
+constexpr int kChargeMa = 300, kTrickleMa = 50;  // gentle enough for a cell of 300 mAh or more
+#endif
 
 Sim gSim;
+bool gHavePower = false;  // the AXP2101 answered
 Scene gScene(gSim);
 
 uint32_t millis() { return static_cast<uint32_t>(esp_timer_get_time() / 1000); }
@@ -150,6 +161,8 @@ void gameLoop(void*) {
     int64_t lastSave = lastWall, lastTz = lastWall;
     uint32_t statsFrom = millis();
     uint32_t frames = 0, drawMs = 0;
+    uint32_t lastBattery = 0;
+    power::Battery battery{false, -1, false, false};
 
     for (;;) {
         const uint32_t ms = millis();
@@ -172,6 +185,11 @@ void gameLoop(void*) {
         size_t heardCount = 0;
         if (wifiscan::take(heard, 20, heardCount)) gSim.scoutTrails(heard, heardCount);
 
+        if (gHavePower && (lastBattery == 0 || ms - lastBattery >= kBatteryEveryMs)) {
+            lastBattery = ms ? ms : 1;
+            if (power::read(battery)) gScene.setBattery(battery.present ? battery.percent : -1, battery.charging);
+        }
+
         gScene.update(ms);
         if (gScene.takeSaveRequest() || wall - lastSave >= kAutosaveSecs) {
             storage::savePet(gSim.state());
@@ -186,8 +204,13 @@ void gameLoop(void*) {
 
         if (++frames == 1) board_backlight(100);  // light up once there's a picture
         if (ms - statsFrom >= 10000) {
-            ESP_LOGI(TAG, "%.1f fps, %lu ms per draw", frames * 1000.0f / (ms - statsFrom),
-                     static_cast<unsigned long>(drawMs / frames));
+            if (battery.present)
+                ESP_LOGI(TAG, "%.1f fps, %lu ms per draw, battery %d%%%s", frames * 1000.0f / (ms - statsFrom),
+                         static_cast<unsigned long>(drawMs / frames), battery.percent,
+                         battery.charging ? " (charging)" : (battery.usb ? " (on USB)" : ""));
+            else
+                ESP_LOGI(TAG, "%.1f fps, %lu ms per draw, no battery", frames * 1000.0f / (ms - statsFrom),
+                         static_cast<unsigned long>(drawMs / frames));
             statsFrom = ms;
             frames = drawMs = 0;
         }
@@ -199,6 +222,7 @@ void gameLoop(void*) {
 extern "C" void app_main(void) {
     storage::init();
     ESP_ERROR_CHECK(board_init());
+    gHavePower = power::init(board_i2c(), kChargeMa, kTrickleMa);
     radio::begin();
     walltime::init(board_i2c(), CONFIG_SQUATCH_TZ);
     walltime::syncFromNetwork(CONFIG_SQUATCH_WIFI_SSID, CONFIG_SQUATCH_WIFI_PASSWORD);

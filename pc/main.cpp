@@ -5,6 +5,7 @@
 //   squatch-pc --save FILE       use another save file
 //   squatch-pc --zoom 2          bigger window (it can also be resized)
 //   squatch-pc --shot FILE.bmp   draw one frame to a BMP and exit, without a window
+//   squatch-pc --battery 80      show a pretend battery at 80% (add c for charging: 80c)
 //
 // Mouse: the left button is a finger. A right click is a two-finger tap (scold).
 // The trail map's Wi-Fi scan is pretend on the PC: a few made-up networks with signals
@@ -100,7 +101,7 @@ void pretendScan(Sim& sim) {
 }
 
 void usage() {
-    std::printf("usage: squatch-pc [--new] [--save FILE] [--zoom N] [--shot FILE.bmp]\n");
+    std::printf("usage: squatch-pc [--new] [--save FILE] [--zoom N] [--shot FILE.bmp] [--battery N[c]]\n");
 }
 
 }  // namespace
@@ -110,11 +111,18 @@ int main(int argc, char** argv) {
     const char* shotPath = nullptr;
     bool fresh = false;
     int zoom = 1;
+    int battery = -1;  // the PC has no battery unless one is pretended
+    bool charging = false;
     for (int i = 1; i < argc; i++) {
         if (!std::strcmp(argv[i], "--new")) fresh = true;
         else if (!std::strcmp(argv[i], "--save") && i + 1 < argc) savePath = argv[++i];
         else if (!std::strcmp(argv[i], "--zoom") && i + 1 < argc) zoom = std::max(1, std::atoi(argv[++i]));
         else if (!std::strcmp(argv[i], "--shot") && i + 1 < argc) shotPath = argv[++i];
+        else if (!std::strcmp(argv[i], "--battery") && i + 1 < argc) {
+            const char* v = argv[++i];
+            battery = std::atoi(v);
+            charging = std::strchr(v, 'c') != nullptr;
+        }
         else {
             usage();
             return 2;
@@ -138,6 +146,7 @@ int main(int argc, char** argv) {
 
     std::srand(static_cast<unsigned>(now));
     Scene scene(sim);
+    scene.setBattery(battery, charging);
     std::vector<uint16_t> fb(kSize * kSize);
     Canvas canvas(fb.data(), kSize, kSize);
 

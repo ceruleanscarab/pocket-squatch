@@ -495,6 +495,27 @@ static void testDrawsEveryCoat() {
     CHECK(body[4] != body[3]);  // Albino vs Snowcoat
 }
 
+static void testBattery() {
+    std::printf("the battery shows only when the front end reports one, and warns once when low\n");
+    Driver d;
+    CHECK(d.scene.batteryPercent() < 0);  // the PC has none
+    std::vector<uint16_t> fb(Scene::kSize * Scene::kSize);
+    Canvas c(fb.data(), Scene::kSize, Scene::kSize);
+    d.scene.draw(c);
+    Rgb before = c.pixel(345, 22);
+    d.scene.setBattery(64, true);
+    d.step();
+    d.scene.draw(c);
+    CHECK(c.pixel(345, 22) != before);  // the icon is drawn
+    d.scene.setBattery(12, false);
+    d.step();
+    CHECK(d.scene.toast() && std::strstr(d.scene.toast(), "BATTERY LOW") != nullptr);
+    for (int i = 0; i < 400; i++) d.step();  // let the warning go
+    d.scene.setBattery(11, false);
+    d.step();
+    CHECK(!d.scene.toast() || std::strstr(d.scene.toast(), "BATTERY LOW") == nullptr);  // only once
+}
+
 int main() {
     testTap();
     testLongPressThenDrag();
@@ -515,6 +536,7 @@ int main() {
     testDrawsEveryState();
     testTrailMap();
     testDrawsEveryCoat();
+    testBattery();
 
     std::printf("\n%d checks, %d failed\n", gChecks, gFailures);
     return gFailures ? 1 : 0;

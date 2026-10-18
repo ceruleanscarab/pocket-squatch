@@ -51,6 +51,11 @@ public:
     // pretends to, on the PC) and passes the results to Sim::scoutTrails().
     bool takeScanRequest();
 
+    // The device's battery, from the front end (the board's power chip). percent < 0
+    // means there's no battery to show (the PC, or none connected).
+    void setBattery(int percent, bool charging);
+    int batteryPercent() const { return batteryPct_; }
+
     // ---- layout queries, for the tests and the front end
     Rect squatchArea() const;  // where tapping or dropping reaches the pet (or egg)
     Rect stumpArea() const;    // where food is left out while it's away
@@ -152,6 +157,7 @@ private:
     void drawAwayTrail(Canvas& c);
     void drawParticles(Canvas& c);
     void drawStrip(Canvas& c);
+    void drawBattery(Canvas& c, float x, float y);
     void drawToast(Canvas& c);
     void drawTray(Canvas& c);
     void drawItem(Canvas& c, Item it, float x, float y, float size);
@@ -189,6 +195,10 @@ private:
     uint32_t scanSince_ = 0, lastScanMs_ = 0;
     bool everScanned_ = false;
     char trailNote_[40] = {};
+
+    int batteryPct_ = -1;
+    bool charging_ = false;
+    bool warnedLowBattery_ = false;
     uint32_t nextGlint_ = 0;  // a Golden coat's sparkle
 
     // pet animation

@@ -94,6 +94,7 @@ In WSL the board's USB port has to be passed through first (`usbipd attach --wsl
 | Touch | GT911, read every frame (its interrupt line isn't wired to the ESP32). Fingers become the scene's touch events, so gestures work exactly as on the PC. |
 | Saves | One NVS blob in flash, in the same format as `squatch.sav`, written after every care action and every 5 minutes. |
 | Clock | The PCF85063 RTC keeps time on the battery. With Wi-Fi configured, the board fetches the time over NTP at start-up, stores it in the RTC and turns Wi-Fi off. The time zone is a POSIX TZ string (default US Mountain). |
+| Battery | The AXP2101 power chip is read every 2 seconds: a battery icon in the status strip (green, gold under 30%, red and pulsing at 15% or less, a bolt while charging), the percentage on the stats page, a one-time "plug me in" warning, and the charge level in the serial log. At start-up it sets a gentle charge current for the board's usual cell (150 mA on the 1.8" AMOLED, 300 mA on the 4" board); the chip's own default is over an amp. Nothing shows without a battery. On the PC, `--battery 64c` pretends one (c = charging). |
 | Trails | Opening the trail map starts a background Wi-Fi scan (about two seconds, then Wi-Fi goes off again). The clock sync and scans take turns with the radio (`radio.cpp`). Turn it off in menuconfig with *Trail map: listen for nearby Wi-Fi networks*. |
 
 Pins and the panel's start-up commands come from Waveshare's board support package (Apache-2.0). That package also brings LVGL, which the scene doesn't need, so `firmware/main/board.c` is a small copy of just the display, backlight and touch parts.
@@ -144,4 +145,4 @@ It never dies: untreated sickness or long neglect makes it run away, and leaving
 2. **Step 4:** real art for the egg, baby and child.
 3. Not yet in the scene: the naming screen at hatching and the half-speed meter setting.
 4. Later: Bluetooth visitors, so two boards' Squatches can meet (needs a second board).
-4. **Step 6:** sound through the ES8311, and battery level and sleep through the AXP2101.
+4. **Step 6:** sound through the ES8311, and sleep through the AXP2101 (battery level is done).

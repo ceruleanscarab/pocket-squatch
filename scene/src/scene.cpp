@@ -136,6 +136,14 @@ bool Scene::takeSaveRequest() {
     return r;
 }
 
+void Scene::setBattery(int percent, bool charging) {
+    batteryPct_ = percent < 0 ? -1 : std::min(percent, 100);
+    charging_ = charging && batteryPct_ >= 0;
+    bool low = batteryPct_ >= 0 && batteryPct_ <= 15 && !charging_;
+    if (low && !warnedLowBattery_) say("BATTERY LOW: PLUG ME IN", true);
+    warnedLowBattery_ = low || (warnedLowBattery_ && batteryPct_ >= 0 && batteryPct_ < 25 && !charging_);
+}
+
 bool Scene::takeScanRequest() {
     bool r = scanRequested_;
     scanRequested_ = false;
@@ -1407,9 +1415,26 @@ void Scene::drawStrip(Canvas& c) {
     float fk = s.calling ? 1 + 0.2f * pulse : 1.0f;
     if (s.calling) c.ring(410, 22, 15 + pulse * 5, 3, kGold, 1 - pulse * 0.6f);
     drawFootprint(c, 410, 23, fk, s.calling ? kGold : kUiLight);
+    drawBattery(c, 330, 14);
     char buf[12];
     std::snprintf(buf, sizeof buf, "%u", static_cast<unsigned>(s.footprints % 10000));
     c.text(426, 15, buf, 2, kUiLight);
+}
+
+// A small battery: the fill shows the charge, a bolt while it charges, red and pulsing when low.
+void Scene::drawBattery(Canvas& c, float x, float y) {
+    if (batteryPct_ < 0) return;
+    bool low = batteryPct_ <= 15 && !charging_;
+    float pulse = 0.5f + 0.5f * static_cast<float>(std::sin(t_ * 6));
+    Rgb fill = low ? 0xE5484D : (batteryPct_ <= 30 ? kGold : 0x7BC86C);
+    c.fillRoundRect(x, y, 32, 17, 4, kUiLight, low ? 0.6f + 0.4f * pulse : 1.0f);
+    c.fillRoundRect(x + 32, y + 5, 3, 7, 1, kUiLight);
+    c.fillRect(x + 2.5f, y + 2.5f, 27, 12, kUiDark);
+    c.fillRect(x + 2.5f, y + 2.5f, 27 * std::max(0.08f, batteryPct_ / 100.0f), 12, fill);
+    if (charging_) {
+        c.fillTriangle(x + 18, y + 1, x + 10, y + 10, x + 16, y + 10, kUiLight);
+        c.fillTriangle(x + 16, y + 7, x + 14, y + 16, x + 22, y + 7, kUiLight);
+    }
 }
 
 void Scene::drawToast(Canvas& c) {
@@ -1631,7 +1656,7 @@ void Scene::drawStats(Canvas& c) {
     const char* name = s.name[0] ? s.name : "NO NAME YET";
     c.text(240, 98, name, Canvas::textWidth(name, 3) <= 380 ? 3 : 2, ink, Align::Center);
 
-    char lines[9][40];
+    char lines[10][40];
     int n = 0;
     Stage stage = s.stage == Stage::Away ? s.stageBeforeAway : s.stage;
     if (s.adult != AdultForm::None)
@@ -1653,8 +1678,10 @@ void Scene::drawStats(Canvas& c) {
     char code[12];
     dnaCode(s.genome, code, sizeof code);
     std::snprintf(lines[n++], 40, "DNA: %s  TRAILS: %u", code, static_cast<unsigned>(s.trailsVisited));
-    for (int i = 0; i < n; i++) c.text(64, 140 + i * 25.0f, lines[i], 2, ink);
-    c.text(240, 360, "TAP TO CLOSE", 2, 0x8A7A66, Align::Center);
+    if (batteryPct_ >= 0)
+        std::snprintf(lines[n++], 40, "BATTERY: %d%%%s", batteryPct_, charging_ ? " (CHARGING)" : "");
+    for (int i = 0; i < n; i++) c.text(64, 136 + i * 23.0f, lines[i], 2, ink);
+    c.text(240, 366, "TAP TO CLOSE", 2, 0x8A7A66, Align::Center);
 }
 
 void Scene::drawGallery(Canvas& c) {

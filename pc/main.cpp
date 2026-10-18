@@ -6,6 +6,7 @@
 //   squatch-pc --zoom 2          bigger window (it can also be resized)
 //   squatch-pc --shot FILE.bmp   draw one frame to a BMP and exit, without a window
 //   squatch-pc --battery 80      show a pretend battery at 80% (add c for charging: 80c)
+//   squatch-pc --weather snow    pretend weather: clear, cloudy, fog, drizzle, rain, snow, storm
 //
 // Sound plays through the PC's speakers, at the volume chosen on the settings page.
 // Settings (brightness, screen timeout, volume) are kept next to the save, in FILE.settings.
@@ -132,7 +133,7 @@ void pretendScan(Sim& sim) {
 }
 
 void usage() {
-    std::printf("usage: squatch-pc [--new] [--save FILE] [--zoom N] [--shot FILE.bmp] [--battery N[c]]\n");
+    std::printf("usage: squatch-pc [--new] [--save FILE] [--zoom N] [--shot FILE.bmp] [--battery N[c]] [--weather SKY]\n");
 }
 
 }  // namespace
@@ -144,11 +145,20 @@ int main(int argc, char** argv) {
     int zoom = 1;
     int battery = -1;  // the PC has no battery unless one is pretended
     bool charging = false;
+    Weather weather;
     for (int i = 1; i < argc; i++) {
         if (!std::strcmp(argv[i], "--new")) fresh = true;
         else if (!std::strcmp(argv[i], "--save") && i + 1 < argc) savePath = argv[++i];
         else if (!std::strcmp(argv[i], "--zoom") && i + 1 < argc) zoom = std::max(1, std::atoi(argv[++i]));
         else if (!std::strcmp(argv[i], "--shot") && i + 1 < argc) shotPath = argv[++i];
+        else if (!std::strcmp(argv[i], "--weather") && i + 1 < argc) {
+            if (!parseSky(argv[++i], weather.sky)) {
+                usage();
+                return 2;
+            }
+            weather.tempC = weather.sky == Sky::Snow ? -2.0f : 12.0f;
+            weather.windKmh = 15;
+        }
         else if (!std::strcmp(argv[i], "--battery") && i + 1 < argc) {
             const char* v = argv[++i];
             battery = std::atoi(v);
@@ -178,6 +188,7 @@ int main(int argc, char** argv) {
     std::srand(static_cast<unsigned>(now));
     Scene scene(sim);
     scene.setBattery(battery, charging);
+    if (weather.sky != Sky::Unknown) scene.setWeather(weather);
     const std::string settingsPath = std::string(savePath) + ".settings";
     Scene::Settings settings;
     if (readSettings(settingsPath, settings)) scene.setSettings(settings);

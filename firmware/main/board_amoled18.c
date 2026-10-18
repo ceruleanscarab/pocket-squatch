@@ -342,6 +342,17 @@ void board_present(void) {
     xSemaphoreGive(s_frame_ready);
 }
 
+void board_display_power(bool on) {
+    if (on) {
+        dcs(0x11, NULL, 0);  // sleep out
+        vTaskDelay(pdMS_TO_TICKS(120));
+        dcs(0x29, NULL, 0);  // display on
+    } else {
+        dcs(0x28, NULL, 0);  // display off
+        dcs(0x10, NULL, 0);  // sleep in
+    }
+}
+
 void board_backlight(int percent) {
     if (percent < 0) percent = 0;
     if (percent > 100) percent = 100;

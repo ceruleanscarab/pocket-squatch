@@ -58,7 +58,11 @@ Wiki: https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-4B
 - DNA and rarity, and the Wi-Fi trail map with forage trips — done (firmware scan not yet run on hardware).
 - Battery level via the AXP2101 (`firmware/main/power.cpp`, `Scene::setBattery`) — done.
 - Settings page (brightness, screen timeout, volume; `Scene::Settings`, kept outside the pet's save) and screen-off — done;
-  the CPU still runs while the screen is off, so light sleep is still to come.
+  with the screen off the chip uses automatic light sleep (`sleepInit`/`screenSleep` in `main.cpp`, power-management
+  locks held while the screen is on) and the AMOLED panel sleeps (`board_display_power`).
+- Weather: `scene/` `weather.hpp` (Open-Meteo parser, `Scene::setWeather`; clouds, fog and snow cover are part of the
+  cached scenery, rain and snow fall each frame); `firmware/main/weatherfetch.cpp` fetches hourly over
+  `netjoin` (shared with the clock sync). Not yet run on hardware.
 - Sound: `Synth` cues in `scene/` (`sounds.hpp`), played by `firmware/main/audio.cpp` (ES8311) and SDL on the PC — done,
   not yet heard on hardware.
 - The Waveshare ESP32-S3-Touch-AMOLED-1.8 is a second board target (`board_amoled18.c`, menuconfig Board); it ran

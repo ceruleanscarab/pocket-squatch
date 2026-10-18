@@ -40,6 +40,9 @@ uint16_t* board_draw_buffer(void);
 void board_present(void);
 
 void board_backlight(int percent);  // on the AMOLED: the panel's own brightness
+// The panel itself asleep (false) or awake (true), for the screen-off time. The AMOLED's
+// sleep mode draws almost nothing; the LCD board just keeps its backlight off.
+void board_display_power(bool on);
 
 // Fills up to max fingers currently touching and returns how many; 0 when none.
 int board_read_touch(board_touch_t* out, int max);

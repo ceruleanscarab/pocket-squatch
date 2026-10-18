@@ -11,6 +11,7 @@
 #include "audio.hpp"
 #include "board.h"
 #include "esp_log.h"
+#include "esp_pm.h"
 #include "esp_random.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -22,6 +23,7 @@
 #include "squatch/sim.hpp"
 #include "storage.hpp"
 #include "walltime.hpp"
+#include "weatherfetch.hpp"
 #include "wifiscan.hpp"
 
 using namespace squatch;
@@ -33,7 +35,7 @@ constexpr int64_t kAutosaveSecs = 5 * 60;  // plus right after every care action
 constexpr int kMaxFingers = 2;
 constexpr uint32_t kBatteryEveryMs = 2000;
 constexpr uint32_t kSettingsSaveAfterMs = 3000;  // after the last change, so each tap isn't a flash write
-constexpr uint32_t kDarkPollMs = 50;             // how often touch is checked while the screen is off
+constexpr uint32_t kDarkPollMs = 100;            // how often touch is checked while the screen is off
 constexpr uint32_t kKeyEveryMs = 100;            // the PWR key, asked of the power chip
 
 // Charge currents for the battery each board is usually fitted with. The AXP2101's own
@@ -51,6 +53,55 @@ bool gHavePower = false;  // the AXP2101 answered
 Scene gScene(gSim);
 
 uint32_t millis() { return static_cast<uint32_t>(esp_timer_get_time() / 1000); }
+
+// ---- sleep. While the screen is on, two power-management locks keep the processor at full
+// speed and out of light sleep. With the screen off they're let go: between touch checks the
+// chip slows right down and naps (automatic light sleep), and the AMOLED panel sleeps too.
+#if CONFIG_PM_ENABLE
+esp_pm_lock_handle_t gFullSpeed = nullptr, gNoNap = nullptr;
+#endif
+bool gPanelAwake = true;
+int64_t gDarkSince = 0;
+
+void sleepInit() {
+#if CONFIG_PM_ENABLE
+    esp_pm_config_t pm{};
+    pm.max_freq_mhz = CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ;
+    pm.min_freq_mhz = 40;
+    pm.light_sleep_enable = true;
+    esp_err_t err = esp_pm_configure(&pm);
+    esp_pm_lock_create(ESP_PM_CPU_FREQ_MAX, 0, "screen on", &gFullSpeed);
+    esp_pm_lock_create(ESP_PM_NO_LIGHT_SLEEP, 0, "screen on", &gNoNap);
+    esp_pm_lock_acquire(gFullSpeed);
+    esp_pm_lock_acquire(gNoNap);
+    ESP_LOGI(TAG, "power management %s", err == ESP_OK ? "on: sleeps while the screen is off" : esp_err_to_name(err));
+#else
+    ESP_LOGI(TAG, "power management not built in: no sleep with the screen off");
+#endif
+}
+
+void screenSleep() {
+    board_backlight(0);
+    board_display_power(false);
+    gPanelAwake = false;
+    gDarkSince = esp_timer_get_time();
+#if CONFIG_PM_ENABLE
+    esp_pm_lock_release(gNoNap);
+    esp_pm_lock_release(gFullSpeed);
+#endif
+    ESP_LOGI(TAG, "screen off: sleeping between touch checks");
+}
+
+void screenWake() {
+    if (gPanelAwake) return;
+#if CONFIG_PM_ENABLE
+    esp_pm_lock_acquire(gFullSpeed);
+    esp_pm_lock_acquire(gNoNap);
+#endif
+    board_display_power(true);
+    gPanelAwake = true;
+    ESP_LOGI(TAG, "screen on after %lld s dark", (esp_timer_get_time() - gDarkSince) / 1000000);
+}
 
 // Noon on the build date: a stand-in "now" for a first egg when the clock is unknown.
 int64_t buildDate() {
@@ -193,6 +244,8 @@ void gameLoop(void*) {
         squatch::Sighting heard[20];
         size_t heardCount = 0;
         if (wifiscan::take(heard, 20, heardCount)) gSim.scoutTrails(heard, heardCount);
+        squatch::Weather weather;
+        if (weatherfetch::take(weather)) gScene.setWeather(weather);
 
         if (gHavePower && (lastBattery == 0 || ms - lastBattery >= kBatteryEveryMs)) {
             lastBattery = ms ? ms : 1;
@@ -208,6 +261,7 @@ void gameLoop(void*) {
                     else gScene.screenOffNow();
                     break;
                 case power::Key::Long:
+                    screenWake();  // to show the goodbye
                     storage::savePet(gSim.state());
                     if (settingsDirty) storage::saveSettings(gScene.settings());
                     ESP_LOGI(TAG, "power key held: saved, switching off");
@@ -238,9 +292,8 @@ void gameLoop(void*) {
         // The pet's time, the battery and saves all carry on above.
         if (gScene.screenOff()) {
             if (lit != 0) {
-                board_backlight(0);
+                screenSleep();
                 lit = 0;
-                ESP_LOGI(TAG, "screen off");
             }
             vTaskDelay(pdMS_TO_TICKS(kDarkPollMs));
             statsFrom = millis();
@@ -248,6 +301,7 @@ void gameLoop(void*) {
             continue;
         }
 
+        screenWake();  // back from the dark: panel and processor up before drawing
         const uint32_t t0 = millis();
         Canvas canvas(board_draw_buffer(), BOARD_WIDTH, BOARD_HEIGHT);
         gScene.draw(canvas);
@@ -256,7 +310,6 @@ void gameLoop(void*) {
 
         ++frames;
         if (lit != gScene.brightnessPercent()) {  // after a fresh picture, so waking never shows a stale one
-            if (lit == 0) ESP_LOGI(TAG, "screen on");
             lit = gScene.brightnessPercent();
             board_backlight(lit);
         }
@@ -280,6 +333,10 @@ extern "C" void app_main(void) {
     storage::init();
     Scene::Settings settings;
     if (storage::loadSettings(settings)) gScene.setSettings(settings);
+#if CONFIG_SQUATCH_FAHRENHEIT
+    gScene.setFahrenheit(true);
+#endif
+    sleepInit();
     ESP_ERROR_CHECK(board_init());
     gHavePower = power::init(board_i2c(), kChargeMa, kTrickleMa);
     if (gHavePower) power::keyInit();
@@ -287,6 +344,7 @@ extern "C" void app_main(void) {
     radio::begin();
     walltime::init(board_i2c(), CONFIG_SQUATCH_TZ);
     walltime::syncFromNetwork(CONFIG_SQUATCH_WIFI_SSID, CONFIG_SQUATCH_WIFI_PASSWORD);
+    weatherfetch::start();
 
     startPet();
     xTaskCreatePinnedToCore(gameLoop, "game", 8192, nullptr, 5, nullptr, 1);

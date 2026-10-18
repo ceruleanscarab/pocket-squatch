@@ -94,6 +94,8 @@ static esp_err_t init_backlight(void) {
     return ledc_channel_config(&channel);
 }
 
+void board_display_power(bool on) { (void)on; }  // the backlight does it (the RGB panel needs feeding)
+
 void board_backlight(int percent) {
     if (percent < 0) percent = 0;
     if (percent > 100) percent = 100;

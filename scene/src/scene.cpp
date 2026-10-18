@@ -241,6 +241,42 @@ Scene::Rect Scene::settingButtonArea(int row, bool plus) const {
 
 Scene::Rect Scene::settingsDoneArea() const { return {S / 2 - 120, kSetY + kSetH - 84, 240, 72}; }
 
+void Scene::setWeather(const Weather& w) {
+    const Sky before = weather_.sky;
+    weather_ = w;
+    if (w.sky == before || w.sky == Sky::Unknown) return;
+    const bool first = before == Sky::Unknown;
+    const char* msg = nullptr;
+    switch (w.sky) {
+        case Sky::Clear: msg = first ? nullptr : "THE SKY CLEARED"; break;
+        case Sky::Cloudy: msg = first ? nullptr : "CLOUDS ROLLED IN"; break;
+        case Sky::Fog: msg = "FOG IN THE WOODS"; break;
+        case Sky::Drizzle: msg = "A LITTLE DRIZZLE"; break;
+        case Sky::Rain: msg = "RAIN IN THE FOREST"; break;
+        case Sky::Snow: msg = "SNOW IS FALLING!"; break;
+        case Sky::Storm: msg = "A STORM IS COMING"; break;
+        case Sky::Unknown: break;
+    }
+    if (msg) say(msg);
+    if (hatched() && !hiding() && !sim_.state().asleep) {
+        if (w.sky == Sky::Snow) react(React::Happy, 1200);
+        if (w.sky == Sky::Storm) react(React::Flinch, 1200);
+    }
+    nextLightning_ = now_ + 4000;
+}
+
+float Scene::overcast() const {
+    switch (weather_.sky) {
+        case Sky::Cloudy: return 0.35f;
+        case Sky::Fog: return 0.45f;
+        case Sky::Drizzle: return 0.45f;
+        case Sky::Snow: return 0.5f;
+        case Sky::Rain: return 0.6f;
+        case Sky::Storm: return 0.8f;
+        default: return 0;
+    }
+}
+
 bool Scene::takeScanRequest() {
     bool r = scanRequested_;
     scanRequested_ = false;
@@ -1182,7 +1218,7 @@ void Scene::draw(Canvas& c) {
     c.setShade(0x02040C, shade);
 
     // The scenery: from the cache when it's still the same minute, else drawn afresh.
-    const int key = static_cast<int>(hourOfDay() * 60) * 2 + (s.lightsOn ? 1 : 0);
+    const int key = (static_cast<int>(hourOfDay() * 60) * 2 + (s.lightsOn ? 1 : 0)) * 8 + static_cast<int>(weather_.sky);
     if (cacheScenery_ && c.width() == S && c.height() == S) {
         if (scenery_.size() != static_cast<size_t>(S * S)) scenery_.assign(static_cast<size_t>(S * S), 0);
         if (key != sceneryKey_) {
@@ -1219,8 +1255,15 @@ void Scene::draw(Canvas& c) {
     float h = hourOfDay();
     drawCampfire(c, h >= 17 && h < 23);
     drawParticles(c);
+    drawPrecipitation(c);
 
     c.setShade(0, 0);  // the screen's own furniture isn't shaded
+    if (weather_.sky == Sky::Storm && now_ >= nextLightning_) {
+        lightningUntil_ = now_ + 220;
+        nextLightning_ = now_ + 9000 + static_cast<uint32_t>(rand01() * 15000);
+        cue(Cue::Thunder);
+    }
+    if (now_ < lightningUntil_) c.tint(0xF4F6FF, static_cast<float>(lightningUntil_ - now_) / 220.0f * 0.55f);
     if (now_ < flashUntil_) c.tint(0xFFFFFF, static_cast<float>(flashUntil_ - now_) / 400.0f * 0.8f);
 
     drawStrip(c);
@@ -1240,7 +1283,9 @@ void Scene::draw(Canvas& c) {
 
 void Scene::drawScenery(Canvas& c) {
     drawSky(c);
+    drawClouds(c);
     drawGround(c);
+    if (weather_.sky == Sky::Snow) drawSnowCover(c);
     drawCampfire(c, false);
     const float h = hourOfDay();
     if (h >= 17 && h < 23) c.glow(kFireX, kFireY - 20, 90, 0xFFB347, 0.15f + 0.35f * dark_);  // the fire's light
@@ -1248,11 +1293,73 @@ void Scene::drawScenery(Canvas& c) {
     drawTree(c, kLeftTreeX, kLeftTreeBase, 1.0f);
     drawTree(c, kRightTreeX, kRightTreeBase, 0.95f);
     drawLantern(c);
+    if (weather_.sky == Sky::Fog) drawFog(c);
+}
+
+void Scene::drawClouds(Canvas& c) {
+    const float o = overcast();
+    if (o <= 0) return;
+    const Rgb light = mix(0xF2F4F7, 0x3A4252, dark_), heavy = mix(0x7D8590, 0x1C212B, dark_);
+    const Rgb col = mix(light, heavy, (o - 0.35f) / 0.45f);
+    const int n = o < 0.4f ? 4 : 7;
+    for (int i = 0; i < n; i++) {
+        const float x = static_cast<float>((i * 151 + 40) % 520) - 20, y = 28.0f + static_cast<float>((i * 37) % 70);
+        const float w = 46.0f + static_cast<float>((i * 23) % 30);
+        c.fillEllipse(x, y + 10, w, 16, col, 0.92f);
+        c.fillCircle(x - w * 0.35f, y + 2, w * 0.38f, col, 0.92f);
+        c.fillCircle(x + w * 0.2f, y - 6, w * 0.48f, col, 0.92f);
+    }
+}
+
+void Scene::drawSnowCover(Canvas& c) {
+    const Rgb snow = sh(0xEEF3F8);
+    c.fillRect(0, kHorizon + 6, S, S - kHorizon - 6, snow, 0.75f);
+    c.fillEllipse(240, 372, 252, 122, snow, 0.6f);
+}
+
+void Scene::drawFog(Canvas& c) {
+    // Thickest along the tree line, thinning out above and below in soft bands.
+    const Rgb fog = mix(0xD9DEE3, 0x3A4048, dark_);
+    for (int i = 0; i < 24; i++) {
+        const float y = 80.0f + i * 12.0f, d = std::fabs(y + 6 - 230.0f) / 150.0f;
+        if (d < 1) c.fillRect(0, y, S, 12, fog, 0.5f * (1 - d * d));
+    }
+}
+
+// Rain and snow, from the time alone: each drop's place is worked out, nothing is stored.
+void Scene::drawPrecipitation(Canvas& c) {
+    const Sky sky = weather_.sky;
+    const bool rain = sky == Sky::Rain || sky == Sky::Drizzle || sky == Sky::Storm;
+    if (!rain && sky != Sky::Snow) return;
+    const float wind = std::min(weather_.windKmh, 40.0f) * (rain ? 6.0f : 2.0f);  // sideways px/s
+    const float t = static_cast<float>(t_);
+    if (rain) {
+        const int n = sky == Sky::Drizzle ? 30 : sky == Sky::Storm ? 100 : 65;
+        const float vy = sky == Sky::Drizzle ? 330.0f : 560.0f;
+        const Rgb col = mix(0xB8D0E8, 0x6A7F99, dark_);
+        for (int i = 0; i < n; i++) {
+            const uint32_t h = static_cast<uint32_t>(i) * 2654435761u;
+            const float y = std::fmod(static_cast<float>(h % 1000) * 0.52f + t * vy, 520.0f) - 20;
+            const float x = std::fmod(static_cast<float>((h >> 10) % 480) + t * wind + 4800.0f, 480.0f);
+            const float len = sky == Sky::Drizzle ? 7.0f : 13.0f;
+            c.line(x, y, x - wind / vy * len, y - len, sky == Sky::Drizzle ? 1.2f : 1.6f, col, 0.6f);
+        }
+    } else {
+        const Rgb col = mix(0xFFFFFF, 0xB8C2CE, dark_);
+        for (int i = 0; i < 55; i++) {
+            const uint32_t h = static_cast<uint32_t>(i) * 2654435761u;
+            const float vy = 30.0f + static_cast<float>(i % 5) * 9;
+            const float y = std::fmod(static_cast<float>(h % 1000) * 0.52f + t * vy, 520.0f) - 20;
+            const float sway = std::sin(t * 1.3f + static_cast<float>(i)) * 10;
+            const float x = std::fmod(static_cast<float>((h >> 10) % 480) + t * wind + sway + 4800.0f, 480.0f);
+            c.fillCircle(x, y, i % 3 == 0 ? 2.6f : 1.8f, col, 0.9f);
+        }
+    }
 }
 
 // Twinkling, so drawn every frame: only in the open sky between the trees, and not over the moon.
 void Scene::drawStars(Canvas& c) {
-    if (dark_ <= 0.3f) return;
+    if (dark_ <= 0.3f || overcast() > 0) return;  // no stars through cloud
     const float a = (dark_ - 0.3f) / 0.7f;
     for (int k = 0; k < 40; k++) {
         float x = static_cast<float>((k * 97 + 13) % S), y = static_cast<float>((k * 53 + 7) % 190);
@@ -1275,15 +1382,18 @@ void Scene::drawSky(Canvas& c) {
     int i = 0;
     while (i < 6 && h > keys[i + 1].h) i++;
     float t = (h - keys[i].h) / (keys[i + 1].h - keys[i].h);
-    c.verticalGradient(0, static_cast<int>(kHorizon) + 20, mix(keys[i].top, keys[i + 1].top, t),
-                       mix(keys[i].bottom, keys[i + 1].bottom, t));
+    // A grey sky under cloud, darker for rain and storms.
+    const Rgb grey = mix(0x9AA3AD, 0x161A22, dark_);
+    const float o = overcast();
+    c.verticalGradient(0, static_cast<int>(kHorizon) + 20, mix(mix(keys[i].top, keys[i + 1].top, t), grey, o),
+                       mix(mix(keys[i].bottom, keys[i + 1].bottom, t), grey, o * 0.8f));
 
-    if (dark_ > 0.3f) {
-        float a = (dark_ - 0.3f) / 0.7f;
+    if (dark_ > 0.3f && o < 0.45f) {
+        float a = (dark_ - 0.3f) / 0.7f * (1 - o);
         c.fillCircle(330, 70, 18, 0xF4F1DE, a);
         c.fillCircle(338, 64, 15, mix(keys[i].top, keys[i + 1].top, t), a);  // crescent
-    } else {
-        c.fillCircle(150, 76, 22, 0xFFE9A8, 1 - dark_ / 0.3f);
+    } else if (overcast() < 0.45f) {
+        c.fillCircle(150, 76, 22, 0xFFE9A8, (1 - dark_ / 0.3f) * (1 - overcast()));
     }
 }
 
@@ -1311,6 +1421,8 @@ void Scene::drawTree(Canvas& c, float x, float base, float size) {
     for (int i = 0; i < 4; i++) {
         float y = base - 90 * size - i * 45 * size, hw = (78 - i * 14) * size;
         c.fillTriangle(x - hw, y, x + hw, y, x, y - 85 * size, sh(i % 2 ? kLeaves2 : kLeaves1));
+        if (weather_.sky == Sky::Snow)  // a cap of snow on each tier
+            c.fillTriangle(x - hw * 0.42f, y - 50 * size, x + hw * 0.42f, y - 50 * size, x, y - 85 * size, sh(0xEEF3F8));
     }
 }
 
@@ -2028,6 +2140,13 @@ void Scene::drawStats(Canvas& c) {
     std::snprintf(lines[n++], 40, "DNA: %s  TRAILS: %u", code, static_cast<unsigned>(s.trailsVisited));
     if (batteryPct_ >= 0)
         std::snprintf(lines[n++], 40, "BATTERY: %d%%%s", batteryPct_, charging_ ? " (CHARGING)" : "");
+    if (weather_.sky != Sky::Unknown && n < 10) {
+        char sky[12];
+        std::snprintf(sky, sizeof sky, "%s", toString(weather_.sky));
+        for (char* p = sky; *p; p++) *p = static_cast<char>(*p >= 'a' && *p <= 'z' ? *p - 32 : *p);
+        const float temp = fahrenheit_ ? weather_.tempC * 9 / 5 + 32 : weather_.tempC;
+        std::snprintf(lines[n++], 40, "WEATHER: %s, %d%s", sky, static_cast<int>(std::lround(temp)), fahrenheit_ ? "F" : "C");
+    }
     for (int i = 0; i < n; i++) c.text(64, 136 + i * 23.0f, lines[i], 2, ink);
     c.text(240, 366, "TAP TO CLOSE", 2, 0x8A7A66, Align::Center);
 }

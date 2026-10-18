@@ -16,6 +16,7 @@
 #include "squatch/gesture.hpp"
 #include "squatch/sim.hpp"
 #include "squatch/sounds.hpp"
+#include "squatch/weather.hpp"
 
 namespace squatch {
 
@@ -71,6 +72,12 @@ public:
     // means there's no battery to show (the PC, or none connected).
     void setBattery(int percent, bool charging);
     int batteryPercent() const { return batteryPct_; }
+
+    // The weather outside, from the front end (Open-Meteo on the board). A change of sky
+    // gets a message, and the clearing shows it: clouds, fog, rain, snow, storms.
+    void setWeather(const Weather& w);
+    const Weather& weather() const { return weather_; }
+    void setFahrenheit(bool on) { fahrenheit_ = on; }
 
     // ---- settings and the screen timeout
     void setSettings(const Settings& s);  // e.g. as loaded at start-up; out-of-range steps are clamped
@@ -203,6 +210,11 @@ private:
     void drawScenery(Canvas& c);  // everything that only changes with the time of day
     void drawSky(Canvas& c);
     void drawStars(Canvas& c);
+    void drawClouds(Canvas& c);
+    void drawFog(Canvas& c);
+    void drawSnowCover(Canvas& c);
+    void drawPrecipitation(Canvas& c);
+    float overcast() const;  // 0 clear .. 1 a dark storm sky
     void drawGround(Canvas& c);
     void drawTree(Canvas& c, float x, float base, float size);
     void drawStump(Canvas& c);
@@ -268,6 +280,9 @@ private:
     Cue cues_[8];
     int cueCount_ = 0;
     uint32_t nextKnockSound_ = 0;
+    Weather weather_;
+    bool fahrenheit_ = false;
+    uint32_t nextLightning_ = 0, lightningUntil_ = 0;
     bool settingsChanged_ = false;
     bool screenOff_ = false, waking_ = false;
     uint32_t lastInputMs_ = 0;

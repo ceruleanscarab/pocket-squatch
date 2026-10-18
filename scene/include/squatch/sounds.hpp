@@ -33,6 +33,7 @@ enum class Cue : uint8_t {
     ForageBack,
     Photo,
     Warning,     // low battery
+    Thunder,
     Count
 };
 

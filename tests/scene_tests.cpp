@@ -760,6 +760,57 @@ static void testSceneryCache() {
     }
 }
 
+static void testWeather() {
+    std::printf("weather: Open-Meteo replies are read, changes get a message, and every sky draws\n");
+    const char* reply =
+        "{\"latitude\":38.8,\"current_units\":{\"time\":\"iso8601\",\"temperature_2m\":\"\u00b0C\","
+        "\"weather_code\":\"wmo code\",\"wind_speed_10m\":\"km/h\"},\"current\":{\"time\":\"2026-10-18T16:00\","
+        "\"interval\":900,\"temperature_2m\":-2.5,\"weather_code\":73,\"wind_speed_10m\":14.2}}";
+    Weather w;
+    CHECK(parseOpenMeteo(reply, w));
+    CHECK(w.sky == Sky::Snow);
+    CHECK(w.tempC < -2.4f && w.tempC > -2.6f);
+    CHECK(w.windKmh > 14 && w.windKmh < 14.5f);
+    CHECK(!parseOpenMeteo("{\"error\":true,\"reason\":\"nope\"}", w));
+    CHECK(!parseOpenMeteo("", w));
+    CHECK(skyFromWmo(0) == Sky::Clear && skyFromWmo(3) == Sky::Cloudy && skyFromWmo(45) == Sky::Fog);
+    CHECK(skyFromWmo(53) == Sky::Drizzle && skyFromWmo(81) == Sky::Rain && skyFromWmo(86) == Sky::Snow);
+    CHECK(skyFromWmo(95) == Sky::Storm);
+
+    Driver d;
+    for (int i = 0; i < 5000 && d.scene.toast(); i++) d.step();  // let earlier messages go
+    Weather clear;
+    clear.sky = Sky::Clear;
+    d.scene.setWeather(clear);
+    d.step();
+    CHECK(!d.scene.toast());  // a plain first report isn't news
+    w.sky = Sky::Rain;
+    d.scene.setWeather(w);
+    d.step();
+    CHECK(d.scene.toast() && std::strcmp(d.scene.toast(), "RAIN IN THE FOREST") == 0);
+
+    std::vector<uint16_t> a(Scene::kSize * Scene::kSize), b(a.size());
+    Canvas ca(a.data(), Scene::kSize, Scene::kSize), cb(b.data(), Scene::kSize, Scene::kSize);
+    Rgb sky[8];
+    for (int k = 1; k <= static_cast<int>(Sky::Storm); k++) {
+        Weather x;
+        x.sky = static_cast<Sky>(k);
+        x.windKmh = 20;
+        d.scene.setWeather(x);
+        d.scene.setSceneryCache(true);
+        d.scene.draw(ca);
+        d.scene.setSceneryCache(false);
+        d.scene.draw(cb);
+        int diff = 0;
+        for (size_t i = 0; i < a.size(); i++) diff += a[i] != b[i];
+        CHECK(diff == 0);
+        sky[k] = ca.pixel(240, 140);
+    }
+    CHECK(sky[1] != sky[7]);  // a storm sky isn't a clear one
+    d.scene.setFahrenheit(true);
+    d.scene.setSceneryCache(true);
+}
+
 int main() {
     testTap();
     testLongPressThenDrag();
@@ -785,6 +836,7 @@ int main() {
     testSounds();
     testNaming();
     testSceneryCache();
+    testWeather();
 
     std::printf("\n%d checks, %d failed\n", gChecks, gFailures);
     return gFailures ? 1 : 0;

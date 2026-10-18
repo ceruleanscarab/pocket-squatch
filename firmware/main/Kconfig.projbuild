@@ -33,6 +33,46 @@ menu "Pocket Squatch"
             turns each one into a place in the forest. Only a hash of each network's
             name is kept. Wi-Fi is on only for the two seconds of the scan.
 
+    config SQUATCH_WEATHER
+        bool "Weather: show the real weather in the clearing"
+        default y
+        help
+            About once an hour the board joins the Wi-Fi network above for a few seconds
+            and asks Open-Meteo (api.open-meteo.com, free, no account) for the current
+            weather at the place below. Rain, snow, fog, clouds and storms then show in
+            the clearing. Needs the Wi-Fi network and a location.
+
+    config SQUATCH_WEATHER_LAT
+        string "Weather location: latitude"
+        depends on SQUATCH_WEATHER
+        default ""
+        help
+            Decimal degrees, north positive, e.g. 38.83. A town's coordinates are
+            plenty: look the town up on a map. Leave empty for no weather.
+
+    config SQUATCH_WEATHER_LON
+        string "Weather location: longitude"
+        depends on SQUATCH_WEATHER
+        default ""
+        help
+            Decimal degrees, east positive (so negative in the Americas), e.g. -104.82.
+
+    config SQUATCH_FAHRENHEIT
+        bool "Show temperatures in Fahrenheit"
+        default y
+
+    config SQUATCH_SLEEP
+        bool "Sleep while the screen is off"
+        default y
+        select PM_ENABLE
+        select FREERTOS_USE_TICKLESS_IDLE
+        select USJ_NO_AUTO_LS_ON_CONNECTION
+        help
+            With the screen off, the processor slows down and naps between checks for a
+            touch or the power key (automatic light sleep), and the AMOLED panel goes
+            into its own sleep. While a computer's serial monitor is connected over USB
+            it stays awake, so the log keeps working.
+
     config SQUATCH_TZ
         string "Time zone (POSIX TZ string)"
         default "MST7MDT,M3.2.0,M11.1.0"

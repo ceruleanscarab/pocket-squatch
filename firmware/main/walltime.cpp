@@ -12,8 +12,8 @@
 #include "esp_netif_sntp.h"
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
-#include "freertos/event_groups.h"
 #include "freertos/task.h"
+#include "netjoin.hpp"
 #include "radio.hpp"
 
 namespace walltime {
@@ -86,41 +86,11 @@ void writeRtc(int64_t epoch) {
 
 // ---- network time
 
-constexpr EventBits_t kGotIp = 1, kGaveUp = 2;
-EventGroupHandle_t gNet = nullptr;
-int gRetries = 0;
 char gSsid[33], gPassword[65];
 
-void onNetEvent(void*, esp_event_base_t base, int32_t id, void*) {
-    if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
-        esp_wifi_connect();
-    } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
-        if (++gRetries < 5) esp_wifi_connect();
-        else xEventGroupSetBits(gNet, kGaveUp);
-    } else if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
-        xEventGroupSetBits(gNet, kGotIp);
-    }
-}
-
 void networkTask(void*) {
-    gNet = xEventGroupCreate();
-    radio::take();  // a trail scan may have the radio
-    esp_netif_t* netif = esp_netif_create_default_wifi_sta();
-    wifi_init_config_t init = WIFI_INIT_CONFIG_DEFAULT();
-    esp_wifi_init(&init);
-    esp_event_handler_instance_t wifiHandler, ipHandler;
-    esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, onNetEvent, nullptr, &wifiHandler);
-    esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP, onNetEvent, nullptr, &ipHandler);
-
-    wifi_config_t cfg{};
-    std::strncpy(reinterpret_cast<char*>(cfg.sta.ssid), gSsid, sizeof cfg.sta.ssid);
-    std::strncpy(reinterpret_cast<char*>(cfg.sta.password), gPassword, sizeof cfg.sta.password);
-    esp_wifi_set_mode(WIFI_MODE_STA);
-    esp_wifi_set_config(WIFI_IF_STA, &cfg);
-    esp_wifi_start();
-
-    EventBits_t bits = xEventGroupWaitBits(gNet, kGotIp | kGaveUp, pdFALSE, pdFALSE, pdMS_TO_TICKS(30000));
-    if (bits & kGotIp) {
+    radio::take();  // a trail scan or the weather may have the radio
+    if (netjoin::join(gSsid, gPassword)) {
         esp_sntp_config_t sntp = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
         esp_netif_sntp_init(&sntp);
         if (esp_netif_sntp_sync_wait(pdMS_TO_TICKS(15000)) == ESP_OK) {
@@ -130,16 +100,8 @@ void networkTask(void*) {
             ESP_LOGW(TAG, "no answer from the time server");
         }
         esp_netif_sntp_deinit();
-    } else {
-        ESP_LOGW(TAG, "couldn't join Wi-Fi \"%s\"", gSsid);
     }
-
-    // Wi-Fi only runs for this and for trail scans; switch it off to save the battery.
-    esp_event_handler_instance_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID, wifiHandler);
-    esp_event_handler_instance_unregister(IP_EVENT, IP_EVENT_STA_GOT_IP, ipHandler);
-    esp_wifi_stop();
-    esp_wifi_deinit();
-    esp_netif_destroy_default_wifi(netif);
+    netjoin::leave();
     radio::give();
     vTaskDelete(nullptr);
 }

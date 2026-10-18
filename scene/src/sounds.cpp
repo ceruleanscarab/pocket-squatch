@@ -56,6 +56,7 @@ constexpr Note kReturned[] = {{Tri, C5, C5, 90, 10, 0.55f}, {Tri, E5, E5, 90, 10
 constexpr Note kForageBack[] = {{Tri, 170, 120, 50, 140, 0.8f},   {Tri, 170, 120, 50, 160, 0.8f},
                                 {Sine, 1200, 1800, 70, 45, 0.5f}, {Sine, 1300, 2050, 90, 0, 0.5f}};
 constexpr Note kPhoto[] = {{Noise, 6000, 6000, 25, 45, 0.6f}, {Noise, 4000, 4000, 45, 0, 0.55f}};
+constexpr Note kThunder[] = {{Noise, 260, 70, 300, 0, 0.9f}, {Noise, 120, 50, 900, 0, 0.8f}};
 constexpr Note kWarning[] = {{Square, A5, A5, 130, 90, 0.3f}, {Square, E5, E5, 220, 0, 0.3f}};
 
 #define SHAPE(a) {a, static_cast<int>(sizeof a / sizeof a[0])}
@@ -63,7 +64,7 @@ constexpr Shape kShapes[static_cast<int>(Cue::Count)] = {
     SHAPE(kTick),    SHAPE(kPickup),   SHAPE(kEat),    SHAPE(kClean),     SHAPE(kHeal),    SHAPE(kPlay),
     SHAPE(kLightOn), SHAPE(kLightOff), SHAPE(kHappy),  SHAPE(kSneeze),    SHAPE(kSulk),    SHAPE(kKnock),
     SHAPE(kHatch),   SHAPE(kGrowUp),   SHAPE(kNewEgg), SHAPE(kSick),      SHAPE(kRanAway), SHAPE(kReturned),
-    SHAPE(kForageBack), SHAPE(kPhoto), SHAPE(kWarning),
+    SHAPE(kForageBack), SHAPE(kPhoto), SHAPE(kWarning), SHAPE(kThunder),
 };
 #undef SHAPE
 
@@ -80,7 +81,7 @@ const char* toString(Cue c) {
     static const char* kNames[] = {"tick",     "pickup",   "eat",       "clean",  "heal",    "play",
                                    "light on", "light off", "happy",    "sneeze", "sulk",    "knock",
                                    "hatch",    "grow up",  "new egg",   "sick",   "ran away", "returned",
-                                   "forage back", "photo", "warning"};
+                                   "forage back", "photo", "warning", "thunder"};
     int i = static_cast<int>(c);
     return i < static_cast<int>(Cue::Count) ? kNames[i] : "?";
 }

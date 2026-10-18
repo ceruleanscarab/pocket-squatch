@@ -57,7 +57,8 @@ bool init(i2c_master_bus_handle_t bus, int chargeMa, int trickleMa) {
     uint8_t trickle = static_cast<uint8_t>(trickleMa / 25);
     if (trickle < 1) trickle = 1;
     if (trickle > 8) trickle = 8;
-    for (uint8_t reg : {static_cast<uint8_t>(0x61), static_cast<uint8_t>(0x63)})
+    const uint8_t trickleRegs[] = {0x61, 0x63};  // precharge, end of charge
+    for (uint8_t reg : trickleRegs)
         if (rd(reg, v)) wr(reg, static_cast<uint8_t>((v & 0xF0) | trickle));
     return true;
 }

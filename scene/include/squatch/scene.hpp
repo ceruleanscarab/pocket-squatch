@@ -33,7 +33,7 @@ public:
         int cy() const { return y + h / 2; }
     };
 
-    enum class Overlay : uint8_t { None, Stats, Gallery, Trails, Settings, Name };
+    enum class Overlay : uint8_t { None, Stats, Gallery, Trails, Settings, Name, Game };
 
     // Things you can pick up from the tray and give to Squatch.
     enum class Item : uint8_t { None, Berries, Fish, Roots, Brush, Poultice, Pinecone };
@@ -78,6 +78,24 @@ public:
     void setWeather(const Weather& w);
     const Weather& weather() const { return weather_; }
     void setFahrenheit(bool on) { fahrenheit_ = on; }
+
+    // ---- the games, from the tray's Play button: a picker, then one of three games, or a
+    // quick game of catch with no timing at all. Each ends in Sim::finishedGame().
+    enum class Game : uint8_t { None, Pick, Seek, Berry, Photo };
+    static constexpr int kGameChoices = 4;  // Hide and Seek, Berry Catch, Blurry Photo, Quick Catch
+    static constexpr int kSeekSpots = 5;
+    static constexpr int kBerriesToWin = 10;
+    Game game() const { return game_; }
+    bool gameOver() const { return gameOver_; }
+    bool gameWon() const { return gameWon_; }
+    int gameScore() const { return score_; }
+    Rect gameChoiceArea(int i) const;
+    Rect gameQuitArea() const;
+    Rect seekSpotArea(int i) const;
+    int seekAnswer() const { return seekSpot_; }
+    Rect snapArea() const;
+    bool petInFrame() const;  // Blurry Photo: inside the viewfinder right now
+    float basketX() const { return basketX_; }
 
     // ---- the seasons, from the local date: autumn leaves (late September to November), and
     // for Halloween (October 15-31) a jack-o'-lantern to tap, bats at dusk, a harvest moon,
@@ -226,6 +244,16 @@ private:
     void drawFallingLeaves(Canvas& c);
     void localDate(int& month, int& day) const;
     void tapPumpkin();
+    void openGames();
+    void startGame(Game g);
+    void gameTap(int x, int y);
+    void updateGame();
+    void finishGame(bool won, const char* msg);
+    void endGame(bool reward);
+    void drawGame(Canvas& c);
+    void drawGamePicker(Canvas& c);
+    void drawBush(Canvas& c, float x, float y);
+    void drawPeek(Canvas& c, float x, float y);
     void drawFog(Canvas& c);
     void drawSnowCover(Canvas& c);
     void drawPrecipitation(Canvas& c);
@@ -297,6 +325,19 @@ private:
     uint32_t nextKnockSound_ = 0;
     Weather weather_;
     int previewMonth_ = 0, previewDay_ = 0;
+    struct FallingBerry {
+        float x, vy;
+        uint32_t born;
+        bool live;
+    };
+    Game game_ = Game::None;
+    bool gameOver_ = false, gameWon_ = false, petOverride_ = false, running_ = false, snapped_ = false, runRight_ = true;
+    int score_ = 0, tries_ = 0, seekSpot_ = 0, runsLeft_ = 0;
+    uint8_t seekWrong_ = 0;  // a bit per spot already looked behind
+    uint32_t gameUntil_ = 0, resultUntil_ = 0, nextEvent_ = 0, runStart_ = 0;
+    float basketX_ = 240, gameX_ = 0;
+    FallingBerry berries_[10]{};
+    char gameMsg_[32] = {};
     int64_t greetedDay_ = -1;
     uint32_t giggleAt_ = 0;
     bool fahrenheit_ = false;

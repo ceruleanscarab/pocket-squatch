@@ -53,7 +53,8 @@ Wiki: https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-4B
 3. Port to the board: ST7701 RGB panel via esp_lcd (the scene draws its own frames, so no LVGL), GT911 touch,
    flash saves, NTP + PCF85063 clock — code done and building; not yet run on hardware. AXP2101 moved to step 6.
 4. Real art for egg, baby, child; then the other stages.
-5. Mini-games (Hide and Seek, Berry Catch, Blurry Photo) and the photo gallery.
+5. Mini-games (Hide and Seek, Berry Catch, Blurry Photo) and the photo gallery — done (`Scene::Game`, from Play);
+   Quick Catch stays as the no-timing option.
 6. Sound (ES8311 over I2S), battery level and sleep via the AXP2101, then the 3D-printed stump case.
 - DNA and rarity, and the Wi-Fi trail map with forage trips — done (firmware scan not yet run on hardware).
 - Battery level via the AXP2101 (`firmware/main/power.cpp`, `Scene::setBattery`) — done.

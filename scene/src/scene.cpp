@@ -70,7 +70,6 @@ Scene::Item itemFor(Scene::Slot s) {
     switch (s) {
         case Scene::Slot::Clean: return Scene::Item::Brush;
         case Scene::Slot::Medicine: return Scene::Item::Poultice;
-        case Scene::Slot::Play: return Scene::Item::Pinecone;
         case Scene::Slot::Berries: return Scene::Item::Berries;
         case Scene::Slot::Fish: return Scene::Item::Fish;
         case Scene::Slot::Roots: return Scene::Item::Roots;
@@ -352,6 +351,10 @@ void Scene::touch(const TouchEvent& e) {
         waking_ = fingers_ != 0;
         return;
     }
+    // Berry Catch: the basket goes wherever the finger is.
+    if (overlay_ == Overlay::Game && game_ == Game::Berry && !gameOver_ && e.phase != TouchPhase::Up &&
+        e.y >= kStripTouchH)
+        basketX_ = std::max(60.0f, std::min(420.0f, static_cast<float>(e.x)));
     gestures_.touch(e);
     Gesture g;
     while (gestures_.poll(g)) handle(g);
@@ -372,6 +375,10 @@ void Scene::handle(const Gesture& g) {
         }
         Rect panel{kMapX, kMapY, kMapW, kMapH};
         if (!panel.contains(g.x, g.y) || g.y < kRowY) overlay_ = Overlay::None;  // outside, or the title
+        return;
+    }
+    if (overlay_ == Overlay::Game) {
+        if (g.type == GestureType::Tap) gameTap(g.x, g.y);
         return;
     }
     if (overlay_ == Overlay::Name) {
@@ -512,6 +519,7 @@ void Scene::pressSlot(Slot s) {
             break;
         case Slot::Photos: overlay_ = Overlay::Gallery; break;
         case Slot::Settings: overlay_ = Overlay::Settings; break;
+        case Slot::Play: openGames(); break;
         default: {
             Item it = itemFor(s);
             held_ = (held_ == it) ? Item::None : it;  // tap again to put it back
@@ -859,6 +867,8 @@ void Scene::update(uint32_t nowMs) {
 
     animate(dt);
 
+    if (overlay_ == Overlay::Game) updateGame();
+
     // Halloween: a greeting once on the day, and the giggle after a fright.
     {
         int m, d;
@@ -1153,6 +1163,7 @@ float Scene::squatchScale() const {
 }
 
 float Scene::squatchX() const {
+    if (petOverride_) return gameX_;
     switch (sim_.trustLevel()) {
         case TrustLevel::Hiding: return kHideX;
         case TrustLevel::Wandering: return wanderX_;
@@ -1162,6 +1173,7 @@ float Scene::squatchX() const {
 }
 
 float Scene::squatchFoot() const {
+    if (petOverride_) return kFriendlyFoot;
     return sim_.trustLevel() == TrustLevel::Wandering ? kWanderFoot : kFriendlyFoot;
 }
 
@@ -1329,7 +1341,14 @@ void Scene::draw(Canvas& c) {
         drawHidingHead(c);
         drawTree(c, kLeftTreeX, kLeftTreeBase, 1.0f);  // it peeks out from behind the tree
     }
+    const bool petAway = overlay_ == Overlay::Game &&
+                         (game_ == Game::Seek || (game_ == Game::Photo && !running_));  // hidden, or not running past
+    if (overlay_ == Overlay::Game && game_ == Game::Seek) {
+        drawBush(c, 160, 318);
+        drawBush(c, 300, 318);
+    }
     if (s.stage == Stage::Egg) drawEgg(c);
+    else if (petAway) {}
     else if (hiding()) drawHidingEyes(c);
     else if (hatched()) drawPet(c);
     float h = hourOfDay();
@@ -1350,8 +1369,11 @@ void Scene::draw(Canvas& c) {
 
     drawStrip(c);
     if (s.foraging) drawForagingBanner(c);
-    drawToast(c);
-    drawTray(c);
+    const bool playing = overlay_ == Overlay::Game && game_ != Game::Pick;  // the game has the screen to itself
+    if (!playing) {
+        drawToast(c);
+        drawTray(c);
+    }
     if (drag_ == DragMode::Item && held_ != Item::None) {
         c.fillEllipse(dragX_, dragY_ - 8, 20, 6, 0x000000, 0.2f);
         drawItem(c, held_, dragX_, dragY_ - 40, 1.3f);  // above the finger, not under it
@@ -1361,6 +1383,7 @@ void Scene::draw(Canvas& c) {
     if (overlay_ == Overlay::Trails) drawTrails(c);
     if (overlay_ == Overlay::Settings) drawSettings(c);
     if (overlay_ == Overlay::Name) drawNaming(c);
+    if (overlay_ == Overlay::Game) drawGame(c);
 }
 
 void Scene::drawScenery(Canvas& c) {
@@ -2090,6 +2113,313 @@ void Scene::drawTrails(Canvas& c) {
     c.text(b.cx(), b.cy() - 7.0f, scanning_ ? "LISTENING..." : "LOOK AGAIN", 2, kUiLight, Align::Center);
 }
 
+// ================================================================ games
+
+namespace {
+constexpr float kSeekSpotXY[Scene::kSeekSpots][2] = {{48, 290}, {160, 318}, {300, 318}, {388, 345}, {432, 262}};
+constexpr const char* kGameNames[Scene::kGameChoices] = {"HIDE AND SEEK", "BERRY CATCH", "BLURRY PHOTO", "QUICK CATCH"};
+constexpr const char* kGameHints[Scene::kGameChoices] = {"FIND WHERE IT HID: THREE GUESSES", "CATCH 10 FALLING BERRIES",
+                                                         "SNAP IT AS IT RUNS PAST", "NO RUSHING: A GAME OF CATCH"};
+constexpr uint32_t kBerryRoundMs = 25000, kBerryEveryMs = 900, kRunMs = 2000;
+constexpr float kBasketY = 420, kFrameX0 = 130, kFrameX1 = 350;
+}  // namespace
+
+Scene::Rect Scene::gameChoiceArea(int i) const { return {56, 112 + i * 74, 368, 68}; }
+Scene::Rect Scene::gameQuitArea() const { return {S - 112, 0, 112, 64}; }
+Scene::Rect Scene::seekSpotArea(int i) const {
+    return {static_cast<int>(kSeekSpotXY[i][0]) - 36, static_cast<int>(kSeekSpotXY[i][1]) - 36, 72, 72};
+}
+Scene::Rect Scene::snapArea() const { return {S / 2 - 100, 392, 200, 80}; }
+bool Scene::petInFrame() const {
+    return game_ == Game::Photo && running_ && gameX_ > kFrameX0 + 10 && gameX_ < kFrameX1 - 10;
+}
+
+void Scene::openGames() {
+    const State& s = sim_.state();
+    if (!hatched() || s.asleep) {
+        sayNotNow();
+        return;
+    }
+    if (hiding()) {
+        say("IT'S TOO SHY TO PLAY YET", true);
+        return;
+    }
+    trayTarget_ = 0;
+    held_ = Item::None;
+    page_ = Page::Main;
+    overlay_ = Overlay::Game;
+    game_ = Game::Pick;
+}
+
+void Scene::startGame(Game g) {
+    game_ = g;
+    gameOver_ = gameWon_ = false;
+    score_ = 0;
+    gameMsg_[0] = '\0';
+    petOverride_ = false;
+    running_ = false;
+    switch (g) {
+        case Game::Seek:
+            seekSpot_ = static_cast<int>(rand01() * kSeekSpots) % kSeekSpots;
+            seekWrong_ = 0;
+            tries_ = 3;
+            nextEvent_ = now_ + 2500;
+            break;
+        case Game::Berry:
+            gameUntil_ = now_ + kBerryRoundMs;
+            nextEvent_ = now_ + 600;
+            basketX_ = 240;
+            for (FallingBerry& b : berries_) b.live = false;
+            petOverride_ = true;  // it watches from beside the tree
+            gameX_ = 104;
+            break;
+        case Game::Photo:
+            runsLeft_ = 3;
+            nextEvent_ = now_ + 1500;
+            petOverride_ = true;
+            gameX_ = -100;
+            break;
+        default: break;
+    }
+}
+
+void Scene::finishGame(bool won, const char* msg) {
+    gameOver_ = true;
+    gameWon_ = won;
+    std::snprintf(gameMsg_, sizeof gameMsg_, "%s", msg);
+    resultUntil_ = now_ + 2600;
+    cue(won ? Cue::Returned : Cue::Sulk);
+}
+
+void Scene::endGame(bool reward) {
+    const bool won = gameWon_, photo = game_ == Game::Photo;
+    overlay_ = Overlay::None;
+    game_ = Game::None;
+    petOverride_ = running_ = false;
+    if (!reward) return;
+    saved(sim_.finishedGame(won, photo));
+    react(React::Happy, won ? 1600 : 900);
+}
+
+void Scene::gameTap(int x, int y) {
+    if (game_ == Game::Pick) {
+        for (int i = 0; i < kGameChoices; i++) {
+            if (!gameChoiceArea(i).contains(x, y)) continue;
+            cue(Cue::Tick);
+            if (i == 3) {  // quick catch: the old, relaxed game
+                overlay_ = Overlay::None;
+                game_ = Game::None;
+                doPlay();
+            } else {
+                startGame(i == 0 ? Game::Seek : i == 1 ? Game::Berry : Game::Photo);
+            }
+            return;
+        }
+        if (!Rect{40, 56, 400, 380}.contains(x, y) || y < 100) {  // outside the panel, or its title
+            overlay_ = Overlay::None;
+            game_ = Game::None;
+        }
+        return;
+    }
+    if (gameOver_) {  // a tap on the result moves on
+        endGame(true);
+        return;
+    }
+    if (gameQuitArea().contains(x, y)) {
+        cue(Cue::Tick);
+        endGame(false);
+        return;
+    }
+    if (game_ == Game::Seek) {
+        for (int i = 0; i < kSeekSpots; i++) {
+            if (!seekSpotArea(i).contains(x, y) || (seekWrong_ & (1u << i))) continue;
+            if (i == seekSpot_) {
+                cue(Cue::Happy);
+                finishGame(true, "FOUND YOU!");
+            } else {
+                seekWrong_ |= static_cast<uint8_t>(1u << i);
+                cue(Cue::Tick);
+                if (--tries_ == 0) finishGame(false, "THERE IT WAS!");
+                else std::snprintf(gameMsg_, sizeof gameMsg_, "NOT THERE...");
+            }
+            return;
+        }
+    } else if (game_ == Game::Photo && snapArea().contains(x, y) && running_ && !snapped_) {
+        snapped_ = true;
+        flashUntil_ = now_ + 300;
+        cue(Cue::Photo);
+        if (petInFrame()) finishGame(true, "GOT A PHOTO!");
+        else std::snprintf(gameMsg_, sizeof gameMsg_, "MISSED IT!");
+    }
+}
+
+void Scene::updateGame() {
+    if (game_ == Game::Pick) return;
+    if (gameOver_) {
+        if (now_ >= resultUntil_) endGame(true);
+        return;
+    }
+    switch (game_) {
+        case Game::Seek:
+            if (now_ >= nextEvent_) {  // the right spot rustles now and then: a hint
+                const float x = kSeekSpotXY[seekSpot_][0], y = kSeekSpotXY[seekSpot_][1];
+                for (int i = 0; i < 4; i++)
+                    spawn(ParticleKind::Crumb, x + (rand01() - 0.5f) * 40, y - 30, (rand01() - 0.5f) * 60, -60, 700);
+                nextEvent_ = now_ + 3500;
+            }
+            break;
+        case Game::Berry: {
+            if (now_ >= nextEvent_ && now_ + 1500 < gameUntil_) {
+                for (FallingBerry& b : berries_) {
+                    if (b.live) continue;
+                    b = FallingBerry{40 + rand01() * 400, 130 + rand01() * 70, now_, true};
+                    break;
+                }
+                nextEvent_ = now_ + kBerryEveryMs;
+            }
+            for (FallingBerry& b : berries_) {
+                if (!b.live) continue;
+                const float y = 70 + (now_ - b.born) / 1000.0f * b.vy;
+                if (y >= kBasketY - 8 && y < kBasketY + 14 && std::fabs(b.x - basketX_) < 58) {
+                    b.live = false;
+                    score_++;
+                    cue(Cue::Pickup);
+                    spawn(ParticleKind::PlusOne, basketX_, kBasketY - 20, 0, -50, 700);
+                } else if (y > S) {
+                    b.live = false;
+                }
+            }
+            if (now_ >= gameUntil_) {
+                char msg[32];
+                std::snprintf(msg, sizeof msg, "CAUGHT %d!", score_);
+                finishGame(score_ >= kBerriesToWin, msg);
+            }
+            break;
+        }
+        case Game::Photo:
+            if (!running_ && now_ >= nextEvent_) {
+                running_ = true;
+                snapped_ = false;
+                runStart_ = now_;
+                runRight_ = rand01() < 0.5f;
+                gameMsg_[0] = '\0';
+            }
+            if (running_) {
+                const float p = static_cast<float>(now_ - runStart_) / kRunMs;
+                gameX_ = runRight_ ? -60 + 600 * p : 540 - 600 * p;
+                lookX_ = runRight_ ? 0.8f : -0.8f;
+                if (p >= 1) {
+                    running_ = false;
+                    if (--runsLeft_ == 0) finishGame(false, "IT GOT AWAY!");
+                    else nextEvent_ = now_ + 1500 + static_cast<uint32_t>(rand01() * 2500);
+                }
+            }
+            break;
+        default: break;
+    }
+}
+
+void Scene::drawBush(Canvas& c, float x, float y) {
+    c.fillEllipse(x, y + 26, 40, 8, 0x000000, 0.18f);
+    c.fillCircle(x - 22, y + 8, 22, sh(0x3E7B3A));
+    c.fillCircle(x + 22, y + 8, 22, sh(0x3E7B3A));
+    c.fillCircle(x, y - 6, 28, sh(0x4C8F44));
+}
+
+void Scene::drawPeek(Canvas& c, float x, float y) {
+    Rgb fur, face, mark;
+    furColours(fur, face, mark);
+    c.fillCircle(x, y - 34, 22, sh(fur));
+    c.fillEllipse(x, y - 30, 14, 11, sh(face));
+    for (float dx : {-6.0f, 6.0f}) c.fillCircle(x + dx, y - 33, 3, kEye);
+    c.line(x - 5, y - 24, x + 5, y - 24, 2, 0x3A1E14);
+}
+
+void Scene::drawGamePicker(Canvas& c) {
+    const Rgb ink = 0x3B2A1E, faint = 0x8A7A66;
+    c.tint(0x000000, 0.55f);
+    c.fillRoundRect(40, 56, 400, 380, 20, kUiLight);
+    c.text(240, 76, "LET'S PLAY!", 3, ink, Align::Center);
+    for (int i = 0; i < kGameChoices; i++) {
+        Rect r = gameChoiceArea(i);
+        c.fillRoundRect(r.x, r.y + 3, r.w, r.h - 6, 14, i == 3 ? 0xD9CFBC : 0xE6DCC6);
+        c.text(r.cx(), r.y + 14.0f, kGameNames[i], 2, ink, Align::Center);
+        c.text(r.cx(), r.y + 40.0f, kGameHints[i], 1, faint, Align::Center);
+    }
+    c.text(240, 412, "TAP OUTSIDE TO CLOSE", 1, faint, Align::Center);
+}
+
+void Scene::drawGame(Canvas& c) {
+    if (game_ == Game::Pick) {
+        drawGamePicker(c);
+        return;
+    }
+    // The playing field's furniture.
+    if (game_ == Game::Seek) {
+        for (int i = 0; i < kSeekSpots; i++) {
+            if (!(seekWrong_ & (1u << i))) continue;
+            const float x = kSeekSpotXY[i][0], y = kSeekSpotXY[i][1];
+            c.line(x - 12, y - 12, x + 12, y + 12, 5, 0xB3261E, 0.8f);
+            c.line(x - 12, y + 12, x + 12, y - 12, 5, 0xB3261E, 0.8f);
+        }
+        if (gameOver_) drawPeek(c, kSeekSpotXY[seekSpot_][0], kSeekSpotXY[seekSpot_][1]);
+    } else if (game_ == Game::Berry) {
+        for (const FallingBerry& b : berries_) {
+            if (!b.live) continue;
+            drawItem(c, Item::Berries, b.x, 70 + (now_ - b.born) / 1000.0f * b.vy, 0.9f);
+        }
+        const float x = basketX_, y = kBasketY;
+        c.fillEllipse(x, y + 30, 54, 8, 0x000000, 0.2f);
+        c.fillRoundRect(x - 50, y, 100, 30, 10, 0x9C6B3A);
+        for (int i = -2; i <= 2; i++) c.line(x + i * 18, y + 3, x + i * 18, y + 27, 2, 0x7A5028);
+        c.fillRoundRect(x - 54, y - 4, 108, 9, 4, 0xB8844A);
+    } else if (game_ == Game::Photo) {
+        const Rgb corner = 0xF3EBD9;
+        const float x0 = kFrameX0, x1 = kFrameX1, y0 = 190, y1 = 372;
+        for (float sx : {x0, x1})
+            for (float sy : {y0, y1}) {
+                const float dx = sx == x0 ? 22.0f : -22.0f, dy = sy == y0 ? 22.0f : -22.0f;
+                c.line(sx, sy, sx + dx, sy, 4, corner);
+                c.line(sx, sy, sx, sy + dy, 4, corner);
+            }
+        Rect b = snapArea();
+        c.fillRoundRect(b.x, b.y + 4, b.w, b.h - 8, 18, running_ && !snapped_ ? 0xC0392B : 0x8A5A50);
+        c.text(b.cx(), b.cy() - 10.0f, "SNAP", 3, kUiLight, Align::Center);
+    }
+
+    // The banner along the top: what to do, how it's going, and a way out.
+    c.fillRect(0, 0, S, 64, kUiDark);
+    char status[32];
+    switch (game_) {
+        case Game::Seek: std::snprintf(status, sizeof status, "GUESSES LEFT: %d", tries_); break;
+        case Game::Berry: {
+            const int secs = gameUntil_ > now_ ? static_cast<int>((gameUntil_ - now_ + 999) / 1000) : 0;
+            std::snprintf(status, sizeof status, "BERRIES %d/%d  %ds", score_, kBerriesToWin, secs);
+            break;
+        }
+        case Game::Photo: std::snprintf(status, sizeof status, "CHANCES LEFT: %d", runsLeft_); break;
+        default: status[0] = '\0'; break;
+    }
+    c.text(16, 12, kGameNames[game_ == Game::Seek ? 0 : game_ == Game::Berry ? 1 : 2], 2, kGold);
+    c.text(16, 38, status, 2, kUiLight);
+    Rect q = gameQuitArea();
+    c.fillRoundRect(q.x + 8, q.y + 10, q.w - 16, q.h - 20, 12, kButton);
+    c.text(q.cx(), q.cy() - 7.0f, "QUIT", 2, kUiLight, Align::Center);
+
+    const char* msg = gameMsg_[0] ? gameMsg_ : nullptr;
+    if (!msg && !gameOver_) {
+        if (game_ == Game::Seek) msg = "WHERE DID IT HIDE?";
+        if (game_ == Game::Berry) msg = "MOVE THE BASKET";
+        if (game_ == Game::Photo) msg = running_ ? nullptr : "WAIT FOR IT...";
+    }
+    if (msg) {
+        const int scale = gameOver_ ? 3 : 2;
+        const float w = static_cast<float>(Canvas::textWidth(msg, scale)) + 32;
+        c.fillRoundRect(240 - w / 2, 80, w, gameOver_ ? 44 : 32, 16, kUiDark, 0.85f);
+        c.text(240, gameOver_ ? 91.0f : 89.0f, msg, scale, gameOver_ && gameWon_ ? kGold : kUiLight, Align::Center);
+    }
+}
+
 void Scene::drawNaming(Canvas& c) {
     const Rgb ink = 0x3B2A1E, faint = 0x8A7A66, key = 0xE6DCC6;
     c.tint(0x000000, 0.55f);
@@ -2203,6 +2533,9 @@ void Scene::drawSlotIcon(Canvas& c, Slot s, float x, float y) {
             c.line(x, y + 22, x, y - 18, 5, 0xA0703F);
             c.fillTriangle(x - 2, y - 20, x + 24, y - 13, x - 2, y - 6, 0xCFC7B5);
             c.fillTriangle(x + 2, y - 4, x - 24, y + 3, x + 2, y + 10, 0xCFC7B5);
+            break;
+        case Slot::Play:
+            drawItem(c, Item::Pinecone, x, y, 1);
             break;
         case Slot::Settings:  // a gear
             for (int i = 0; i < 8; i++) {

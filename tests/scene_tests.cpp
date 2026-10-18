@@ -858,6 +858,114 @@ static void testHalloween() {
     d.scene.setSceneryCache(true);
 }
 
+static void testGames() {
+    std::printf("games: the picker, Hide and Seek, Berry Catch, Blurry Photo, Quick Catch, and quitting\n");
+    auto big = [](const Scene::Rect& r) { return r.w >= 64 && r.h >= 64; };
+    auto openPicker = [](Driver& d) {
+        d.openTray();
+        d.pressSlot(Scene::Slot::Play);
+    };
+    {
+        Driver d;
+        openPicker(d);
+        CHECK(d.scene.overlay() == Scene::Overlay::Game && d.scene.game() == Scene::Game::Pick);
+        CHECK(!d.scene.trayOpen());
+        for (int i = 0; i < Scene::kGameChoices; i++) CHECK(big(d.scene.gameChoiceArea(i)));
+        CHECK(big(d.scene.gameQuitArea()) && big(d.scene.snapArea()));
+        for (int i = 0; i < Scene::kSeekSpots; i++) CHECK(big(d.scene.seekSpotArea(i)));
+        std::vector<uint16_t> fb(Scene::kSize * Scene::kSize);
+        Canvas c(fb.data(), Scene::kSize, Scene::kSize);
+        d.scene.draw(c);
+
+        // Hide and Seek: one wrong guess, then the right one.
+        d.tap(d.scene.gameChoiceArea(0));
+        CHECK(d.scene.game() == Scene::Game::Seek);
+        d.scene.draw(c);
+        const uint32_t prints = d.sim.state().footprints;
+        const int answer = d.scene.seekAnswer();
+        d.tap(d.scene.seekSpotArea((answer + 1) % Scene::kSeekSpots));
+        CHECK(!d.scene.gameOver());
+        d.tap(d.scene.seekSpotArea(answer));
+        CHECK(d.scene.gameOver() && d.scene.gameWon());
+        d.scene.draw(c);
+        for (int i = 0; i < 200; i++) d.step();
+        CHECK(d.scene.overlay() == Scene::Overlay::None);
+        CHECK(d.sim.state().footprints == prints + 5);
+    }
+    {
+        Driver d;  // Hide and Seek, three wrong guesses
+        openPicker(d);
+        d.tap(d.scene.gameChoiceArea(0));
+        const int answer = d.scene.seekAnswer();
+        const uint32_t prints = d.sim.state().footprints;
+        for (int k = 1; k <= 3; k++) d.tap(d.scene.seekSpotArea((answer + k) % Scene::kSeekSpots));
+        CHECK(d.scene.gameOver() && !d.scene.gameWon());
+        d.tap(240, 240);  // a tap moves on
+        CHECK(d.scene.overlay() == Scene::Overlay::None);
+        CHECK(d.sim.state().footprints == prints + 2);  // playing still counts for something
+    }
+    {
+        Driver d;  // Berry Catch: the basket follows the finger; nobody catching loses
+        openPicker(d);
+        d.tap(d.scene.gameChoiceArea(1));
+        CHECK(d.scene.game() == Scene::Game::Berry);
+        d.send(TouchPhase::Down, 0, 330, 300);
+        CHECK(d.scene.basketX() == 330);
+        d.send(TouchPhase::Move, 0, 20, 300);
+        CHECK(d.scene.basketX() == 60);  // kept on screen
+        d.send(TouchPhase::Up, 0, 20, 300);
+        std::vector<uint16_t> fb(Scene::kSize * Scene::kSize);
+        Canvas c(fb.data(), Scene::kSize, Scene::kSize);
+        for (int i = 0; i < 26000 / 16; i++) {
+            d.step();
+            if (i == 300) d.scene.draw(c);
+        }
+        CHECK(d.scene.gameOver());
+        CHECK(d.scene.gameScore() < Scene::kBerriesToWin);
+        CHECK(!d.scene.gameWon());
+    }
+    {
+        Driver d;  // Blurry Photo: snap while it's in the frame
+        openPicker(d);
+        d.tap(d.scene.gameChoiceArea(2));
+        CHECK(d.scene.game() == Scene::Game::Photo);
+        const int photos = d.sim.photoCount();
+        int i = 0;
+        while (!d.scene.petInFrame() && i++ < 1000) d.step();
+        CHECK(d.scene.petInFrame());
+        std::vector<uint16_t> fb(Scene::kSize * Scene::kSize);
+        Canvas c(fb.data(), Scene::kSize, Scene::kSize);
+        d.scene.draw(c);
+        d.send(TouchPhase::Down, 0, d.scene.snapArea().cx(), d.scene.snapArea().cy());
+        d.step(40);
+        d.send(TouchPhase::Up, 0, d.scene.snapArea().cx(), d.scene.snapArea().cy());
+        d.step();
+        CHECK(d.scene.gameOver() && d.scene.gameWon());
+        for (int k = 0; k < 200; k++) d.step();
+        CHECK(d.sim.photoCount() == photos + 1 || photos == Sim::kPhotoCount);
+    }
+    {
+        Driver d;  // Quick Catch is the old game; Quit gives nothing
+        openPicker(d);
+        d.tap(d.scene.gameChoiceArea(3));
+        CHECK(d.scene.overlay() == Scene::Overlay::None);
+        CHECK(d.scene.toast() && std::strstr(d.scene.toast(), "CATCH") != nullptr);
+        openPicker(d);
+        d.tap(d.scene.gameChoiceArea(0));
+        const uint32_t prints = d.sim.state().footprints;
+        d.tap(d.scene.gameQuitArea());
+        CHECK(d.scene.overlay() == Scene::Overlay::None && d.sim.state().footprints == prints);
+    }
+    {
+        Driver d;  // a shy pet won't play yet
+        d.sim.mutableState().trust = 10;
+        d.settle();
+        openPicker(d);
+        CHECK(d.scene.overlay() == Scene::Overlay::None);
+        CHECK(d.scene.toast() && std::strstr(d.scene.toast(), "TOO SHY") != nullptr);
+    }
+}
+
 int main() {
     testTap();
     testLongPressThenDrag();
@@ -885,6 +993,7 @@ int main() {
     testSceneryCache();
     testWeather();
     testHalloween();
+    testGames();
 
     std::printf("\n%d checks, %d failed\n", gChecks, gFailures);
     return gFailures ? 1 : 0;

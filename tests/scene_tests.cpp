@@ -569,6 +569,15 @@ static void testSettings() {
     for (int i = 0; i < 31; i++) d.step(1000);
     CHECK(d.scene.screenOff());
 
+    // The board's power key: off at once, and the next tap only wakes it.
+    d.scene.wake();
+    d.scene.screenOffNow();
+    CHECK(d.scene.screenOff());
+    d.tap(10, 10);
+    CHECK(!d.scene.screenOff());
+    CHECK(d.scene.overlay() == Scene::Overlay::None);
+    d.scene.screenOffNow();
+
     // Low battery wakes it.
     d.scene.setBattery(10, false);
     CHECK(!d.scene.screenOff());

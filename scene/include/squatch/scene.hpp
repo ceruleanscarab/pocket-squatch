@@ -79,6 +79,7 @@ public:
     // getting sick, low battery...) wakes it too.
     bool screenOff() const { return screenOff_; }
     void wake();
+    void screenOffNow();  // e.g. the board's power key
     // The settings page: row 0 brightness, row 1 screen timeout, each with - and +.
     Rect settingButtonArea(int row, bool plus) const;
     Rect settingsDoneArea() const;

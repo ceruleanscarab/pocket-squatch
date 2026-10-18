@@ -33,6 +33,7 @@ constexpr int kMaxFingers = 2;
 constexpr uint32_t kBatteryEveryMs = 2000;
 constexpr uint32_t kSettingsSaveAfterMs = 3000;  // after the last change, so each tap isn't a flash write
 constexpr uint32_t kDarkPollMs = 50;             // how often touch is checked while the screen is off
+constexpr uint32_t kKeyEveryMs = 100;            // the PWR key, asked of the power chip
 
 // Charge currents for the battery each board is usually fitted with. The AXP2101's own
 // default is over an amp, far too strong for these small cells.
@@ -167,6 +168,7 @@ void gameLoop(void*) {
     power::Battery battery{false, -1, false, false};
     int lit = -1;                // the panel's brightness now, in percent
     uint32_t settingsDirty = 0;  // when the settings last changed and weren't saved yet
+    uint32_t lastKey = 0;
 
     for (;;) {
         const uint32_t ms = millis();
@@ -192,6 +194,29 @@ void gameLoop(void*) {
         if (gHavePower && (lastBattery == 0 || ms - lastBattery >= kBatteryEveryMs)) {
             lastBattery = ms ? ms : 1;
             if (power::read(battery)) gScene.setBattery(battery.present ? battery.percent : -1, battery.charging);
+        }
+
+        // PWR key: a press turns the screen off or on; a 1.5 s hold saves and switches off.
+        if (gHavePower && ms - lastKey >= kKeyEveryMs) {
+            lastKey = ms;
+            switch (power::pollKey()) {
+                case power::Key::Short:
+                    if (gScene.screenOff()) gScene.wake();
+                    else gScene.screenOffNow();
+                    break;
+                case power::Key::Long:
+                    storage::savePet(gSim.state());
+                    if (settingsDirty) storage::saveSettings(gScene.settings());
+                    ESP_LOGI(TAG, "power key held: saved, switching off");
+                    showMessage("SEE YOU SOON");
+                    vTaskDelay(pdMS_TO_TICKS(1200));
+                    board_backlight(0);
+                    power::powerOff();
+                    vTaskDelay(pdMS_TO_TICKS(2000));  // on USB the board stays on: carry on
+                    lit = -1;
+                    break;
+                case power::Key::None: break;
+            }
         }
 
         gScene.update(ms);
@@ -253,6 +278,7 @@ extern "C" void app_main(void) {
     if (storage::loadSettings(settings)) gScene.setSettings(settings);
     ESP_ERROR_CHECK(board_init());
     gHavePower = power::init(board_i2c(), kChargeMa, kTrickleMa);
+    if (gHavePower) power::keyInit();
     radio::begin();
     walltime::init(board_i2c(), CONFIG_SQUATCH_TZ);
     walltime::syncFromNetwork(CONFIG_SQUATCH_WIFI_SSID, CONFIG_SQUATCH_WIFI_PASSWORD);

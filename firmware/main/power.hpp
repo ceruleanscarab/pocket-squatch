@@ -24,4 +24,10 @@ bool init(i2c_master_bus_handle_t bus, int chargeMa, int trickleMa);
 // One read of the chip (a few I2C transfers). False if it didn't answer.
 bool read(Battery& out);
 
+// The PWR key, which the chip reports rather than the ESP32. Polled; no IRQ line needed.
+enum class Key { None, Short, Long };
+void keyInit();  // after init(): a tap powers the board on, a 1.5 s hold reports Long
+Key pollKey();   // a press since the last poll, once
+void powerOff(); // the whole board off; the PWR key turns it back on
+
 }  // namespace power

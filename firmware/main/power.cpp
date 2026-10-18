@@ -8,6 +8,11 @@
 //   0x61 precharge current, 0x63 end-of-charge current (bits 3:0, 25 mA steps)
 //   0x62 constant charge current (bits 4:0: 25 mA steps to 200, then 100 mA steps to 1000)
 //   0xA4 the fuel gauge's state of charge, in percent
+//   0x10 bit 0: power the board off
+//   0x27 PWR key timing: 5:4 long-press report (1/1.5/2/2.5 s), 3:2 the chip's own forced
+//        power-off hold (4/6/8/10 s), 1:0 the hold that powers on (128/512 ms, 1/2 s)
+//   0x41 IRQ enables, 0x48-0x4A IRQ status (write 1 to clear); 0x49 bit 3 short press,
+//        bit 2 long press
 
 namespace power {
 
@@ -72,6 +77,29 @@ bool read(Battery& out) {
     out.percent = -1;
     if (out.present && rd(0xA4, pct) && pct <= 100) out.percent = pct;
     return true;
+}
+
+void keyInit() {
+    uint8_t v = 0;
+    // Long press reported at 1.5 s, the chip's own cut at 10 s (so the firmware saves first),
+    // and power-on after a 128 ms press, so a plain tap turns the board on.
+    if (rd(0x27, v)) wr(0x27, static_cast<uint8_t>((v & 0xC0) | 0x10 | 0x0C | 0x00));
+    if (rd(0x41, v)) wr(0x41, static_cast<uint8_t>(v | 0x0C));
+    wr(0x48, 0xFF);  // forget the press that turned it on
+    wr(0x49, 0xFF);
+    wr(0x4A, 0xFF);
+}
+
+Key pollKey() {
+    uint8_t st = 0;
+    if (!rd(0x49, st) || !(st & 0x0C)) return Key::None;
+    wr(0x49, static_cast<uint8_t>(st & 0x0C));
+    return (st & 0x04) ? Key::Long : Key::Short;
+}
+
+void powerOff() {
+    uint8_t v = 0;
+    if (rd(0x10, v)) wr(0x10, static_cast<uint8_t>(v | 0x01));
 }
 
 }  // namespace power

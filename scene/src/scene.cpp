@@ -176,6 +176,11 @@ void Scene::wake() {
     lastInputMs_ = now_;
 }
 
+void Scene::screenOffNow() {
+    screenOff_ = true;
+    waking_ = fingers_ != 0;  // a finger still down when it goes dark doesn't count as a tap later
+}
+
 void Scene::changeSetting(int row, int by) {
     uint8_t& v = row == 0 ? settings_.brightness : settings_.timeout;
     const int top = (row == 0 ? kBrightnessSteps : kTimeoutSteps) - 1;

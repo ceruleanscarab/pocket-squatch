@@ -8,6 +8,7 @@
 #include <cstring>
 #include <ctime>
 
+#include "audio.hpp"
 #include "board.h"
 #include "esp_log.h"
 #include "esp_random.h"
@@ -39,7 +40,9 @@ constexpr uint32_t kKeyEveryMs = 100;            // the PWR key, asked of the po
 // default is over an amp, far too strong for these small cells.
 #if CONFIG_SQUATCH_BOARD_AMOLED_18
 constexpr int kChargeMa = 150, kTrickleMa = 25;  // pocket-tank's setting for the 1.8's ~200 mAh cell
+constexpr bool kAudioRail = true;  // the codec's analog side is on the AXP2101's ALDO1
 #else
+constexpr bool kAudioRail = false;
 constexpr int kChargeMa = 300, kTrickleMa = 50;  // gentle enough for a cell of 300 mAh or more
 #endif
 
@@ -220,6 +223,7 @@ void gameLoop(void*) {
         }
 
         gScene.update(ms);
+        for (Cue c; gScene.takeCue(c);) audio::play(c, gScene.volume());
         if (gScene.takeSaveRequest() || wall - lastSave >= kAutosaveSecs) {
             storage::savePet(gSim.state());
             lastSave = wall;
@@ -279,6 +283,7 @@ extern "C" void app_main(void) {
     ESP_ERROR_CHECK(board_init());
     gHavePower = power::init(board_i2c(), kChargeMa, kTrickleMa);
     if (gHavePower) power::keyInit();
+    audio::init(board_i2c(), kAudioRail && gHavePower);
     radio::begin();
     walltime::init(board_i2c(), CONFIG_SQUATCH_TZ);
     walltime::syncFromNetwork(CONFIG_SQUATCH_WIFI_SSID, CONFIG_SQUATCH_WIFI_PASSWORD);

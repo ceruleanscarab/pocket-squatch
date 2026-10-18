@@ -12,7 +12,7 @@ const char* TAG = "storage";
 const char* kNamespace = "squatch";
 const char* kKey = "pet";
 const char* kSettingsKey = "settings";
-constexpr uint8_t kSettingsVersion = 1;
+constexpr uint8_t kSettingsVersion = 2;  // 1 had no volume
 }  // namespace
 
 void init() {
@@ -50,18 +50,20 @@ void savePet(const squatch::State& s) {
 bool loadSettings(squatch::Scene::Settings& out) {
     nvs_handle_t h;
     if (nvs_open(kNamespace, NVS_READONLY, &h) != ESP_OK) return false;
-    uint8_t b[3] = {};
+    uint8_t b[4] = {};
     size_t len = sizeof b;
     esp_err_t err = nvs_get_blob(h, kSettingsKey, b, &len);
     nvs_close(h);
-    if (err != ESP_OK || len != sizeof b || b[0] != kSettingsVersion) return false;
+    if (err != ESP_OK || len < 3) return false;
+    if (!((b[0] == 1 && len == 3) || (b[0] == kSettingsVersion && len == 4))) return false;
     out.brightness = b[1];
     out.timeout = b[2];
+    if (b[0] >= 2) out.volume = b[3];  // version 1: the default volume
     return true;
 }
 
 void saveSettings(const squatch::Scene::Settings& s) {
-    const uint8_t b[3] = {kSettingsVersion, s.brightness, s.timeout};
+    const uint8_t b[4] = {kSettingsVersion, s.brightness, s.timeout, s.volume};
     nvs_handle_t h;
     if (nvs_open(kNamespace, NVS_READWRITE, &h) != ESP_OK) return;
     if (nvs_set_blob(h, kSettingsKey, b, sizeof b) != ESP_OK || nvs_commit(h) != ESP_OK)

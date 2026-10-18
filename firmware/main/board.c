@@ -38,6 +38,13 @@ static const char* TAG = "board";
 #define EXP_LCD_SCL IO_EXPANDER_PIN_NUM_2
 #define EXP_RESET IO_EXPANDER_PIN_NUM_5
 #define EXP_TOUCH_INT IO_EXPANDER_PIN_NUM_6  // held low through reset: GT911 at address 0x5D
+#define EXP_SPEAKER_AMP IO_EXPANDER_PIN_NUM_3  // the speaker amplifier's enable
+
+// Audio, from the BSP (BSP_I2S_*): the ES8311 codec on I2S.
+#define I2S_MCLK 5
+#define I2S_BCLK 16
+#define I2S_WS 7
+#define I2S_DOUT 6
 
 #define BACKLIGHT_LEDC_CH LEDC_CHANNEL_1
 #define BACKLIGHT_LEDC_TIMER LEDC_TIMER_1
@@ -206,6 +213,20 @@ esp_err_t board_init(void) {
     ESP_RETURN_ON_ERROR(init_touch(), TAG, "touch");
     ESP_LOGI(TAG, "display and touch ready");
     return ESP_OK;
+}
+
+// ---------------------------------------------------------------- audio
+
+board_audio_pins_t board_audio_pins(void) { return (board_audio_pins_t){I2S_MCLK, I2S_BCLK, I2S_WS, I2S_DOUT}; }
+
+void board_speaker_amp(bool on) {
+    static bool configured;
+    if (!s_expander) return;
+    if (!configured) {
+        esp_io_expander_set_dir(s_expander, EXP_SPEAKER_AMP, IO_EXPANDER_OUTPUT);
+        configured = true;
+    }
+    esp_io_expander_set_level(s_expander, EXP_SPEAKER_AMP, on ? 1 : 0);
 }
 
 // ---------------------------------------------------------------- per frame

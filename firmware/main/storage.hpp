@@ -10,7 +10,7 @@ void init();  // NVS; call once before anything else touches flash or Wi-Fi
 bool loadPet(squatch::State& out);
 void savePet(const squatch::State& s);
 
-// Brightness and screen timeout, kept apart from the pet so a new egg doesn't reset them.
+// Brightness, screen timeout and volume, kept apart from the pet so a new egg doesn't reset them.
 bool loadSettings(squatch::Scene::Settings& out);
 void saveSettings(const squatch::Scene::Settings& s);
 

@@ -7,7 +7,8 @@
 //   squatch-pc --shot FILE.bmp   draw one frame to a BMP and exit, without a window
 //   squatch-pc --battery 80      show a pretend battery at 80% (add c for charging: 80c)
 //
-// Settings (brightness, screen timeout) are kept next to the save, in FILE.settings.
+// Sound plays through the PC's speakers, at the volume chosen on the settings page.
+// Settings (brightness, screen timeout, volume) are kept next to the save, in FILE.settings.
 // Brightness dims the window, and when the screen times out it goes black until a click.
 //
 // Mouse: the left button is a finger. A right click is a two-finger tap (scold).
@@ -81,12 +82,13 @@ void writeSave(const char* path, const State& s) {
 bool readSettings(const std::string& path, Scene::Settings& out) {
     std::FILE* f = std::fopen(path.c_str(), "r");
     if (!f) return false;
-    int b = 0, t = 0;
-    bool ok = std::fscanf(f, "brightness %d timeout %d", &b, &t) == 2;
+    int b = 0, t = 0, v = out.volume;
+    bool ok = std::fscanf(f, "brightness %d timeout %d volume %d", &b, &t, &v) >= 2;  // older files have no volume
     std::fclose(f);
     if (ok) {
         out.brightness = static_cast<uint8_t>(std::max(0, b));
         out.timeout = static_cast<uint8_t>(std::max(0, t));
+        out.volume = static_cast<uint8_t>(std::max(0, v));
     }
     return ok;
 }
@@ -94,8 +96,14 @@ bool readSettings(const std::string& path, Scene::Settings& out) {
 void writeSettings(const std::string& path, const Scene::Settings& s) {
     std::FILE* f = std::fopen(path.c_str(), "w");
     if (!f) return;
-    std::fprintf(f, "brightness %d timeout %d\n", s.brightness, s.timeout);
+    std::fprintf(f, "brightness %d timeout %d volume %d\n", s.brightness, s.timeout, s.volume);
     std::fclose(f);
+}
+
+// SDL pulls samples from the synth on its own thread.
+Synth gSynth;
+void audioCallback(void*, Uint8* stream, int len) {
+    gSynth.render(reinterpret_cast<int16_t*>(stream), len / 2);
 }
 
 bool saveBmp(std::vector<uint16_t>& fb, const char* path) {
@@ -191,6 +199,18 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
         return 1;
     }
+    SDL_AudioDeviceID audio = 0;
+    if (SDL_InitSubSystem(SDL_INIT_AUDIO) == 0) {
+        SDL_AudioSpec want{}, got{};
+        want.freq = Synth::kRate;
+        want.format = AUDIO_S16SYS;
+        want.channels = 1;
+        want.samples = 512;
+        want.callback = audioCallback;
+        audio = SDL_OpenAudioDevice(nullptr, 0, &want, &got, 0);
+        if (audio) SDL_PauseAudioDevice(audio, 0);
+    }
+    if (!audio) std::fprintf(stderr, "no sound: %s\n", SDL_GetError());
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
     SDL_Window* window = SDL_CreateWindow("Pocket Squatch", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                                           kSize * zoom, kSize * zoom, SDL_WINDOW_RESIZABLE);
@@ -268,6 +288,12 @@ int main(int argc, char** argv) {
             scanDoneAt = 0;
         }
         scene.update(ms);
+        for (Cue c; scene.takeCue(c);) {
+            if (!audio) continue;
+            SDL_LockAudioDevice(audio);
+            gSynth.play(c, scene.volume());
+            SDL_UnlockAudioDevice(audio);
+        }
         if (scene.takeSaveRequest() || ms - lastSave >= 60000) {
             writeSave(savePath, sim.state());
             lastSave = ms;
@@ -303,6 +329,7 @@ int main(int argc, char** argv) {
     SDL_DestroyTexture(tex);
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
+    if (audio) SDL_CloseAudioDevice(audio);
     SDL_Quit();
     return 0;
 }

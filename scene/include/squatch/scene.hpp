@@ -14,6 +14,7 @@
 #include "squatch/canvas.hpp"
 #include "squatch/gesture.hpp"
 #include "squatch/sim.hpp"
+#include "squatch/sounds.hpp"
 
 namespace squatch {
 
@@ -46,9 +47,12 @@ public:
     struct Settings {
         uint8_t brightness = 3;  // a step of brightnessPercent(): 20, 40, 60, 80, 100%
         uint8_t timeout = 2;     // a step of screenTimeoutMs(): 15 s, 30 s, 1, 2, 5, 10 min, never
+        uint8_t volume = 2;      // off, quiet, medium, loud (Synth's steps)
     };
     static constexpr int kBrightnessSteps = 5;
     static constexpr int kTimeoutSteps = 7;
+    static constexpr int kVolumeSteps = Synth::kVolumeSteps;
+    static constexpr int kSettingRows = 3;  // brightness, screen timeout, volume
 
     explicit Scene(Sim& sim);
 
@@ -73,6 +77,7 @@ public:
     bool takeSettingsChanged();           // true once after the player changes one
     int brightnessPercent() const;
     uint32_t screenTimeoutMs() const;     // 0: never
+    int volume() const { return settings_.volume; }  // 0 (off) .. kVolumeSteps - 1
     // After the timeout with no touch the screen should go dark; the front end turns the
     // panel off and stops drawing. The touch that wakes it does nothing else, so a tap on
     // a dark screen can't feed or scold by accident. News (hatching, a knock at the door,
@@ -80,7 +85,11 @@ public:
     bool screenOff() const { return screenOff_; }
     void wake();
     void screenOffNow();  // e.g. the board's power key
-    // The settings page: row 0 brightness, row 1 screen timeout, each with - and +.
+    // Sounds to play, oldest first; the front end hands them to a Synth at volume(). Nothing
+    // is queued with the volume off, or while the screen is off (except a knock: it wants you).
+    bool takeCue(Cue& out);
+
+    // The settings page: row 0 brightness, 1 screen timeout, 2 volume, each with - and +.
     Rect settingButtonArea(int row, bool plus) const;
     Rect settingsDoneArea() const;
 
@@ -142,6 +151,7 @@ private:
     void doForage(int trail);
     void openTrails();
     void changeSetting(int row, int by);
+    void cue(Cue c);
     void requestScan();
     void note(const char* text);
     void tapPet();
@@ -227,6 +237,9 @@ private:
     char trailNote_[40] = {};
 
     Settings settings_;
+    Cue cues_[8];
+    int cueCount_ = 0;
+    uint32_t nextKnockSound_ = 0;
     bool settingsChanged_ = false;
     bool screenOff_ = false, waking_ = false;
     uint32_t lastInputMs_ = 0;

@@ -12,6 +12,7 @@
 // C, like the originals, so driver configuration stays close to them.
 #pragma once
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "driver/i2c_master.h"
@@ -44,6 +45,14 @@ void board_backlight(int percent);  // on the AMOLED: the panel's own brightness
 int board_read_touch(board_touch_t* out, int max);
 
 i2c_master_bus_handle_t board_i2c(void);
+
+// The speaker: I2S pins to the ES8311 codec (on board_i2c), and the speaker amplifier's
+// enable. The amplifier stays off except while a sound plays.
+typedef struct {
+    int mclk, bclk, ws, dout;
+} board_audio_pins_t;
+board_audio_pins_t board_audio_pins(void);
+void board_speaker_amp(bool on);
 
 #ifdef __cplusplus
 }

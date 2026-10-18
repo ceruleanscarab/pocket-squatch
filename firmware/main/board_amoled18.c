@@ -46,6 +46,11 @@ static const char* TAG = "board";
 #define PIN_I2C_SCL 14
 #define LCD_HOST SPI2_HOST
 
+#define PIN_I2S_MCLK 16  // audio, as pocket-tank (github.com/mediacutlet/pocket-tank) wires it on this board
+#define PIN_I2S_BCLK 9
+#define PIN_I2S_WS 45
+#define PIN_I2S_DOUT 8
+#define PIN_AMP_EN 46  // the NS4150B amplifier's enable, pulled down on the board
 #define ADDR_EXPANDER 0x20  // TCA9554: bit 0 LCD reset, bit 1 panel power, bit 2 touch reset, bit 7 SD card select
 #define ADDR_FT3168 0x38    // V1 touch
 #define ADDR_CST816 0x15    // V2 touch: answering means a V2 board
@@ -214,6 +219,23 @@ esp_err_t board_init(void) {
     if (init_touch() != ESP_OK) ESP_LOGW(TAG, "no touch chip answered");  // the picture still works
     ESP_LOGI(TAG, "display ready: the 480x480 scene at 368x368, centred");
     return ESP_OK;
+}
+
+// ---------------------------------------------------------------- audio
+
+board_audio_pins_t board_audio_pins(void) {
+    return (board_audio_pins_t){PIN_I2S_MCLK, PIN_I2S_BCLK, PIN_I2S_WS, PIN_I2S_DOUT};
+}
+
+void board_speaker_amp(bool on) {
+    static bool configured;
+    if (!configured) {
+        const gpio_config_t io = {.pin_bit_mask = 1ULL << PIN_AMP_EN, .mode = GPIO_MODE_OUTPUT,
+                                  .pull_down_en = GPIO_PULLDOWN_ENABLE};
+        gpio_config(&io);
+        configured = true;
+    }
+    gpio_set_level(PIN_AMP_EN, on);
 }
 
 // ---------------------------------------------------------------- per frame

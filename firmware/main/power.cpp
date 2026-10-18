@@ -97,6 +97,11 @@ Key pollKey() {
     return (st & 0x04) ? Key::Long : Key::Short;
 }
 
+void audioRail(bool on) {
+    uint8_t v = 0;  // 0x90: LDO enables, bit 0 ALDO1
+    if (rd(0x90, v)) wr(0x90, static_cast<uint8_t>(on ? (v | 0x01) : (v & ~0x01)));
+}
+
 void powerOff() {
     uint8_t v = 0;
     if (rd(0x10, v)) wr(0x10, static_cast<uint8_t>(v | 0x01));

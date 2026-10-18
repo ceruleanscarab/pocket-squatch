@@ -30,4 +30,7 @@ void keyInit();  // after init(): a tap powers the board on, a 1.5 s hold report
 Key pollKey();   // a press since the last poll, once
 void powerOff(); // the whole board off; the PWR key turns it back on
 
+// The AXP2101's ALDO1 output, which powers the audio codec's analog side on the AMOLED 1.8.
+void audioRail(bool on);
+
 }  // namespace power

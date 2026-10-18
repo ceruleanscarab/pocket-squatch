@@ -44,12 +44,13 @@ constexpr Scene::Slot kMoreSlots[] = {Scene::Slot::Back, Scene::Slot::Photos, Sc
                                       Scene::Slot::Settings};
 
 // ---- the settings page
-constexpr int kSetX = 24, kSetY = 40, kSetW = 432, kSetH = 400;
-constexpr int kSetRowY[] = {124, 244};  // the - and + buttons of each row
+constexpr int kSetX = 24, kSetY = 28, kSetW = 432, kSetH = 424;
+constexpr int kSetRowY[Scene::kSettingRows] = {96, 200, 304};  // the - and + buttons of each row
 constexpr int kBrightness[Scene::kBrightnessSteps] = {20, 40, 60, 80, 100};
 constexpr uint32_t kTimeoutSecs[Scene::kTimeoutSteps] = {15, 30, 60, 120, 300, 600, 0};
 constexpr const char* kTimeoutNames[Scene::kTimeoutSteps] = {"15 SEC", "30 SEC", "1 MIN", "2 MIN",
                                                              "5 MIN",  "10 MIN", "NEVER"};
+constexpr const char* kVolumeNames[Scene::kVolumeSteps] = {"OFF", "QUIET", "MEDIUM", "LOUD"};
 
 // ---- the trail map overlay
 constexpr int kMapX = 24, kMapY = 24, kMapW = 432, kMapH = 448;
@@ -152,6 +153,7 @@ void Scene::setBattery(int percent, bool charging) {
     if (low && !warnedLowBattery_) {
         say("BATTERY LOW: PLUG ME IN", true);
         wake();
+        cue(Cue::Warning);
     }
     warnedLowBattery_ = low || (warnedLowBattery_ && batteryPct_ >= 0 && batteryPct_ < 25 && !charging_);
 }
@@ -159,6 +161,21 @@ void Scene::setBattery(int percent, bool charging) {
 void Scene::setSettings(const Settings& s) {
     settings_.brightness = std::min<uint8_t>(s.brightness, kBrightnessSteps - 1);
     settings_.timeout = std::min<uint8_t>(s.timeout, kTimeoutSteps - 1);
+    settings_.volume = std::min<uint8_t>(s.volume, kVolumeSteps - 1);
+}
+
+void Scene::cue(Cue c) {
+    if (settings_.volume == 0 || (screenOff_ && c != Cue::Knock)) return;
+    if (cueCount_ == static_cast<int>(sizeof cues_ / sizeof cues_[0])) return;  // nobody's listening
+    cues_[cueCount_++] = c;
+}
+
+bool Scene::takeCue(Cue& out) {
+    if (cueCount_ == 0) return false;
+    out = cues_[0];
+    for (int i = 1; i < cueCount_; i++) cues_[i - 1] = cues_[i];
+    cueCount_--;
+    return true;
 }
 
 bool Scene::takeSettingsChanged() {
@@ -182,12 +199,13 @@ void Scene::screenOffNow() {
 }
 
 void Scene::changeSetting(int row, int by) {
-    uint8_t& v = row == 0 ? settings_.brightness : settings_.timeout;
-    const int top = (row == 0 ? kBrightnessSteps : kTimeoutSteps) - 1;
+    uint8_t& v = row == 0 ? settings_.brightness : row == 1 ? settings_.timeout : settings_.volume;
+    const int top = (row == 0 ? kBrightnessSteps : row == 1 ? kTimeoutSteps : kVolumeSteps) - 1;
     int next = std::max(0, std::min(top, v + by));
     if (next == v) return;
     v = static_cast<uint8_t>(next);
     settingsChanged_ = true;
+    cue(row == 2 ? Cue::Happy : Cue::Tick);  // a chirp at the new volume, to hear it
 }
 
 Scene::Rect Scene::settingButtonArea(int row, bool plus) const {
@@ -238,7 +256,7 @@ void Scene::handle(const Gesture& g) {
     }
     if (overlay_ == Overlay::Settings) {
         if (g.type != GestureType::Tap) return;
-        for (int row = 0; row < 2; row++) {
+        for (int row = 0; row < kSettingRows; row++) {
             for (int plus = 0; plus < 2; plus++) {
                 if (settingButtonArea(row, plus).contains(g.x, g.y)) {
                     changeSetting(row, plus ? 1 : -1);
@@ -247,7 +265,10 @@ void Scene::handle(const Gesture& g) {
             }
         }
         Rect panel{kSetX, kSetY, kSetW, kSetH};
-        if (settingsDoneArea().contains(g.x, g.y) || !panel.contains(g.x, g.y)) overlay_ = Overlay::None;
+        if (settingsDoneArea().contains(g.x, g.y) || !panel.contains(g.x, g.y)) {
+            overlay_ = Overlay::None;
+            cue(Cue::Tick);
+        }
         return;
     }
     if (overlay_ != Overlay::None) {
@@ -305,6 +326,8 @@ void Scene::onTap(int x, int y) {
 }
 
 void Scene::pressSlot(Slot s) {
+    if (itemFor(s) == Item::None) cue(Cue::Tick);
+    else cue(held_ == itemFor(s) ? Cue::Tick : Cue::Pickup);
     switch (s) {
         case Slot::Feed:
             page_ = Page::Food;
@@ -321,6 +344,7 @@ void Scene::pressSlot(Slot s) {
         case Slot::Trails: openTrails(); break;
         case Slot::Light:
             sim_.lights(!sim_.state().lightsOn);
+            cue(sim_.state().lightsOn ? Cue::LightOn : Cue::LightOff);
             say(sim_.state().lightsOn ? "LIGHTS ON" : "LIGHTS OFF", true);
             saveRequested_ = true;
             break;
@@ -458,6 +482,7 @@ void Scene::doFeed(Food f) {
     Result r = sim_.feed(f);
     saved(r);
     if (r == Result::Ok) {
+        cue(Cue::Eat);
         react(React::Eat, 1400);
         for (int i = 0; i < 5; i++)
             spawn(ParticleKind::Crumb, squatchX() + (rand01() - 0.5f) * 20, headY() + 30 * squatchScale(),
@@ -475,6 +500,7 @@ void Scene::doClean(float x, float y) {
     Result r = sim_.clean();
     saved(r);
     if (r == Result::Ok) {
+        cue(Cue::Clean);
         for (int i = 0; i < 8; i++)
             spawn(ParticleKind::Sparkle, x + (rand01() - 0.5f) * 50, y - rand01() * 30, 0, -30, 700);
         if (hatched() && !hiding()) react(React::Happy, 700);
@@ -487,6 +513,7 @@ void Scene::doBrush() {
     Result r = sim_.brush();
     saved(r);
     if (r == Result::Ok) {
+        cue(Cue::Clean);
         react(React::Happy, 1000);
         for (int i = 0; i < 6; i++)
             spawn(ParticleKind::Sparkle, squatchX() + (rand01() - 0.5f) * 90 * squatchScale(),
@@ -510,6 +537,7 @@ void Scene::doPlay() {
     Result r = sim_.finishedGame(true, false);
     saved(r);
     if (r == Result::Ok) {
+        cue(Cue::Play);
         react(React::Happy, 1500);
         spawn(ParticleKind::Heart, squatchX() - 24, headY() - 30, -6, -40, 1200);
         spawn(ParticleKind::Heart, squatchX() + 24, headY() - 40, 6, -44, 1200);
@@ -523,6 +551,7 @@ void Scene::doPet() {
     Result r = sim_.pet();
     saved(r);
     if (r == Result::Ok) {
+        cue(Cue::Happy);
         react(React::Happy, 1200);
         for (int i = 0; i < 3; i++)
             spawn(ParticleKind::Heart, squatchX() + (rand01() - 0.5f) * 60, headY() - 20, (rand01() - 0.5f) * 30,
@@ -546,6 +575,7 @@ void Scene::doScold() {
     } else if (wasMisbehaving) {
         say("IT STOPPED", true);
         react(React::Sulk, 1500);
+        cue(Cue::Sulk);
     } else {
         say("IT DIDN'T DO ANYTHING", true);
         react(React::Flinch, 1200);
@@ -558,6 +588,7 @@ void Scene::doAnswerCall() {
     saved(r);
     if (r != Result::Ok) return;
     say("YOU ANSWERED ITS CALL", true);
+    cue(Cue::Happy);
     if (sim_.state().footprints > before) spawn(ParticleKind::PlusOne, 430, 46, 0, -30, 1200);
     if (!hiding()) react(React::Wave, 1500);
 }
@@ -688,6 +719,7 @@ void Scene::handleEvent(const Event& e) {
             for (int i = 0; i < 10; i++)
                 spawn(ParticleKind::Shell, kEggX, kEggY, (rand01() - 0.5f) * 260, -150 - rand01() * 150, 1200);
             react(React::Happy, 1200);
+            cue(Cue::Hatch);
             Traits t = sim_.traits();
             if (t.variant != Variant::None) {
                 char kind[16];
@@ -709,33 +741,49 @@ void Scene::handleEvent(const Event& e) {
             if (st == Stage::Child || st == Stage::Teen || st == Stage::Elder) {
                 std::snprintf(buf, sizeof buf, "NOW A %s", toString(st));
                 say(buf);
+                cue(Cue::GrowUp);
             }
             break;
         }
         case EventType::BecameAdult:
             std::snprintf(buf, sizeof buf, "GREW UP: %s", toString(static_cast<AdultForm>(e.a)));
             say(buf);
+            cue(Cue::GrowUp);
             break;
-        case EventType::CallStarted: nextKnock_ = now_; break;
-        case EventType::GotSick: say("IT'S SICK: GIVE IT A POULTICE"); break;
+        case EventType::CallStarted:
+            nextKnock_ = nextKnockSound_ = now_;
+            break;
+        case EventType::GotSick:
+            say("IT'S SICK: GIVE IT A POULTICE");
+            cue(Cue::Sick);
+            break;
         case EventType::Recovered:
             say("FEELING BETTER");
+            cue(Cue::Heal);
             react(React::Happy, 1200);
             break;
         case EventType::Misbehaving:
             say("IT'S MISBEHAVING!");
             nextThrow_ = now_;
             break;
-        case EventType::RanAway: say("IT RAN OFF INTO THE WOODS"); break;
+        case EventType::RanAway:
+            say("IT RAN OFF INTO THE WOODS");
+            cue(Cue::RanAway);
+            break;
         case EventType::Returned:
             say("IT CAME BACK!");
+            cue(Cue::Returned);
             react(React::Wave, 2000);
             break;
         case EventType::PhotoEarned:
             flashUntil_ = now_ + 400;
             say("NEW SIGHTING PHOTO!");
+            cue(Cue::Photo);
             break;
-        case EventType::LaidEgg: say("A NEW EGG!"); break;
+        case EventType::LaidEgg:
+            say("A NEW EGG!");
+            cue(Cue::NewEgg);
+            break;
         case EventType::TrailsScouted:
             scanning_ = false;
             if (sim_.state().trailCount == 0) note("NO TRAILS HERE: TRY SOMEWHERE ELSE");
@@ -753,6 +801,7 @@ void Scene::handleEvent(const Event& e) {
             say(buf);
             spawn(ParticleKind::PlusOne, 430, 46, 0, -30, 1200);
             react(React::Happy, 1600);
+            cue(Cue::ForageBack);
             saveRequested_ = true;
             break;
         }
@@ -857,6 +906,7 @@ void Scene::animate(float dt) {
         if (s.sick && !s.asleep && now_ >= nextSneeze_) {
             if (!hiding()) {
                 react(React::Sneeze, 500);
+                cue(Cue::Sneeze);
                 for (int i = 0; i < 4; i++)
                     spawn(ParticleKind::Drop, squatchX(), headY() + 14 * k, (rand01() - 0.5f) * 120,
                           -20 - rand01() * 60, 700);
@@ -867,6 +917,10 @@ void Scene::animate(float dt) {
     if (s.calling && now_ >= nextKnock_) {  // wood knocks from the trees
         spawn(ParticleKind::Ring, kRightTreeX, kRightTreeBase - 70, 0, 0, 900);
         nextKnock_ = now_ + 1400;
+        if (now_ >= nextKnockSound_) {  // heard now and then, not every knock
+            cue(Cue::Knock);
+            nextKnockSound_ = now_ + 15000;
+        }
     }
 
     size_t keep = 0;
@@ -1660,14 +1714,14 @@ void Scene::drawSettings(Canvas& c) {
     const Rgb ink = 0x3B2A1E, faint = 0x8A7A66, off = 0xD9CFBC;
     c.tint(0x000000, 0.55f);
     c.fillRoundRect(kSetX, kSetY, kSetW, kSetH, 20, kUiLight);
-    c.text(240, kSetY + 14, "SETTINGS", 2, ink, Align::Center);
+    c.text(240, kSetY + 12, "SETTINGS", 2, ink, Align::Center);
 
-    const char* labels[2] = {"BRIGHTNESS", "SCREEN OFF AFTER"};
-    for (int row = 0; row < 2; row++) {
+    const char* labels[kSettingRows] = {"BRIGHTNESS", "SCREEN OFF AFTER", "VOLUME"};
+    for (int row = 0; row < kSettingRows; row++) {
         const int y = kSetRowY[row];
-        c.text(240, y - 26.0f, labels[row], 2, faint, Align::Center);
-        const int value = row == 0 ? settings_.brightness : settings_.timeout;
-        const int top = (row == 0 ? kBrightnessSteps : kTimeoutSteps) - 1;
+        c.text(240, y - 24.0f, labels[row], 2, faint, Align::Center);
+        const int value = row == 0 ? settings_.brightness : row == 1 ? settings_.timeout : settings_.volume;
+        const int top = (row == 0 ? kBrightnessSteps : row == 1 ? kTimeoutSteps : kVolumeSteps) - 1;
         for (int plus = 0; plus < 2; plus++) {
             Rect b = settingButtonArea(row, plus);
             bool can = plus ? value < top : value > 0;
@@ -1678,15 +1732,15 @@ void Scene::drawSettings(Canvas& c) {
         }
         char buf[16];
         if (row == 0) std::snprintf(buf, sizeof buf, "%d%%", brightnessPercent());
-        else std::snprintf(buf, sizeof buf, "%s", kTimeoutNames[value]);
+        else std::snprintf(buf, sizeof buf, "%s", row == 1 ? kTimeoutNames[value] : kVolumeNames[value]);
         c.text(240, y + 14.0f, buf, 3, ink, Align::Center);
-        // one pip per step, filled up to the setting
-        const int steps = top + 1;
+        // one pip per step, filled up to the setting (volume: none lit when it's off)
+        const bool fromZero = row == 2;
+        const int steps = fromZero ? top : top + 1, lit = fromZero ? value : value + 1;
         const float pip = 14, gap = 6, w = steps * pip + (steps - 1) * gap;
         for (int i = 0; i < steps; i++)
-            c.fillRoundRect(240 - w / 2 + i * (pip + gap), y + 48.0f, pip, 8, 4, i <= value ? kGold : off);
+            c.fillRoundRect(240 - w / 2 + i * (pip + gap), y + 48.0f, pip, 8, 4, i < lit ? kGold : off);
     }
-    c.text(240, kSetRowY[1] + 92.0f, "A TAP WAKES IT UP AGAIN", 2, faint, Align::Center);
 
     Rect d = settingsDoneArea();
     c.fillRoundRect(d.x, d.y + 4, d.w, d.h - 8, 14, kButton);

@@ -1,4 +1,6 @@
 // Scene and gesture tests: drive the clearing with touch events, no window needed.
+#include <algorithm>
+#include <cstdlib>
 #include <cstdio>
 #include <cstring>
 #include <vector>
@@ -360,7 +362,7 @@ static void testTouchTargets() {
     for (int i = 0; i < d.scene.slotCount(); i++) CHECK(big(d.scene.slotArea(i)));
     for (int i = 0; i < State::kMaxTrails; i++) CHECK(big(d.scene.trailRowArea(i)));
     CHECK(big(d.scene.rescanArea()));
-    for (int row = 0; row < 2; row++) {
+    for (int row = 0; row < Scene::kSettingRows; row++) {
         CHECK(big(d.scene.settingButtonArea(row, false)));
         CHECK(big(d.scene.settingButtonArea(row, true)));
     }
@@ -593,6 +595,75 @@ static void testSettings() {
     CHECK(!d.scene.screenOff());
 }
 
+static void testSounds() {
+    std::printf("care makes sounds at the chosen volume; none with the volume off or the screen dark\n");
+    Driver d;
+    Cue c;
+    while (d.scene.takeCue(c)) {}
+    d.openTray();
+    d.pressSlot(Scene::Slot::Feed);
+    d.pressSlot(Scene::Slot::Fish);
+    d.tap(d.scene.squatchArea());
+    std::vector<Cue> heard;
+    while (d.scene.takeCue(c)) heard.push_back(c);
+    bool ate = false, picked = false;
+    for (Cue x : heard) {
+        ate |= x == Cue::Eat;
+        picked |= x == Cue::Pickup;
+    }
+    CHECK(ate && picked);
+
+    // The volume row: down to off, and then nothing is queued.
+    d.pressSlot(Scene::Slot::Back);
+    d.pressSlot(Scene::Slot::More);
+    d.pressSlot(Scene::Slot::Settings);
+    CHECK(d.scene.volume() == 2);
+    while (d.scene.takeCue(c)) {}
+    d.tap(d.scene.settingButtonArea(2, true));
+    CHECK(d.scene.volume() == 3);
+    CHECK(d.scene.takeCue(c) && c == Cue::Happy);  // a chirp to hear the new level
+    for (int i = 0; i < 5; i++) d.tap(d.scene.settingButtonArea(2, false));
+    CHECK(d.scene.volume() == 0);
+    while (d.scene.takeCue(c)) {}
+    d.tap(d.scene.settingsDoneArea());
+    d.pressSlot(Scene::Slot::Back);
+    d.pressSlot(Scene::Slot::Light);
+    CHECK(!d.scene.takeCue(c));
+
+    // Volume back on; with the screen off only a knock gets through.
+    Scene::Settings st = d.scene.settings();
+    st.volume = 2;
+    d.scene.setSettings(st);
+    d.scene.screenOffNow();
+    d.scene.setBattery(50, false);
+    d.sim.mutableState().sick = true;
+    for (int i = 0; i < 600; i++) d.step();  // sneezes, unheard
+    CHECK(!d.scene.takeCue(c));
+
+    // The synth: every cue plays, ends, and stays within range; volume 0 is silence.
+    Synth syn;
+    std::vector<int16_t> buf(Synth::kRate / 100);
+    for (int i = 0; i < static_cast<int>(Cue::Count); i++) {
+        Cue cue = static_cast<Cue>(i);
+        CHECK(Synth::lengthMs(cue) > 0 && Synth::lengthMs(cue) < 2000);
+        syn.play(cue, 3);
+        int peak = 0, blocks = 0;
+        while (syn.render(buf.data(), static_cast<int>(buf.size())) && blocks < 300) {
+            for (int16_t v : buf) peak = std::max(peak, std::abs(static_cast<int>(v)));
+            blocks++;
+        }
+        CHECK(blocks > 0 && blocks < 300);  // it finishes
+        CHECK(peak > 1000);                 // and it's audible
+    }
+    syn.play(Cue::Happy, 0);
+    CHECK(!syn.active());
+    syn.play(Cue::Happy, 1);
+    int quiet = 0;
+    while (syn.render(buf.data(), static_cast<int>(buf.size())))
+        for (int16_t v : buf) quiet = std::max(quiet, std::abs(static_cast<int>(v)));
+    CHECK(quiet > 0 && quiet < 6000);  // quiet is quiet
+}
+
 int main() {
     testTap();
     testLongPressThenDrag();
@@ -615,6 +686,7 @@ int main() {
     testDrawsEveryCoat();
     testBattery();
     testSettings();
+    testSounds();
 
     std::printf("\n%d checks, %d failed\n", gChecks, gFailures);
     return gFailures ? 1 : 0;

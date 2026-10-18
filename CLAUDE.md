@@ -62,7 +62,9 @@ Wiki: https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-4B
 - Sound: `Synth` cues in `scene/` (`sounds.hpp`), played by `firmware/main/audio.cpp` (ES8311) and SDL on the PC — done,
   not yet heard on hardware.
 - The Waveshare ESP32-S3-Touch-AMOLED-1.8 is a second board target (`board_amoled18.c`, menuconfig Board); it ran
-  first on 2026-10-17 at 7-9 fps, so drawing speed is worth improving.
+  first on 2026-10-17 at 7-9 fps. Since then: the scenery is cached once a minute (`Scene::drawScenery`; anything
+  that moves must be drawn in `Scene::draw` after it), shading and text are cheaper (about 3x less work per frame),
+  and the AMOLED scales and sends each frame on core 0 while core 1 draws the next. Not yet measured on hardware.
 - Android app (`android/`, SDL2, built and published to the "android" release by CI) — basic version done;
   real Wi-Fi scans and notifications still to come.
 - Later: Bluetooth visitors between two boards.

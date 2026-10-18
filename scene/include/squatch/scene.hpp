@@ -10,6 +10,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <vector>
 
 #include "squatch/canvas.hpp"
 #include "squatch/gesture.hpp"
@@ -122,6 +123,11 @@ public:
     Overlay overlay() const { return overlay_; }
     const char* toast() const;  // the message showing now, or nullptr
 
+    // The scenery (sky, ground, trees, stump, lantern) changes only with the time of day, so
+    // it's drawn once a minute into a buffer of its own and copied in each frame. Off draws
+    // it all every frame (for tests that compare the two).
+    void setSceneryCache(bool on) { cacheScenery_ = on; sceneryKey_ = -1; }
+
 private:
     enum class React : uint8_t { None, Flinch, Peek, Wave, Happy, Eat, Shake, Sneeze, Wobble, Sulk };
     enum class DragMode : uint8_t { None, Item, Stroke };
@@ -194,7 +200,9 @@ private:
 
     // ---- drawing
     Rgb sh(Rgb c) const;  // shade a scenery colour for the time of day
+    void drawScenery(Canvas& c);  // everything that only changes with the time of day
     void drawSky(Canvas& c);
+    void drawStars(Canvas& c);
     void drawGround(Canvas& c);
     void drawTree(Canvas& c, float x, float base, float size);
     void drawStump(Canvas& c);
@@ -253,6 +261,9 @@ private:
     uint32_t askNameAt_ = 0;   // when to open the naming page for a pet with no name
     bool askedName_ = false;
     uint8_t suggestion_ = 0;
+    std::vector<uint16_t> scenery_;
+    int sceneryKey_ = -1;
+    bool cacheScenery_ = true;
     Settings settings_;
     Cue cues_[8];
     int cueCount_ = 0;

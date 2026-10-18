@@ -74,7 +74,13 @@ static esp_lcd_panel_handle_t s_panel;
 static esp_lcd_touch_handle_t s_touch;
 static bool s_v2;
 
-static uint16_t* s_scene;      // 480x480 in PSRAM: what the scene draws into
+// Two 480x480 frames in PSRAM: the scene draws into one while the other is scaled and sent
+// to the panel by a task on the other core.
+static uint16_t* s_scene[2];
+static int s_draw;                   // which one the scene draws into
+static const uint16_t* s_showing;    // the one being scaled and sent
+static SemaphoreHandle_t s_frame_ready, s_frame_done;
+static SemaphoreHandle_t s_io_lock;  // frames (present task) and commands (brightness) share the link
 static uint16_t* s_stripe[2];  // DMA-capable, ping-pong
 static SemaphoreHandle_t s_stripe_free;
 static bool s_cleared;  // the black bars, sent once
@@ -111,7 +117,10 @@ static const sh8601_lcd_init_cmd_t kInitCmds[] = {
 
 // A DCS command over the QSPI link, framed as the sh8601 driver frames its own.
 static void dcs(uint8_t cmd, const uint8_t* param, size_t n) {
-    if (s_io) esp_lcd_panel_io_tx_param(s_io, (0x02 << 24) | (cmd << 8), param, n);
+    if (!s_io) return;
+    if (s_io_lock) xSemaphoreTake(s_io_lock, portMAX_DELAY);
+    esp_lcd_panel_io_tx_param(s_io, (0x02 << 24) | (cmd << 8), param, n);
+    if (s_io_lock) xSemaphoreGive(s_io_lock);
 }
 
 static esp_err_t init_i2c(void) {
@@ -204,18 +213,27 @@ static void init_scaling(void) {
     }
 }
 
+static void present_task(void* arg);
+
 esp_err_t board_init(void) {
     ESP_RETURN_ON_ERROR(init_i2c(), TAG, "i2c");
     ESP_RETURN_ON_ERROR(power_up(), TAG, "power up");
     s_v2 = i2c_master_probe(s_i2c, ADDR_CST816, 50) == ESP_OK;
     ESP_LOGI(TAG, "Waveshare AMOLED 1.8, revision %s", s_v2 ? "V2 (CO5300 + CST816)" : "V1 (SH8601 + FT3168)");
 
-    s_scene = heap_caps_malloc(BOARD_WIDTH * BOARD_HEIGHT * 2, MALLOC_CAP_SPIRAM);
-    ESP_RETURN_ON_FALSE(s_scene, ESP_ERR_NO_MEM, TAG, "scene buffer");
-    memset(s_scene, 0, BOARD_WIDTH * BOARD_HEIGHT * 2);
+    for (int i = 0; i < 2; i++) {
+        s_scene[i] = heap_caps_malloc(BOARD_WIDTH * BOARD_HEIGHT * 2, MALLOC_CAP_SPIRAM);
+        ESP_RETURN_ON_FALSE(s_scene[i], ESP_ERR_NO_MEM, TAG, "scene buffer");
+        memset(s_scene[i], 0, BOARD_WIDTH * BOARD_HEIGHT * 2);
+    }
     init_scaling();
 
     ESP_RETURN_ON_ERROR(init_panel(), TAG, "panel");
+    s_io_lock = xSemaphoreCreateMutex();
+    s_frame_ready = xSemaphoreCreateBinary();
+    s_frame_done = xSemaphoreCreateBinary();
+    xSemaphoreGive(s_frame_done);
+    xTaskCreatePinnedToCore(present_task, "present", 3072, NULL, 4, NULL, 0);  // the game draws on core 1
     if (init_touch() != ESP_OK) ESP_LOGW(TAG, "no touch chip answered");  // the picture still works
     ESP_LOGI(TAG, "display ready: the 480x480 scene at 368x368, centred");
     return ESP_OK;
@@ -240,19 +258,40 @@ void board_speaker_amp(bool on) {
 
 // ---------------------------------------------------------------- per frame
 
-uint16_t* board_draw_buffer(void) { return s_scene; }
+uint16_t* board_draw_buffer(void) { return s_scene[s_draw]; }
 
 // RGB565 spread into one word with room for 5-bit weights: 0000 0GGG GGG0 0000 RRRR R000 00BB BBB.
 #define SPREAD(c) ((((uint32_t)(c)) | ((uint32_t)(c) << 16)) & 0x07E0F81Fu)
 static inline uint16_t swap16(uint16_t v) { return (uint16_t)((v << 8) | (v >> 8)); }  // the panel wants big-endian
 
 static void send(int y0, int rows, int cur) {
+    xSemaphoreTake(s_io_lock, portMAX_DELAY);
     esp_err_t err = esp_lcd_panel_draw_bitmap(s_panel, 0, y0, PANEL_W, y0 + rows, s_stripe[cur]);
+    xSemaphoreGive(s_io_lock);
     if (err != ESP_OK) ESP_LOGE(TAG, "draw at row %d: %s", y0, esp_err_to_name(err));
 }
 
-void board_present(void) {
-    if (!s_panel) return;
+// A source row, scaled across to OUT columns (spread, ready for the vertical blend). Each
+// source row is used by one or two output rows, so the last two are kept.
+static uint32_t s_hrow[2][OUT];
+static int s_hrow_src[2] = {-1, -1};
+
+static const uint32_t* scaled_row(const uint16_t* scene, int sy, int keep) {
+    for (int i = 0; i < 2; i++)
+        if (s_hrow_src[i] == sy) return s_hrow[i];
+    int slot = s_hrow_src[0] == keep ? 1 : 0;
+    const uint16_t* a = scene + sy * BOARD_WIDTH;
+    uint32_t* o = s_hrow[slot];
+    for (int ox = 0; ox < OUT; ox++) {
+        int sx = s_src[ox];
+        uint32_t fx = s_frac[ox];
+        o[ox] = ((SPREAD(a[sx]) * (32 - fx) + SPREAD(a[sx + 1]) * fx) >> 5) & 0x07E0F81Fu;
+    }
+    s_hrow_src[slot] = sy;
+    return o;
+}
+
+static void send_frame(const uint16_t* scene) {
     int cur = 0;
     if (!s_cleared) {  // a fresh panel's memory isn't black
         s_cleared = true;
@@ -264,30 +303,43 @@ void board_present(void) {
             cur ^= 1;
         }
     }
+    s_hrow_src[0] = s_hrow_src[1] = -1;
     for (int oy0 = 0; oy0 < OUT; oy0 += STRIPE_ROWS) {
         int n = OUT - oy0 < STRIPE_ROWS ? OUT - oy0 : STRIPE_ROWS;
         xSemaphoreTake(s_stripe_free, portMAX_DELAY);
         uint16_t* stripe = s_stripe[cur];
         for (int r = 0; r < n; r++) {
-            int oy = oy0 + r;
-            const uint16_t* a = s_scene + s_src[oy] * BOARD_WIDTH;
-            const uint16_t* b = a + BOARD_WIDTH;
+            int oy = oy0 + r, sy = s_src[oy];
+            const uint32_t* top = scaled_row(scene, sy, sy + 1);
+            const uint32_t* bot = scaled_row(scene, sy + 1, sy);
             uint32_t fy = s_frac[oy];
             uint16_t* o = stripe + r * PANEL_W;
             for (int ox = 0; ox < OUT; ox++) {
-                int sx = s_src[ox];
-                uint32_t fx = s_frac[ox];
-                uint32_t top = ((SPREAD(a[sx]) * (32 - fx) + SPREAD(a[sx + 1]) * fx) >> 5) & 0x07E0F81Fu;
-                uint32_t bot = ((SPREAD(b[sx]) * (32 - fx) + SPREAD(b[sx + 1]) * fx) >> 5) & 0x07E0F81Fu;
-                uint32_t v = ((top * (32 - fy) + bot * fy) >> 5) & 0x07E0F81Fu;
+                uint32_t v = ((top[ox] * (32 - fy) + bot[ox] * fy) >> 5) & 0x07E0F81Fu;
                 o[ox] = swap16((uint16_t)(v | (v >> 16)));
             }
         }
         send(OUT_Y + oy0, n, cur);
         cur ^= 1;
     }
-    // The scene buffer has been read; the last stripes finish on the wire while the
-    // next frame is drawn.
+}
+
+// On core 0: scales and sends each finished frame while the game draws the next on core 1.
+static void present_task(void* arg) {
+    (void)arg;
+    for (;;) {
+        xSemaphoreTake(s_frame_ready, portMAX_DELAY);
+        send_frame(s_showing);
+        xSemaphoreGive(s_frame_done);  // its frame has been read; the last stripes finish on the wire
+    }
+}
+
+void board_present(void) {
+    if (!s_panel) return;
+    xSemaphoreTake(s_frame_done, portMAX_DELAY);  // the frame before this one has been sent
+    s_showing = s_scene[s_draw];
+    s_draw ^= 1;
+    xSemaphoreGive(s_frame_ready);
 }
 
 void board_backlight(int percent) {

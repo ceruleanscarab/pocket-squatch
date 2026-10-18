@@ -731,6 +731,35 @@ static void testNaming() {
     CHECK(scene.nameKeyArea(Scene::kNameKeys - 1).y + 64 <= scene.nameDoneArea().y);  // no overlap
 }
 
+static void testSceneryCache() {
+    std::printf("the cached scenery draws the same picture as drawing it all every frame\n");
+    std::vector<uint16_t> a(Scene::kSize * Scene::kSize), b(a.size());
+    Canvas ca(a.data(), Scene::kSize, Scene::kSize), cb(b.data(), Scene::kSize, Scene::kSize);
+    struct Case { int64_t hours; bool lights; int messes; int trust; };
+    const Case cases[] = {{0, true, 0, 80}, {12, true, 2, 80}, {12, false, 3, 10}, {9, true, 1, 10}, {20, false, 0, 80}};
+    for (const Case& k : cases) {
+        Driver d;
+        d.sim.tick(k.hours * 3600);
+        State& st = d.sim.mutableState();
+        st.lightsOn = k.lights;
+        st.messes = k.messes;
+        st.trust = k.trust;
+        st.calling = st.sick = st.misbehaving = false;
+        d.settle();
+        std::fill(a.begin(), a.end(), 0x1234);
+        std::fill(b.begin(), b.end(), 0x4321);  // leftovers would show
+        d.scene.setSceneryCache(true);
+        d.scene.draw(ca);
+        d.scene.draw(ca);  // the second frame comes from the cache
+        d.scene.setSceneryCache(false);
+        d.scene.draw(cb);
+        int diff = 0;
+        for (size_t i = 0; i < a.size(); i++) diff += a[i] != b[i];
+        CHECK(diff == 0);
+        if (diff) std::printf("    %d pixels differ at +%lld h\n", diff, static_cast<long long>(k.hours));
+    }
+}
+
 int main() {
     testTap();
     testLongPressThenDrag();
@@ -755,6 +784,7 @@ int main() {
     testSettings();
     testSounds();
     testNaming();
+    testSceneryCache();
 
     std::printf("\n%d checks, %d failed\n", gChecks, gFailures);
     return gFailures ? 1 : 0;

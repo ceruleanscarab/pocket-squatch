@@ -27,7 +27,14 @@ public:
 
     void clear(Rgb c);
     void verticalGradient(int y0, int y1, Rgb top, Rgb bottom);
-    void tint(Rgb c, float alpha);  // the whole screen, for night and lights-off
+    void tint(Rgb c, float alpha);  // the whole screen, for overlays and the photo flash
+    // Shading for everything drawn from now on: each colour is mixed toward c by alpha
+    // before it's drawn. The same picture as drawing and then tint(), without a pass over
+    // the whole screen. 0 turns it off.
+    void setShade(Rgb c, float alpha) {
+        shadeC_ = c;
+        shadeA_ = alpha;
+    }
 
     // a is opacity, 0..1
     void fillRect(float x, float y, float w, float h, Rgb c, float a = 1);
@@ -53,8 +60,12 @@ private:
     template <typename Dist>
     void fillShape(float x0, float y0, float x1, float y1, Rgb c, float a, Dist dist, float march = 1);
 
+    uint16_t ink(Rgb c) const;  // c, shaded, as RGB565
+
     uint16_t* px_;
     int w_, h_;
+    Rgb shadeC_ = 0;
+    float shadeA_ = 0;
 };
 
 }  // namespace squatch

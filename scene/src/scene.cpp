@@ -1177,10 +1177,25 @@ void Scene::draw(Canvas& c) {
     const State& s = sim_.state();
     dark_ = darkness();
 
-    drawSky(c);
-    drawGround(c);
-    drawCampfire(c, false);
-    drawStump(c);
+    // With the lights off the whole clearing is shaded, as each thing is drawn.
+    const float shade = s.lightsOn ? 0.0f : 0.5f;
+    c.setShade(0x02040C, shade);
+
+    // The scenery: from the cache when it's still the same minute, else drawn afresh.
+    const int key = static_cast<int>(hourOfDay() * 60) * 2 + (s.lightsOn ? 1 : 0);
+    if (cacheScenery_ && c.width() == S && c.height() == S) {
+        if (scenery_.size() != static_cast<size_t>(S * S)) scenery_.assign(static_cast<size_t>(S * S), 0);
+        if (key != sceneryKey_) {
+            Canvas sc(scenery_.data(), S, S);
+            sc.setShade(0x02040C, shade);
+            drawScenery(sc);
+            sceneryKey_ = key;
+        }
+        std::memcpy(c.pixels(), scenery_.data(), scenery_.size() * sizeof(uint16_t));
+    } else {
+        drawScenery(c);
+    }
+    drawStars(c);
     for (int i = 0; i < visibleMesses(); i++) {
         float x = kMessSpots[i][0], y = kMessSpots[i][1];
         c.fillEllipse(x, y, 17, 8, sh(0x4E3219));
@@ -1194,10 +1209,10 @@ void Scene::draw(Canvas& c) {
         }
     }
     if (s.stage == Stage::Away || s.foraging) drawAwayTrail(c);
-    if (hiding()) drawHidingHead(c);
-    drawTree(c, kLeftTreeX, kLeftTreeBase, 1.0f);
-    drawTree(c, kRightTreeX, kRightTreeBase, 0.95f);
-    drawLantern(c);
+    if (hiding()) {
+        drawHidingHead(c);
+        drawTree(c, kLeftTreeX, kLeftTreeBase, 1.0f);  // it peeks out from behind the tree
+    }
     if (s.stage == Stage::Egg) drawEgg(c);
     else if (hiding()) drawHidingEyes(c);
     else if (hatched()) drawPet(c);
@@ -1205,7 +1220,7 @@ void Scene::draw(Canvas& c) {
     drawCampfire(c, h >= 17 && h < 23);
     drawParticles(c);
 
-    if (!s.lightsOn) c.tint(0x02040C, 0.5f);
+    c.setShade(0, 0);  // the screen's own furniture isn't shaded
     if (now_ < flashUntil_) c.tint(0xFFFFFF, static_cast<float>(flashUntil_ - now_) / 400.0f * 0.8f);
 
     drawStrip(c);
@@ -1221,6 +1236,30 @@ void Scene::draw(Canvas& c) {
     if (overlay_ == Overlay::Trails) drawTrails(c);
     if (overlay_ == Overlay::Settings) drawSettings(c);
     if (overlay_ == Overlay::Name) drawNaming(c);
+}
+
+void Scene::drawScenery(Canvas& c) {
+    drawSky(c);
+    drawGround(c);
+    drawCampfire(c, false);
+    const float h = hourOfDay();
+    if (h >= 17 && h < 23) c.glow(kFireX, kFireY - 20, 90, 0xFFB347, 0.15f + 0.35f * dark_);  // the fire's light
+    drawStump(c);
+    drawTree(c, kLeftTreeX, kLeftTreeBase, 1.0f);
+    drawTree(c, kRightTreeX, kRightTreeBase, 0.95f);
+    drawLantern(c);
+}
+
+// Twinkling, so drawn every frame: only in the open sky between the trees, and not over the moon.
+void Scene::drawStars(Canvas& c) {
+    if (dark_ <= 0.3f) return;
+    const float a = (dark_ - 0.3f) / 0.7f;
+    for (int k = 0; k < 40; k++) {
+        float x = static_cast<float>((k * 97 + 13) % S), y = static_cast<float>((k * 53 + 7) % 190);
+        if (x < 132 || x > 348 || ((x - 330) * (x - 330) + (y - 70) * (y - 70) < 24 * 24)) continue;
+        float tw = 0.5f + 0.5f * static_cast<float>(std::sin(t_ * 1.7 + k * 1.3));
+        c.fillCircle(x, y, k % 5 == 0 ? 1.6f : 1.1f, 0xFFF8E0, a * (0.4f + 0.6f * tw));
+    }
 }
 
 void Scene::drawSky(Canvas& c) {
@@ -1241,11 +1280,6 @@ void Scene::drawSky(Canvas& c) {
 
     if (dark_ > 0.3f) {
         float a = (dark_ - 0.3f) / 0.7f;
-        for (int k = 0; k < 40; k++) {
-            float x = static_cast<float>((k * 97 + 13) % S), y = static_cast<float>((k * 53 + 7) % 190);
-            float tw = 0.5f + 0.5f * static_cast<float>(std::sin(t_ * 1.7 + k * 1.3));
-            c.fillCircle(x, y, k % 5 == 0 ? 1.6f : 1.1f, 0xFFF8E0, a * (0.4f + 0.6f * tw));
-        }
         c.fillCircle(330, 70, 18, 0xF4F1DE, a);
         c.fillCircle(338, 64, 15, mix(keys[i].top, keys[i + 1].top, t), a);  // crescent
     } else {
@@ -1304,8 +1338,7 @@ void Scene::drawCampfire(Canvas& c, bool flames) {
         c.line(x - 14, y - 4, x + 16, y + 2, 7, sh(0x6B4A2F));
         return;
     }
-    float fl = static_cast<float>(std::sin(t_ * 13) * 0.5 + std::sin(t_ * 7.3) * 0.5);
-    c.glow(x, y - 20, 90, 0xFFB347, 0.15f + 0.35f * dark_);
+    float fl = static_cast<float>(std::sin(t_ * 13) * 0.5 + std::sin(t_ * 7.3) * 0.5);  // its light is in the scenery
     c.fillTriangle(x - 14, y, x + 14, y, x + fl * 3, y - 38 - fl * 6, 0xF07B2B);
     c.fillTriangle(x - 8, y, x + 9, y, x - fl * 2, y - 26 + fl * 4, 0xFFD25E);
 }

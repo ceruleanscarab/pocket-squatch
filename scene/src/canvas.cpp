@@ -37,6 +37,37 @@ inline void blend565(uint16_t& dst, uint16_t src, int a) {
 
 inline float length(float x, float y) { return std::sqrt(x * x + y * y); }
 
+// Blending a run of pixels with one colour at one opacity: each pixel spread out to
+// 0000 0GGG GGG0 0000 RRRR R000 00BB BBB so all three channels mix in one multiply.
+// 5-bit opacity, which is plenty for a run.
+inline uint32_t spread565(uint16_t p) { return (static_cast<uint32_t>(p) | (static_cast<uint32_t>(p) << 16)) & 0x07E0F81Fu; }
+
+void blendRun(uint16_t* p, int n, uint16_t c565, int a256) {
+    if (a256 >= 256) {
+        std::fill(p, p + n, c565);
+        return;
+    }
+    const uint32_t a = static_cast<uint32_t>((a256 + 4) >> 3);  // 0..32
+    if (a == 0) return;
+    const uint32_t src = spread565(c565) * a, keep = 32 - a;
+    for (int i = 0; i < n; i++) {
+        uint32_t v = ((spread565(p[i]) * keep + src) >> 5) & 0x07E0F81Fu;
+        p[i] = static_cast<uint16_t>(v | (v >> 16));
+    }
+}
+
+// The glow's falloff, (1 - distance/r)^2, looked up by (distance/r)^2 so no square root.
+struct GlowTable {
+    uint8_t v[257];
+    GlowTable() {
+        for (int i = 0; i <= 256; i++) {
+            float t = 1 - std::sqrt(i / 256.0f);
+            v[i] = static_cast<uint8_t>(t * t * 255 + 0.5f);
+        }
+    }
+};
+const GlowTable kGlow;
+
 // 5x7 glyphs, one string of 7 rows x 5 columns each.
 struct Glyph {
     char c;
@@ -114,15 +145,17 @@ Rgb mix(Rgb a, Rgb b, float t) {
     return ch(16) | ch(8) | ch(0);
 }
 
+uint16_t Canvas::ink(Rgb c) const { return to565(shadeA_ > 0 ? mix(c, shadeC_, shadeA_) : c); }
+
 Rgb Canvas::pixel(int x, int y) const { return from565(px_[y * w_ + x]); }
 
-void Canvas::clear(Rgb c) { std::fill(px_, px_ + w_ * h_, to565(c)); }
+void Canvas::clear(Rgb c) { std::fill(px_, px_ + w_ * h_, ink(c)); }
 
 void Canvas::verticalGradient(int y0, int y1, Rgb top, Rgb bottom) {
     y0 = std::max(y0, 0);
     y1 = std::min(y1, h_);
     for (int y = y0; y < y1; y++) {
-        uint16_t c = to565(mix(top, bottom, static_cast<float>(y - y0) / std::max(1, y1 - y0 - 1)));
+        uint16_t c = ink(mix(top, bottom, static_cast<float>(y - y0) / std::max(1, y1 - y0 - 1)));
         std::fill(px_ + y * w_, px_ + (y + 1) * w_, c);
     }
 }
@@ -131,7 +164,7 @@ void Canvas::tint(Rgb c, float alpha) {
     int a = alpha256(alpha);
     if (a <= 0) return;
     uint16_t c565 = to565(c);
-    for (int i = 0; i < w_ * h_; i++) blend565(px_[i], c565, a);
+    blendRun(px_, w_ * h_, c565, a);
 }
 
 // Fills a shape by pixel coverage: dist is the signed distance in pixels from a pixel centre
@@ -144,7 +177,7 @@ template <typename Dist>
 void Canvas::fillShape(float x0, float y0, float x1, float y1, Rgb c, float a, Dist dist, float march) {
     const int a256 = alpha256(a);
     if (a256 <= 0) return;
-    const uint16_t c565 = to565(c);
+    const uint16_t c565 = ink(c);
     const int ix0 = std::max(0, static_cast<int>(std::floor(x0 - 1)));
     const int iy0 = std::max(0, static_cast<int>(std::floor(y0 - 1)));
     const int ix1 = std::min(w_, static_cast<int>(std::ceil(x1 + 1)));
@@ -194,9 +227,7 @@ void Canvas::fillShape(float x0, float y0, float x1, float y1, Rgb c, float a, D
             rim(r, d);
         }
 
-        if (a256 >= 256) std::fill(row + l, row + r + 1, c565);
-        else
-            for (int x = l; x <= r; x++) blend565(row[x], c565, a256);
+        blendRun(row + l, r - l + 1, c565, a256);
     }
 }
 
@@ -240,13 +271,21 @@ void Canvas::ring(float cx, float cy, float r, float thickness, Rgb c, float a) 
 void Canvas::glow(float cx, float cy, float r, Rgb c, float a) {
     const int a256 = alpha256(a);
     if (a256 <= 0 || r <= 0) return;
-    const uint16_t c565 = to565(c);
+    const uint16_t c565 = ink(c);
     int x0 = std::max(0, static_cast<int>(cx - r)), x1 = std::min(w_, static_cast<int>(cx + r) + 1);
     int y0 = std::max(0, static_cast<int>(cy - r)), y1 = std::min(h_, static_cast<int>(cy + r) + 1);
+    const float inv = 256.0f / (r * r);
     for (int y = y0; y < y1; y++) {
+        const float dy = y + 0.5f - cy, dy2 = dy * dy * inv;
+        if (dy2 >= 256) continue;
+        uint16_t* row = px_ + y * w_;
         for (int x = x0; x < x1; x++) {
-            float t = 1 - length(x + 0.5f - cx, y + 0.5f - cy) / r;
-            if (t > 0) blend565(px_[y * w_ + x], c565, static_cast<int>(t * t * static_cast<float>(a256)));
+            const float dx = x + 0.5f - cx;
+            const int q = static_cast<int>(dx * dx * inv + dy2);
+            if (q >= 256) continue;
+            // Full 8-bit opacity here: the glow's faint outer edge would round away in 5 bits.
+            const int a = (static_cast<int>(kGlow.v[q]) * a256 + 128) >> 8;
+            if (a > 0) blend565(row[x], c565, a);
         }
     }
 }
@@ -298,13 +337,22 @@ float Canvas::text(float x, float y, const char* s, int scale, Rgb c, Align alig
     if (align == Align::Right) x -= w;
     x = std::round(x);
     y = std::round(y);
+    // Whole-pixel squares need no anti-aliasing: fill each dot's rows directly.
+    const uint16_t c565 = ink(c);
+    const int a256 = alpha256(a);
     for (; s && *s; s++, x += 6 * scale) {
         const char* rows = glyphRows(*s);
-        if (!rows) continue;
-        for (int r = 0; r < 7; r++)
-            for (int col = 0; col < 5; col++)
-                if (rows[r * 5 + col] == '#')
-                    fillRect(x + col * scale, y + r * scale, static_cast<float>(scale), static_cast<float>(scale), c, a);
+        if (!rows || a256 <= 0) continue;
+        for (int r = 0; r < 7; r++) {
+            for (int col = 0; col < 5; col++) {
+                if (rows[r * 5 + col] != '#') continue;
+                int px0 = static_cast<int>(x) + col * scale, py0 = static_cast<int>(y) + r * scale;
+                int px1 = std::min(w_, px0 + scale), py1 = std::min(h_, py0 + scale);
+                px0 = std::max(0, px0);
+                for (int py = std::max(0, py0); py < py1; py++)
+                    if (px1 > px0) blendRun(px_ + py * w_ + px0, px1 - px0, c565, a256);
+            }
+        }
     }
     return x;
 }

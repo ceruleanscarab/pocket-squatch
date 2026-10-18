@@ -149,3 +149,16 @@ It never dies: untreated sickness or long neglect makes it run away, and leaving
 3. Not yet in the scene: the naming screen at hatching and the half-speed meter setting.
 4. Later: Bluetooth visitors, so two boards' Squatches can meet (needs a second board).
 4. **Step 6:** deep sleep through the AXP2101 (battery level, screen-off and sound are done), then the case.
+
+## Android
+
+`android/` builds the same game as a phone app: SDL2 (fetched by `android/fetch-sdl.sh`) runs
+`android/app/src/main/cpp/main.cpp`, the Android counterpart of `pc/main.cpp`. GitHub builds it on every
+push and keeps the newest `pocket-squatch.apk` on the repository's **android** release, so nothing needs
+installing on the PC. On the phone, download the APK from that release page and open it (Android asks once
+to allow installs from your browser). Each build installs over the last and keeps the pet, provided the
+`SQUATCH_KEYSTORE_B64` and `SQUATCH_KEYSTORE_PASSWORD` repository secrets hold the signing key.
+
+The phone version uses real time and catches up after being closed, two-finger touch, sound, the phone's
+battery for the icon, and its own screen timeout. Still to come: real Wi-Fi trails (pretend scans for now)
+and notifications when the pet needs you while the app is closed.

@@ -1,0 +1,50 @@
+apply plugin: 'com.android.application'
+
+android {
+    namespace "com.ceruleanscarab.pocketsquatch"
+    compileSdkVersion 34
+    // Use the NDK the build machine already has (GitHub's runners set this), else AGP's default.
+    if (System.getenv("ANDROID_NDK_LATEST_HOME")) ndkPath System.getenv("ANDROID_NDK_LATEST_HOME")
+    defaultConfig {
+        applicationId "com.ceruleanscarab.pocketsquatch"
+        minSdkVersion 21
+        targetSdkVersion 34
+        // CI sets these from the run number, so each build installs over the last.
+        versionCode (System.getenv("VERSION_CODE") ?: "1").toInteger()
+        versionName "0.1." + (System.getenv("VERSION_CODE") ?: "0")
+        externalNativeBuild {
+            cmake {
+                arguments "-DANDROID_STL=c++_static", "-DSDL_STATIC=OFF", "-DSDL_SHARED=ON"
+                abiFilters 'arm64-v8a', 'armeabi-v7a'
+            }
+        }
+    }
+    // Every build must be signed with the same key, or Android won't install it over the
+    // last one (and the pet's save would go with the uninstall). CI passes the key in.
+    signingConfigs {
+        release {
+            def ks = System.getenv("SQUATCH_KEYSTORE")
+            if (ks) {
+                storeFile file(ks)
+                storePassword System.getenv("SQUATCH_KEYSTORE_PASSWORD")
+                keyAlias "squatch"
+                keyPassword System.getenv("SQUATCH_KEYSTORE_PASSWORD")
+            }
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig System.getenv("SQUATCH_KEYSTORE") ? signingConfigs.release : signingConfigs.debug
+        }
+    }
+    externalNativeBuild {
+        cmake {
+            path 'CMakeLists.txt'
+            version '3.22.1'
+        }
+    }
+    lint {
+        abortOnError false
+    }
+}

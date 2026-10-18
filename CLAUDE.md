@@ -34,7 +34,7 @@ Wiki: https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-4B
   ESP-IDF component on the device (`sim/CMakeLists.txt`).
 - `scene/` (renderer, gestures, the clearing) follows the same rule: touch events and a millisecond
   clock in, pixels out to an RGB565 `Canvas`. It reads the sim and calls actions but never ticks it.
-  Only `pc/` and `firmware/` touch SDL or ESP-IDF, files, and the real clock.
+  Only `pc/`, `android/` and `firmware/` touch SDL or ESP-IDF, files, and the real clock.
 - `firmware/` is the ESP-IDF 5.4 project for the board (`idf.py -C firmware build`). `main/board.c` holds the
   pins and panel start-up copied from Waveshare's BSP; keep it close to that source rather than tidying it.
   Wi-Fi credentials go in `firmware/sdkconfig` via menuconfig, which is git-ignored.
@@ -63,4 +63,6 @@ Wiki: https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-4B
   not yet heard on hardware.
 - The Waveshare ESP32-S3-Touch-AMOLED-1.8 is a second board target (`board_amoled18.c`, menuconfig Board); it ran
   first on 2026-10-17 at 7-9 fps, so drawing speed is worth improving.
+- Android app (`android/`, SDL2, built and published to the "android" release by CI) — basic version done;
+  real Wi-Fi scans and notifications still to come.
 - Later: Bluetooth visitors between two boards.

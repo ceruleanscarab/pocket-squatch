@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <cstdio>
 #include <cstring>
+#include <string>
 #include <vector>
 
 #include "squatch/canvas.hpp"
@@ -151,6 +152,7 @@ struct Driver {
         s.happiness = 1;
         s.calling = s.misbehaving = s.sick = false;
         s.messes = 0;
+        sim.setName("TESTY");  // so the naming page doesn't open over every test
         settle();
     }
     void step(uint32_t d = 16) {
@@ -276,7 +278,7 @@ static void testScold() {
     d.step();
     CHECK(!d.sim.state().misbehaving);
     CHECK(d.sim.state().discipline > before);
-    CHECK(d.scene.toast() && std::strcmp(d.scene.toast(), "IT STOPPED") == 0);
+    CHECK(d.scene.toast() && std::strcmp(d.scene.toast(), "TESTY STOPPED") == 0);
 }
 
 static void testAnswerCall() {
@@ -664,6 +666,71 @@ static void testSounds() {
     CHECK(quiet > 0 && quiet < 6000);  // quiet is quiet
 }
 
+static void testNaming() {
+    std::printf("an unnamed pet is asked for a name after hatching; the name shows in messages\n");
+    Sim sim;
+    sim.newGame(kTenAm, 0, 99);
+    Scene scene(sim);
+    uint32_t ms = 0;
+    auto step = [&](uint32_t d) { ms += d; scene.update(ms); };
+    auto tap = [&](const Scene::Rect& r) {
+        scene.touch(TouchEvent{TouchPhase::Down, 0, static_cast<int16_t>(r.cx()), static_cast<int16_t>(r.cy()), ms});
+        step(60);
+        scene.touch(TouchEvent{TouchPhase::Up, 0, static_cast<int16_t>(r.cx()), static_cast<int16_t>(r.cy()), ms});
+        step(16);
+    };
+    for (int i = 0; i < 100; i++) step(16);
+    CHECK(scene.overlay() == Scene::Overlay::None);  // an egg isn't asked
+    sim.tick(sim.tuning().eggEnd + 1);
+    step(16);
+    CHECK(scene.overlay() == Scene::Overlay::None);  // it hatches first...
+    for (int i = 0; i < 200; i++) step(16);
+    CHECK(scene.overlay() == Scene::Overlay::Name);  // ...then is asked
+
+    std::vector<uint16_t> fb(Scene::kSize * Scene::kSize);
+    Canvas c(fb.data(), Scene::kSize, Scene::kSize);
+    scene.draw(c);
+
+    tap(scene.nameDoneArea());  // nothing typed: Done waits
+    CHECK(scene.overlay() == Scene::Overlay::Name);
+    for (char ch : std::string("MOSZ")) tap(scene.nameKeyArea(ch - 'A'));
+    tap(scene.nameKeyArea(27));  // delete the Z
+    tap(scene.nameKeyArea(18));  // S
+    tap(scene.nameKeyArea(26));  // a space
+    tap(scene.nameKeyArea(26));  // a second one is ignored
+    CHECK(std::strcmp(scene.nameDraft(), "MOSS ") == 0);
+    for (int i = 0; i < 12; i++) tap(scene.nameKeyArea(0));
+    CHECK(std::strlen(scene.nameDraft()) == Scene::kMaxNameLen);  // capped
+    for (int i = 0; i < 5; i++) tap(scene.nameKeyArea(27));
+    tap(scene.nameDoneArea());  // trailing space trimmed
+    CHECK(std::strcmp(sim.state().name, "MOSS") == 0);
+    CHECK(scene.overlay() == Scene::Overlay::None);
+    CHECK(scene.toast() && std::strcmp(scene.toast(), "HELLO, MOSS!") == 0);
+
+    // Messages use the name.
+    for (int i = 0; i < 400; i++) step(16);
+    sim.mutableState().hunger = 4;
+    sim.mutableState().asleep = false;
+    tap(scene.squatchArea());  // a tap, not a feed; then feed from the tray
+    CHECK(sim.state().name[0]);
+
+    // Renaming from the stats page; Suggest fills in a name.
+    tap(Scene::Rect{10, 10, 64, 40});  // the strip opens the stats page
+    CHECK(scene.overlay() == Scene::Overlay::Stats);
+    tap(scene.nameEditArea());
+    CHECK(scene.overlay() == Scene::Overlay::Name);
+    CHECK(std::strcmp(scene.nameDraft(), "MOSS") == 0);
+    tap(scene.nameSuggestArea());
+    CHECK(scene.nameDraft()[0] && std::strcmp(scene.nameDraft(), "MOSS") != 0);
+    tap(scene.nameDoneArea());
+    CHECK(std::strcmp(sim.state().name, scene.nameDraft()) == 0);
+
+    // Every key is big enough.
+    for (int i = 0; i < Scene::kNameKeys; i++) CHECK(scene.nameKeyArea(i).w >= 64 && scene.nameKeyArea(i).h >= 64);
+    CHECK(scene.nameSuggestArea().h >= 64 && scene.nameDoneArea().h >= 64 && scene.nameEditArea().h >= 64);
+    CHECK(scene.nameKeyArea(Scene::kNameKeys - 1).y + 64 <= scene.nameDoneArea().y);  // no overlap
+}
+
 int main() {
     testTap();
     testLongPressThenDrag();
@@ -687,6 +754,7 @@ int main() {
     testBattery();
     testSettings();
     testSounds();
+    testNaming();
 
     std::printf("\n%d checks, %d failed\n", gChecks, gFailures);
     return gFailures ? 1 : 0;

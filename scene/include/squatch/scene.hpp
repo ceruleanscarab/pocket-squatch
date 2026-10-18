@@ -31,7 +31,7 @@ public:
         int cy() const { return y + h / 2; }
     };
 
-    enum class Overlay : uint8_t { None, Stats, Gallery, Trails, Settings };
+    enum class Overlay : uint8_t { None, Stats, Gallery, Trails, Settings, Name };
 
     // Things you can pick up from the tray and give to Squatch.
     enum class Item : uint8_t { None, Berries, Fish, Roots, Brush, Poultice, Pinecone };
@@ -88,6 +88,16 @@ public:
     // Sounds to play, oldest first; the front end hands them to a Synth at volume(). Nothing
     // is queued with the volume off, or while the screen is off (except a knock: it wants you).
     bool takeCue(Cue& out);
+
+    // Naming: a big-letter keyboard that opens after hatching (or for any pet without a name),
+    // and from the stats page by tapping the name. Keys 0..25 are A..Z, 26 a space, 27 delete.
+    static constexpr int kNameKeys = 28;
+    static constexpr int kMaxNameLen = 10;
+    Rect nameKeyArea(int i) const;
+    Rect nameSuggestArea() const;
+    Rect nameDoneArea() const;
+    Rect nameEditArea() const;  // on the stats page
+    const char* nameDraft() const { return nameDraft_; }
 
     // The settings page: row 0 brightness, 1 screen timeout, 2 volume, each with - and +.
     Rect settingButtonArea(int row, bool plus) const;
@@ -151,6 +161,8 @@ private:
     void doForage(int trail);
     void openTrails();
     void changeSetting(int row, int by);
+    void openNaming();
+    void suggestName();
     void cue(Cue c);
     void requestScan();
     void note(const char* text);
@@ -205,6 +217,7 @@ private:
     void drawGallery(Canvas& c);
     void drawTrails(Canvas& c);
     void drawSettings(Canvas& c);
+    void drawNaming(Canvas& c);
     void drawForagingBanner(Canvas& c);
     void drawLandmarkIcon(Canvas& c, LandmarkKind k, float x, float y, float size);
 
@@ -236,6 +249,10 @@ private:
     bool everScanned_ = false;
     char trailNote_[40] = {};
 
+    char nameDraft_[kMaxNameLen + 1] = {};
+    uint32_t askNameAt_ = 0;   // when to open the naming page for a pet with no name
+    bool askedName_ = false;
+    uint8_t suggestion_ = 0;
     Settings settings_;
     Cue cues_[8];
     int cueCount_ = 0;

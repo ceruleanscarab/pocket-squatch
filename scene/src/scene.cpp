@@ -43,6 +43,13 @@ constexpr Scene::Slot kFoodSlots[] = {Scene::Slot::Back, Scene::Slot::Berries, S
 constexpr Scene::Slot kMoreSlots[] = {Scene::Slot::Back, Scene::Slot::Photos, Scene::Slot::Trails,
                                       Scene::Slot::Settings};
 
+// ---- the naming page
+constexpr int kKeyCols = 7, kKeyW = 64, kKeyH = 64;
+constexpr int kKeyX = (480 - kKeyCols * kKeyW) / 2, kKeyY = 118;
+constexpr const char* kSuggestedNames[] = {"MOSS",   "BRAMBLE", "HUCKLE", "FERN",   "BIRCH",  "TIMBER",
+                                           "CEDAR",  "JUNIPER", "HAZEL",  "BISCUIT", "SCOUT", "PEBBLE",
+                                           "THISTLE", "MAPLE",  "BOULDER", "WILLOW", "SHAGGY", "ROWAN"};
+
 // ---- the settings page
 constexpr int kSetX = 24, kSetY = 28, kSetW = 432, kSetH = 424;
 constexpr int kSetRowY[Scene::kSettingRows] = {96, 200, 304};  // the - and + buttons of each row
@@ -198,6 +205,26 @@ void Scene::screenOffNow() {
     waking_ = fingers_ != 0;  // a finger still down when it goes dark doesn't count as a tap later
 }
 
+Scene::Rect Scene::nameKeyArea(int i) const {
+    return {kKeyX + (i % kKeyCols) * kKeyW, kKeyY + (i / kKeyCols) * kKeyH, kKeyW, kKeyH};
+}
+Scene::Rect Scene::nameSuggestArea() const { return {kKeyX, kKeyY + 4 * kKeyH + 12, 216, 68}; }
+Scene::Rect Scene::nameDoneArea() const { return {kKeyX + kKeyCols * kKeyW - 216, kKeyY + 4 * kKeyH + 12, 216, 68}; }
+Scene::Rect Scene::nameEditArea() const { return {40, 76, 400, 64}; }
+
+void Scene::openNaming() {
+    std::snprintf(nameDraft_, sizeof nameDraft_, "%.10s", sim_.state().name);
+    overlay_ = Overlay::Name;
+    askedName_ = true;
+}
+
+void Scene::suggestName() {
+    constexpr int n = static_cast<int>(sizeof kSuggestedNames / sizeof kSuggestedNames[0]);
+    if (suggestion_ == 0) suggestion_ = static_cast<uint8_t>(1 + (sim_.state().genome.g[0] % n));  // its DNA picks the first
+    std::snprintf(nameDraft_, sizeof nameDraft_, "%.10s", kSuggestedNames[(suggestion_ - 1) % n]);
+    suggestion_ = static_cast<uint8_t>(suggestion_ % n + 1);
+}
+
 void Scene::changeSetting(int row, int by) {
     uint8_t& v = row == 0 ? settings_.brightness : row == 1 ? settings_.timeout : settings_.volume;
     const int top = (row == 0 ? kBrightnessSteps : row == 1 ? kTimeoutSteps : kVolumeSteps) - 1;
@@ -252,6 +279,44 @@ void Scene::handle(const Gesture& g) {
         }
         Rect panel{kMapX, kMapY, kMapW, kMapH};
         if (!panel.contains(g.x, g.y) || g.y < kRowY) overlay_ = Overlay::None;  // outside, or the title
+        return;
+    }
+    if (overlay_ == Overlay::Name) {
+        if (g.type != GestureType::Tap) return;
+        size_t len = std::strlen(nameDraft_);
+        for (int i = 0; i < kNameKeys; i++) {
+            if (!nameKeyArea(i).contains(g.x, g.y)) continue;
+            if (i == 27) {
+                if (len) nameDraft_[len - 1] = '\0';
+            } else if (len < static_cast<size_t>(kMaxNameLen) && !(i == 26 && (len == 0 || nameDraft_[len - 1] == ' '))) {
+                nameDraft_[len] = i == 26 ? ' ' : static_cast<char>('A' + i);
+                nameDraft_[len + 1] = '\0';
+            }
+            cue(Cue::Tick);
+            return;
+        }
+        if (nameSuggestArea().contains(g.x, g.y)) {
+            suggestName();
+            cue(Cue::Tick);
+            return;
+        }
+        if (nameDoneArea().contains(g.x, g.y)) {
+            while (len && nameDraft_[len - 1] == ' ') nameDraft_[--len] = '\0';
+            if (!len) return;  // a name first
+            sim_.setName(nameDraft_);
+            saveRequested_ = true;
+            overlay_ = Overlay::None;
+            char buf[40];
+            std::snprintf(buf, sizeof buf, "HELLO, %s!", nameDraft_);
+            say(buf, true);
+            cue(Cue::Happy);
+            if (hatched() && !hiding()) react(React::Wave, 1600);
+        }
+        return;
+    }
+    if (overlay_ == Overlay::Stats && g.type == GestureType::Tap && nameEditArea().contains(g.x, g.y) &&
+        sim_.state().stage != Stage::Egg) {
+        openNaming();
         return;
     }
     if (overlay_ == Overlay::Settings) {
@@ -697,6 +762,13 @@ void Scene::update(uint32_t nowMs) {
 
     animate(dt);
 
+    // A pet with no name gets asked for one, a moment after hatching (or at start-up).
+    if (!askedName_ && !sim_.state().name[0] && hatched() && overlay_ == Overlay::None && !screenOff_ &&
+        now_ >= askNameAt_ && drag_ == DragMode::None) {
+        openNaming();
+        suggestion_ = 0;
+    }
+
     const uint32_t timeout = screenTimeoutMs();
     if (!screenOff_ && timeout && fingers_ == 0 && nowMs - lastInputMs_ >= timeout) screenOff_ = true;
 }
@@ -720,6 +792,7 @@ void Scene::handleEvent(const Event& e) {
                 spawn(ParticleKind::Shell, kEggX, kEggY, (rand01() - 0.5f) * 260, -150 - rand01() * 150, 1200);
             react(React::Happy, 1200);
             cue(Cue::Hatch);
+            askNameAt_ = now_ + 2500;  // see it hatch first
             Traits t = sim_.traits();
             if (t.variant != Variant::None) {
                 char kind[16];
@@ -815,6 +888,13 @@ void Scene::react(React r, uint32_t ms) {
 }
 
 void Scene::say(const char* text, bool now) {
+    // "IT'S FULL" reads as "MOSS'S FULL" once it has a name, if that still fits.
+    char named[sizeof(Toast::text)];
+    const char* name = sim_.state().name;
+    if (name[0] && (std::strncmp(text, "IT ", 3) == 0 || std::strncmp(text, "IT'S ", 5) == 0)) {
+        int n = std::snprintf(named, sizeof named, "%s%s", name, text + 2);
+        if (n > 0 && n < static_cast<int>(sizeof named) && Canvas::textWidth(named, 2) <= 440) text = named;
+    }
     if (now) toastCount_ = 0;  // the answer to what you just did shouldn't wait in line
     if (toastCount_ == kMaxToasts) {  // drop the oldest
         std::memmove(&toasts_[0], &toasts_[1], sizeof(Toast) * (kMaxToasts - 1));
@@ -1140,6 +1220,7 @@ void Scene::draw(Canvas& c) {
     if (overlay_ == Overlay::Gallery) drawGallery(c);
     if (overlay_ == Overlay::Trails) drawTrails(c);
     if (overlay_ == Overlay::Settings) drawSettings(c);
+    if (overlay_ == Overlay::Name) drawNaming(c);
 }
 
 void Scene::drawSky(Canvas& c) {
@@ -1710,6 +1791,48 @@ void Scene::drawTrails(Canvas& c) {
     c.text(b.cx(), b.cy() - 7.0f, scanning_ ? "LISTENING..." : "LOOK AGAIN", 2, kUiLight, Align::Center);
 }
 
+void Scene::drawNaming(Canvas& c) {
+    const Rgb ink = 0x3B2A1E, faint = 0x8A7A66, key = 0xE6DCC6;
+    c.tint(0x000000, 0.55f);
+    c.fillRoundRect(8, 10, 464, 460, 20, kUiLight);
+    c.text(240, 22, "WHAT'S ITS NAME?", 2, ink, Align::Center);
+
+    // the name so far, with a blinking cursor
+    c.fillRoundRect(40, 46, 400, 60, 12, 0xFFFFFF, 0.6f);
+    const size_t len = std::strlen(nameDraft_);
+    char shown[kMaxNameLen + 2];
+    const bool blink = static_cast<int>(t_ * 2) % 2 == 0;
+    std::snprintf(shown, sizeof shown, "%s%s", nameDraft_, len < static_cast<size_t>(kMaxNameLen) && blink ? "_" : "");
+    c.text(240, 62, len || blink ? shown : " ", 4, ink, Align::Center);
+
+    for (int i = 0; i < kNameKeys; i++) {
+        Rect r = nameKeyArea(i);
+        c.fillRoundRect(r.x + 3, r.y + 3, r.w - 6, r.h - 6, 10, i < 26 ? key : 0xD9CFBC);
+        const float cx = static_cast<float>(r.cx()), cy = static_cast<float>(r.cy());
+        if (i < 26) {
+            char ch[2] = {static_cast<char>('A' + i), 0};
+            c.text(cx, cy - 10, ch, 3, ink, Align::Center);
+        } else if (i == 26) {  // space: a little bracket
+            c.line(cx - 14, cy + 2, cx - 14, cy + 8, 3, ink);
+            c.line(cx - 14, cy + 8, cx + 14, cy + 8, 3, ink);
+            c.line(cx + 14, cy + 8, cx + 14, cy + 2, 3, ink);
+        } else {  // delete: a left arrow with a cross
+            c.fillTriangle(cx - 20, cy, cx - 8, cy - 12, cx - 8, cy + 12, ink);
+            c.fillRect(cx - 8, cy - 12, 26, 24, ink);
+            c.line(cx - 2, cy - 6, cx + 10, cy + 6, 3, key);
+            c.line(cx - 2, cy + 6, cx + 10, cy - 6, 3, key);
+        }
+    }
+    Rect s = nameSuggestArea(), d = nameDoneArea();
+    c.fillRoundRect(s.x + 3, s.y + 4, s.w - 6, s.h - 8, 14, 0x6E8F5A);
+    c.text(s.cx(), s.cy() - 7.0f, "SUGGEST", 2, kUiLight, Align::Center);
+    bool ready = false;
+    for (size_t i = 0; i < len; i++) ready |= nameDraft_[i] != ' ';
+    c.fillRoundRect(d.x + 3, d.y + 4, d.w - 6, d.h - 8, 14, ready ? kButton : 0xB8AE9A);
+    c.text(d.cx(), d.cy() - 7.0f, "DONE", 2, kUiLight, Align::Center);
+    (void)faint;
+}
+
 void Scene::drawSettings(Canvas& c) {
     const Rgb ink = 0x3B2A1E, faint = 0x8A7A66, off = 0xD9CFBC;
     c.tint(0x000000, 0.55f);
@@ -1845,7 +1968,8 @@ void Scene::drawStats(Canvas& c) {
     c.fillRoundRect(40, 76, 400, 312, 20, kUiLight);
     const Rgb ink = 0x3B2A1E;
     const char* name = s.name[0] ? s.name : "NO NAME YET";
-    c.text(240, 98, name, Canvas::textWidth(name, 3) <= 380 ? 3 : 2, ink, Align::Center);
+    c.text(240, 92, name, Canvas::textWidth(name, 3) <= 380 ? 3 : 2, ink, Align::Center);
+    if (s.stage != Stage::Egg) c.text(240, 118, "TAP THE NAME TO CHANGE IT", 1, 0x8A7A66, Align::Center);
 
     char lines[10][40];
     int n = 0;

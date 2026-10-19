@@ -48,3 +48,8 @@ android {
         abortOnError false
     }
 }
+
+dependencies {
+    // The Wear OS Data Layer, for the Galaxy Watch companion (../wear).
+    implementation 'com.google.android.gms:play-services-wearable:18.1.0'
+}

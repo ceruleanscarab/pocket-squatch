@@ -167,3 +167,21 @@ to allow installs from your browser). Each build installs over the last and keep
 On the phone the clearing is drawn at 2x or 3x for a sharp picture (the `Canvas` scale) and sits in a wooden handheld frame with the title above. The phone version uses real time and catches up after being closed, two-finger touch, sound, the phone's
 battery for the icon, and its own screen timeout. Still to come: real Wi-Fi trails (pretend scans for now)
 and notifications when the pet needs you while the app is closed.
+
+### Galaxy Watch companion
+
+`android/wear` is a Wear OS app for the same pet. It shares the phone app's application id and
+signing key, which is how the Wear OS Data Layer pairs them: the phone publishes its save when you
+leave the app, the watch keeps a copy and runs the same sim on it (so it's always up to date), and
+anything you do on the watch goes back the same way and is picked up when you return to the phone.
+
+- **The watch screen** (`scene/src/wrist.cpp`, drawn by the game itself): the clearing, the name,
+  how it's doing, the three meters, and up to three big buttons for what it needs now (answer its
+  call, heal, clean, feed, pet; or leave food out while it's away).
+- **A tile** with the name, status and meters at a glance; tap it to open the screen.
+- **Nudges**: the sim is predictable, so the watch works out when it will next need you and buzzes
+  then (no more than every 45 minutes).
+
+CI builds `pocket-squatch-watch.apk` alongside the phone app, on the same release. Install it on the
+watch with `adb` (developer options, wireless debugging); see the instructions on the release.
+

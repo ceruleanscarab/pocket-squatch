@@ -1,2 +1,3 @@
 rootProject.name = 'PocketSquatch'
-include ':app'
+include ':app'   // the phone
+include ':wear'  // the Galaxy Watch companion

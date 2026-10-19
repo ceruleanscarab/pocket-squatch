@@ -1371,10 +1371,10 @@ void Scene::draw(Canvas& c) {
     if (now_ < lightningUntil_) c.tint(0xF4F6FF, static_cast<float>(lightningUntil_ - now_) / 220.0f * 0.55f);
     if (now_ < flashUntil_) c.tint(0xFFFFFF, static_cast<float>(flashUntil_ - now_) / 400.0f * 0.8f);
 
-    drawStrip(c);
+    if (!compact_) drawStrip(c);
     if (s.foraging) drawForagingBanner(c);
     const bool playing = overlay_ == Overlay::Game && game_ != Game::Pick;  // the game has the screen to itself
-    if (!playing) {
+    if (!playing && !compact_) {
         drawToast(c);
         drawTray(c);
     }

@@ -10,6 +10,7 @@
 #include "squatch/gesture.hpp"
 #include "squatch/scene.hpp"
 #include "squatch/sim.hpp"
+#include "squatch/wrist.hpp"
 
 using namespace squatch;
 
@@ -997,6 +998,66 @@ static void testSharperScale() {
     }
 }
 
+static void testWrist() {
+    std::printf("the watch: buttons for what it needs, actions that work, and a forecast of the next nudge\n");
+    Driver d;
+    State& s = d.sim.mutableState();
+    s.hunger = 0.8f;
+    s.calling = true;
+    s.messes = 1;
+    Wrist w(d.sim);
+    w.update(16);
+    CHECK(std::strcmp(w.status(), "CALLING YOU!") == 0);
+    CHECK(w.buttonCount() == 3);
+    CHECK(w.buttonAction(0) == Wrist::Action::Answer);
+    for (int i = 0; i < w.buttonCount(); i++) {
+        Scene::Rect r = w.buttonArea(i);
+        CHECK(r.w >= 64 && r.h >= 64);
+        const float dx = r.cx() - 240.0f, dy = r.y + r.h - 240.0f;
+        CHECK(dx * dx + dy * dy < 236.0f * 236.0f);  // inside the round screen
+    }
+    std::vector<uint16_t> fb(Scene::kSize * Scene::kSize);
+    Canvas c(fb.data(), Scene::kSize, Scene::kSize);
+    w.draw(c);
+    CHECK(Wrist::needNow(d.sim.state()) != nullptr);
+    CHECK(w.tap(w.buttonArea(0).cx(), w.buttonArea(0).cy()) == Wrist::Action::Answer);
+    CHECK(!d.sim.state().calling);
+    CHECK(w.message() != nullptr);
+    // Feed until full: the button keeps working, then says so.
+    int fed = 0;
+    for (int k = 0; k < 8; k++) {
+        for (int i = 0; i < w.buttonCount(); i++) {
+            if (w.buttonAction(i) != Wrist::Action::Feed) continue;
+            fed += w.tap(w.buttonArea(i).cx(), w.buttonArea(i).cy()) == Wrist::Action::Feed;
+            break;
+        }
+    }
+    CHECK(fed >= 2);
+    CHECK(d.sim.state().hunger >= 3);
+    CHECK(w.tap(5, 5) == Wrist::Action::None);  // not a button
+
+    // Asleep: no buttons. Away: leave food out.
+    s.asleep = true;
+    CHECK(w.buttonCount() == 0);
+    s.asleep = false;
+    s.stage = Stage::Away;
+    CHECK(w.buttonCount() == 1 && w.buttonAction(0) == Wrist::Action::LeaveFood);
+    s.stage = Stage::Baby;
+
+    // The forecast: well cared for now, so a while before it needs you; on a copy only.
+    s.hunger = s.happiness = 4;
+    s.messes = 0;
+    s.calling = s.sick = false;
+    const State before = d.sim.state();
+    const char* why = nullptr;
+    const int64_t secs = Wrist::nextNeed(d.sim.state(), 2 * 86400, &why);
+    CHECK(secs > 0 && why != nullptr);
+    CHECK(d.sim.state().now == before.now && d.sim.state().hunger == before.hunger);
+    // And it's right: tick the real pet that long and it does need you (unless it fell asleep).
+    d.sim.tick(secs);
+    CHECK(Wrist::needNow(d.sim.state()) != nullptr || d.sim.state().asleep);
+}
+
 int main() {
     testTap();
     testLongPressThenDrag();
@@ -1026,6 +1087,7 @@ int main() {
     testHalloween();
     testGames();
     testSharperScale();
+    testWrist();
 
     std::printf("\n%d checks, %d failed\n", gChecks, gFailures);
     return gFailures ? 1 : 0;

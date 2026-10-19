@@ -112,11 +112,14 @@ jobs:
             exit 1
           }
           cp app/build/outputs/apk/release/app-release.apk ../pocket-squatch.apk
+          cp wear/build/outputs/apk/release/wear-release.apk ../pocket-squatch-watch.apk
 
       - uses: actions/upload-artifact@v4
         with:
           name: pocket-squatch-apk
-          path: pocket-squatch.apk
+          path: |
+            pocket-squatch.apk
+            pocket-squatch-watch.apk
 
       - name: Publish to the "android" release
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
@@ -125,5 +128,5 @@ jobs:
         run: |
           gh release view android >/dev/null 2>&1 || gh release create android --prerelease \
             --title "Pocket Squatch for Android (latest build)" \
-            --notes "The newest Android build from main. Download pocket-squatch.apk on your phone and open it to install."
-          gh release upload android pocket-squatch.apk --clobber
+            --notes "The newest Android build from main. Download pocket-squatch.apk on your phone and open it to install. pocket-squatch-watch.apk is the Galaxy Watch (Wear OS) companion."
+          gh release upload android pocket-squatch.apk pocket-squatch-watch.apk --clobber

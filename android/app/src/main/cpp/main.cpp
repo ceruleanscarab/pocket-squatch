@@ -10,6 +10,8 @@
 //   - the battery icon, from the phone's own battery
 // The trail map's Wi-Fi scan is pretend for now, as on the PC.
 #include <SDL.h>
+#include <jni.h>
+#include <sys/stat.h>
 
 #include <algorithm>
 #include <cstdint>
@@ -103,6 +105,61 @@ void pretendScan(Sim& sim) {
 
 Synth gSynth;
 void audioCallback(void*, Uint8* stream, int len) { gSynth.render(reinterpret_cast<int16_t*>(stream), len / 2); }
+
+// ---- the Galaxy Watch companion. MainActivity.java talks to it over the Wear OS Data Layer;
+// these call it. Leaving the app publishes the save; coming back takes the watch's if you've
+// done something there since.
+int64_t nowMs() { return static_cast<int64_t>(std::time(nullptr)) * 1000; }
+
+int64_t fileTimeMs(const std::string& path) {
+    struct stat st{};
+    return stat(path.c_str(), &st) == 0 ? static_cast<int64_t>(st.st_mtime) * 1000 : 0;
+}
+
+void publishToWatch(const State& s) {
+    JNIEnv* env = static_cast<JNIEnv*>(SDL_AndroidGetJNIEnv());
+    jobject act = static_cast<jobject>(SDL_AndroidGetActivity());
+    if (!env || !act) return;
+    jclass cls = env->GetObjectClass(act);
+    jmethodID m = env->GetStaticMethodID(cls, "publishSave", "([BJ)V");
+    if (m) {
+        std::vector<uint8_t> buf(kSaveBytes);
+        const size_t n = save(s, buf.data(), buf.size());
+        jbyteArray arr = env->NewByteArray(static_cast<jsize>(n));
+        env->SetByteArrayRegion(arr, 0, static_cast<jsize>(n), reinterpret_cast<const jbyte*>(buf.data()));
+        env->CallStaticVoidMethod(cls, m, arr, static_cast<jlong>(nowMs()));
+        env->DeleteLocalRef(arr);
+    }
+    if (env->ExceptionCheck()) env->ExceptionClear();
+    env->DeleteLocalRef(cls);
+    env->DeleteLocalRef(act);
+}
+
+// The watch's save, if it was written after `after` (ms); `at` is when.
+bool watchSave(int64_t after, State& out, int64_t& at) {
+    JNIEnv* env = static_cast<JNIEnv*>(SDL_AndroidGetJNIEnv());
+    jobject act = static_cast<jobject>(SDL_AndroidGetActivity());
+    if (!env || !act) return false;
+    bool ok = false;
+    jclass cls = env->GetObjectClass(act);
+    jmethodID get = env->GetStaticMethodID(cls, "watchSaveNewerThan", "(J)[B");
+    jmethodID when = env->GetStaticMethodID(cls, "watchAt", "()J");
+    if (get && when) {
+        jbyteArray arr = static_cast<jbyteArray>(env->CallStaticObjectMethod(cls, get, static_cast<jlong>(after)));
+        if (arr && !env->ExceptionCheck()) {
+            const jsize n = env->GetArrayLength(arr);
+            std::vector<uint8_t> buf(static_cast<size_t>(n));
+            env->GetByteArrayRegion(arr, 0, n, reinterpret_cast<jbyte*>(buf.data()));
+            ok = load(buf.data(), buf.size(), out) == LoadResult::Ok;
+            at = env->CallStaticLongMethod(cls, when);
+            env->DeleteLocalRef(arr);
+        }
+    }
+    if (env->ExceptionCheck()) env->ExceptionClear();
+    env->DeleteLocalRef(cls);
+    env->DeleteLocalRef(act);
+    return ok;
+}
 
 // Where things go on the phone's screen, in real pixels: the clearing as large as fits in
 // a portrait screen, drawn at 2x or 3x for sharpness, inside a wooden handheld frame.
@@ -305,6 +362,28 @@ int main(int, char**) {
         writeSettings(settingsPath, scene.settings());
         lastSave = SDL_GetTicks();
     };
+
+    // The watch: what's been done there since the phone last had the pet wins.
+    int64_t syncedAt = fileTimeMs(savePath);
+    auto takeFromWatch = [&]() {
+        State w;
+        int64_t at = 0;
+        if (!watchSave(syncedAt, w, at)) return;
+        sim.mutableState() = w;
+        sim.mutableState().tzOffset = localTzOffset();
+        if (wallNow() > w.now) sim.tick(wallNow() - w.now);
+        syncedAt = at;
+        lastWall = wallNow();
+        writeSave(savePath, sim.state());
+        SDL_Log("took the watch's save from %lld", static_cast<long long>(at));
+    };
+    auto leaving = [&]() {
+        takeFromWatch();
+        saveAll();
+        publishToWatch(sim.state());
+        syncedAt = nowMs();
+    };
+    takeFromWatch();
     // A finger in screen terms to the scene's; a press outside the clearing isn't a touch.
     auto touch = [&](TouchPhase ph, int slot, float nx, float ny) -> bool {
         int x = 0, y = 0;
@@ -322,13 +401,14 @@ int main(int, char**) {
                 case SDL_QUIT:
                 case SDL_APP_TERMINATING: running = false; break;
                 case SDL_APP_WILLENTERBACKGROUND:
-                    saveAll();
+                    leaving();
                     if (audio) SDL_PauseAudioDevice(audio, 1);
                     background = true;
                     break;
                 case SDL_APP_DIDENTERFOREGROUND:
                     if (audio) SDL_PauseAudioDevice(audio, 0);
                     sim.mutableState().tzOffset = localTzOffset();
+                    takeFromWatch();
                     scene.wake();
                     background = false;
                     break;
@@ -353,7 +433,7 @@ int main(int, char**) {
                 }
                 case SDL_KEYDOWN:
                     if (e.key.keysym.sym == SDLK_AC_BACK) {
-                        saveAll();
+                        leaving();
                         SDL_AndroidBackButton();  // leave the app the usual way; the pet carries on
                     }
                     break;
@@ -408,7 +488,7 @@ int main(int, char**) {
         SDL_RenderPresent(renderer);  // vsync paces the loop
     }
 
-    saveAll();
+    leaving();
     if (audio) SDL_CloseAudioDevice(audio);
     SDL_DestroyTexture(tex);
     SDL_DestroyTexture(frameTex);

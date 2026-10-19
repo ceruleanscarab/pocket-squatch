@@ -162,6 +162,13 @@ public:
     // it all every frame (for tests that compare the two).
     void setSceneryCache(bool on) { cacheScenery_ = on; sceneryKey_ = -1; }
 
+    // Just the clearing and the pet: no status strip, tray or messages, and no naming page.
+    // For the watch, which draws its own controls on top.
+    void setCompact(bool on) {
+        compact_ = on;
+        if (on) askedName_ = true;
+    }
+
 private:
     enum class React : uint8_t { None, Flinch, Peek, Wave, Happy, Eat, Shake, Sneeze, Wobble, Sulk };
     enum class DragMode : uint8_t { None, Item, Stroke };
@@ -319,6 +326,7 @@ private:
     std::vector<uint16_t> scenery_;
     int sceneryKey_ = -1;
     bool cacheScenery_ = true;
+    bool compact_ = false;
     Settings settings_;
     Cue cues_[8];
     int cueCount_ = 0;

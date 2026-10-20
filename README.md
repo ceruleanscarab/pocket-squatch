@@ -166,8 +166,9 @@ to allow installs from your browser). Each build installs over the last and keep
 `SQUATCH_KEYSTORE_B64` and `SQUATCH_KEYSTORE_PASSWORD` repository secrets hold the signing key.
 
 On the phone the clearing is drawn at 2x or 3x for a sharp picture (the `Canvas` scale) and sits in a wooden handheld frame with the title above. The phone version uses real time and catches up after being closed, two-finger touch, sound, the phone's
-battery for the icon, and its own screen timeout. Still to come: real Wi-Fi trails (pretend scans for now)
-and notifications when the pet needs you while the app is closed.
+battery for the icon, and its own screen timeout. The trail map scans real Wi-Fi (Android asks once for "nearby devices", or location before Android 13;
+only hashes of the names are kept), and when you leave the app it plans a notification for when the pet will
+next need you (kept on the phone: the watch buzzes for itself).
 
 ### Galaxy Watch companion
 

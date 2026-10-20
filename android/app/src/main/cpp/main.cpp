@@ -27,6 +27,7 @@
 #include "squatch/scene.hpp"
 #include "squatch/sim.hpp"
 #include "squatch/sounds.hpp"
+#include "squatch/wrist.hpp"
 
 using namespace squatch;
 
@@ -88,19 +89,54 @@ void writeSettings(const std::string& path, const Scene::Settings& s) {
     std::fclose(f);
 }
 
-const char* const kPretendNetworks[] = {
-    "Squatchnet",   "Ranger Station 5G", "Pinecone Cafe Guest", "Old Mill Library",
-    "Basecamp-2.4", "FBI Surveillance Van", "Trailhead Brewing", "Lookout Tower",
-};
+// ---- calls into MainActivity.java: a static method on the activity's class
 
-void pretendScan(Sim& sim) {
-    Sighting seen[8];
-    size_t n = 0;
-    for (const char* name : kPretendNetworks) {
-        if (std::rand() % 3 == 0) continue;
-        seen[n++] = Sighting{trailHash(name), static_cast<int8_t>(-38 - std::rand() % 55)};
-    }
-    sim.scoutTrails(seen, n);
+template <typename F>
+void withActivity(F f) {
+    JNIEnv* env = static_cast<JNIEnv*>(SDL_AndroidGetJNIEnv());
+    jobject act = static_cast<jobject>(SDL_AndroidGetActivity());
+    if (!env || !act) return;
+    jclass cls = env->GetObjectClass(act);
+    f(env, cls);
+    if (env->ExceptionCheck()) env->ExceptionClear();
+    env->DeleteLocalRef(cls);
+    env->DeleteLocalRef(act);
+}
+
+void callStatic(const char* name) {
+    withActivity([&](JNIEnv* env, jclass cls) {
+        if (jmethodID m = env->GetStaticMethodID(cls, name, "()V")) env->CallStaticVoidMethod(cls, m);
+    });
+}
+
+// The trail map's scan: Android scans; only hashes of the names reach the sim.
+void startWifiScan() { callStatic("startWifiScan"); }
+
+bool takeWifiScan(Sim& sim) {
+    bool got = false;
+    withActivity([&](JNIEnv* env, jclass cls) {
+        jmethodID m = env->GetStaticMethodID(cls, "takeWifiScan", "()Ljava/lang/String;");
+        jstring js = m ? static_cast<jstring>(env->CallStaticObjectMethod(cls, m)) : nullptr;
+        if (!js) return;
+        const char* text = env->GetStringUTFChars(js, nullptr);
+        Sighting seen[24];
+        size_t n = 0;
+        for (const char* line = text; *line && n < 24;) {
+            const char* tab = std::strchr(line, '\t');
+            const char* end = std::strchr(line, '\n');
+            if (!end) end = line + std::strlen(line);
+            if (tab && tab < end) {
+                std::string ssid(tab + 1, end);
+                seen[n++] = Sighting{trailHash(ssid.c_str()), static_cast<int8_t>(std::atoi(line))};
+            }
+            line = *end ? end + 1 : end;
+        }
+        env->ReleaseStringUTFChars(js, text);
+        env->DeleteLocalRef(js);
+        sim.scoutTrails(seen, n);
+        got = true;
+    });
+    return got;
 }
 
 Synth gSynth;
@@ -382,6 +418,7 @@ int main(int, char**) {
         saveAll();
         publishToWatch(sim.state());
         syncedAt = nowMs();
+        callStatic("planNudge");  // a notification for when it next needs you
     };
     takeFromWatch();
     // A finger in screen terms to the scene's; a press outside the clearing isn't a touch.
@@ -458,11 +495,11 @@ int main(int, char**) {
             lastBattery = ms ? ms : 1;
         }
 
-        if (scene.takeScanRequest()) scanDoneAt = ms + 1500;
-        if (scanDoneAt && ms >= scanDoneAt) {
-            pretendScan(sim);
-            scanDoneAt = 0;
+        if (scene.takeScanRequest()) {
+            startWifiScan();
+            scanDoneAt = ms + 20000;  // give up on it after this
         }
+        if (scanDoneAt && (takeWifiScan(sim) || ms >= scanDoneAt)) scanDoneAt = 0;
         scene.update(ms);
         for (Cue c; scene.takeCue(c);) {
             if (!audio) continue;
@@ -496,4 +533,27 @@ int main(int, char**) {
     SDL_DestroyWindow(window);
     SDL_Quit();
     return 0;
+}
+
+// For PhonePet.java, while the app is closed: from a save and the time, how long until the pet
+// next needs you, what it needs right now (empty if nothing), and its name, one per line.
+extern "C" JNIEXPORT jstring JNICALL Java_com_ceruleanscarab_pocketsquatch_PhonePet_forecast(JNIEnv* env, jclass,
+                                                                                           jbyteArray save,
+                                                                                           jlong nowSecs) {
+    if (!save) return nullptr;
+    const jsize n = env->GetArrayLength(save);
+    std::vector<uint8_t> buf(static_cast<size_t>(n));
+    env->GetByteArrayRegion(save, 0, n, reinterpret_cast<jbyte*>(buf.data()));
+    Sim sim;
+    State s;
+    if (load(buf.data(), buf.size(), s) != LoadResult::Ok) return nullptr;
+    sim.mutableState() = s;
+    sim.mutableState().tzOffset = localTzOffset();
+    if (nowSecs > s.now) sim.tick(nowSecs - s.now);
+    const char* need = Wrist::needNow(sim.state());
+    const int64_t next = Wrist::nextNeed(sim.state(), 2 * 86400, nullptr);
+    char out[96];
+    std::snprintf(out, sizeof out, "%lld\n%s\n%s", static_cast<long long>(next), need ? need : "",
+                  sim.state().name);
+    return env->NewStringUTF(out);
 }

@@ -71,7 +71,8 @@ Wiki: https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-4B
   that moves must be drawn in `Scene::draw` after it), shading and text are cheaper (about 3x less work per frame),
   and the AMOLED scales and sends each frame on core 0 while core 1 draws the next. Not yet measured on hardware.
 - Android app (`android/`, SDL2, built and published to the "android" release by CI) — basic version done;
-  real Wi-Fi scans and notifications still to come. It draws at 2x/3x (`Canvas` scale) inside a handheld frame.
+  real Wi-Fi scans (MainActivity.startWifiScan) and "needs you" notifications (PhonePet/NudgeReceiver, using
+  `Wrist::nextNeed` via the `forecast` JNI export in main.cpp) — done, not yet run on a phone. It draws at 2x/3x (`Canvas` scale) inside a handheld frame.
 - Galaxy Watch companion (`android/wear`, Java + the sim/scene via JNI; `scene/` `wrist.hpp` is its screen): the save
   syncs over the Wear OS Data Layer (item `/pet`, newest `at` wins), a tile, and predicted nudges. Not yet run on a watch.
 - Later: Bluetooth visitors between two boards.

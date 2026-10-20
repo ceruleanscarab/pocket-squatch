@@ -142,7 +142,7 @@ Follow one pet day by day, with every event:
 
 ## Life cycle
 
-Egg (1 hour) → Baby (to day 3) → Child (to day 6) → Teen (to day 10) → Adult → Elder (day 20) → the Elder lays the next egg (day 25). The sighting-photo gallery and footprints carry over between generations.
+Egg (15 minutes) → Baby (to day 3) → Child (to day 6) → Teen (to day 10) → Adult → Elder (day 20) → the Elder lays the next egg (day 25). The sighting-photo gallery and footprints carry over between generations.
 
 Adult form at day 10, checked in order: full photo gallery → **Legend**; Trust under 30 → **Hermit**; mostly berries → **Couch Squatch**; discipline under 40 → **Ridge Runner**; Trust 65+ and discipline 40+ → **Guardian**; otherwise **Ridge Runner**. An adult that completes the gallery later also becomes a Legend.
 

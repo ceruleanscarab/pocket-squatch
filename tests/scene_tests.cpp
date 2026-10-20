@@ -370,6 +370,8 @@ static void testTouchTargets() {
         CHECK(big(d.scene.settingButtonArea(row, true)));
     }
     CHECK(big(d.scene.settingsDoneArea()));
+    CHECK(big(d.scene.startOverArea()) && big(d.scene.startKeepArea()) && big(d.scene.startWipeArea()) &&
+          big(d.scene.startCancelArea()));
     d.sim.mutableState().trust = 10;  // hiding behind the tree
     CHECK(big(d.scene.squatchArea()));
 }
@@ -1058,6 +1060,51 @@ static void testWrist() {
     CHECK(Wrist::needNow(d.sim.state()) != nullptr || d.sim.state().asleep);
 }
 
+static void testStartOver() {
+    std::printf("start over: two taps from the settings, keeping the collection or not; cancel keeps the pet\n");
+    auto toSettings = [](Driver& d) {
+        d.openTray();
+        d.pressSlot(Scene::Slot::More);
+        d.pressSlot(Scene::Slot::Settings);
+    };
+    Driver d;
+    State& s = d.sim.mutableState();
+    s.photos = 0b1011;
+    s.footprints = 42;
+    s.generation = 3;
+    const uint32_t genes = d.sim.state().genome.g[0] | d.sim.state().genome.g[1] << 8;
+    toSettings(d);
+    d.tap(d.scene.startOverArea());
+    CHECK(d.scene.overlay() == Scene::Overlay::StartOver);
+    std::vector<uint16_t> fb(Scene::kSize * Scene::kSize);
+    Canvas c(fb.data(), Scene::kSize, Scene::kSize);
+    d.scene.draw(c);
+    d.tap(d.scene.startCancelArea());
+    CHECK(d.scene.overlay() == Scene::Overlay::Settings);
+    CHECK(d.sim.state().stage == Stage::Baby && std::strcmp(d.sim.state().name, "TESTY") == 0);
+
+    d.tap(d.scene.startOverArea());
+    d.tap(d.scene.startKeepArea());
+    CHECK(d.scene.overlay() == Scene::Overlay::None);
+    CHECK(d.sim.state().stage == Stage::Egg && d.sim.state().name[0] == '\0');
+    CHECK(d.sim.state().generation == 1);
+    CHECK(d.sim.state().photos == 0b1011 && d.sim.state().footprints == 42);
+    CHECK(static_cast<uint32_t>(d.sim.state().genome.g[0] | d.sim.state().genome.g[1] << 8) != genes);  // fresh DNA
+    CHECK(d.scene.takeSaveRequest());
+    d.step();
+    CHECK(d.scene.toast() && std::strstr(d.scene.toast(), "NEW EGG") != nullptr);
+
+    // Wipe everything: the collection goes too. And the new egg hatches and asks for a name.
+    d.sim.mutableState().footprints = 9;
+    toSettings(d);
+    d.tap(d.scene.startOverArea());
+    d.tap(d.scene.startWipeArea());
+    CHECK(d.sim.state().photos == 0 && d.sim.state().footprints == 0);
+    d.sim.tick(d.sim.tuning().eggEnd + 1);
+    for (int i = 0; i < 250; i++) d.step();
+    CHECK(d.scene.overlay() == Scene::Overlay::Name);
+}
+
 int main() {
     testTap();
     testLongPressThenDrag();
@@ -1088,6 +1135,7 @@ int main() {
     testGames();
     testSharperScale();
     testWrist();
+    testStartOver();
 
     std::printf("\n%d checks, %d failed\n", gChecks, gFailures);
     return gFailures ? 1 : 0;

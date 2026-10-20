@@ -239,7 +239,27 @@ Scene::Rect Scene::settingButtonArea(int row, bool plus) const {
     return {plus ? kSetX + kSetW - 24 - 96 : kSetX + 24, kSetRowY[row], 96, 72};
 }
 
-Scene::Rect Scene::settingsDoneArea() const { return {S / 2 - 120, kSetY + kSetH - 84, 240, 72}; }
+Scene::Rect Scene::settingsDoneArea() const { return {S / 2 + 12, kSetY + kSetH - 84, 196, 72}; }
+Scene::Rect Scene::startOverArea() const { return {S / 2 - 208, kSetY + kSetH - 84, 196, 72}; }
+Scene::Rect Scene::startKeepArea() const { return {48, 196, 384, 68}; }
+Scene::Rect Scene::startWipeArea() const { return {48, 276, 384, 68}; }
+Scene::Rect Scene::startCancelArea() const { return {48, 356, 384, 68}; }
+
+void Scene::startOver(bool keepCollection) {
+    sim_.startOver(keepCollection);
+    overlay_ = Overlay::None;
+    game_ = Game::None;
+    petOverride_ = running_ = false;
+    held_ = Item::None;
+    trayTarget_ = trayAnim_ = 0;  // closed at once: the start-over page was covering it
+    page_ = Page::Main;
+    askedName_ = false;  // the new one gets asked its name when it hatches
+    askNameAt_ = UINT32_MAX;
+    particleCount_ = 0;
+    toastCount_ = 0;
+    saveRequested_ = true;
+    sceneryKey_ = -1;
+}
 
 void Scene::setWeather(const Weather& w) {
     const Sky before = weather_.sky;
@@ -419,6 +439,16 @@ void Scene::handle(const Gesture& g) {
         openNaming();
         return;
     }
+    if (overlay_ == Overlay::StartOver) {
+        if (g.type != GestureType::Tap) return;
+        if (startKeepArea().contains(g.x, g.y)) startOver(true);
+        else if (startWipeArea().contains(g.x, g.y)) startOver(false);
+        else {
+            overlay_ = Overlay::Settings;  // cancel, or a tap anywhere else: back to the settings
+            cue(Cue::Tick);
+        }
+        return;
+    }
     if (overlay_ == Overlay::Settings) {
         if (g.type != GestureType::Tap) return;
         for (int row = 0; row < kSettingRows; row++) {
@@ -428,6 +458,11 @@ void Scene::handle(const Gesture& g) {
                     return;
                 }
             }
+        }
+        if (startOverArea().contains(g.x, g.y)) {
+            overlay_ = Overlay::StartOver;
+            cue(Cue::Tick);
+            return;
         }
         Rect panel{kSetX, kSetY, kSetW, kSetH};
         if (settingsDoneArea().contains(g.x, g.y) || !panel.contains(g.x, g.y)) {
@@ -1387,6 +1422,7 @@ void Scene::draw(Canvas& c) {
     if (overlay_ == Overlay::Trails) drawTrails(c);
     if (overlay_ == Overlay::Settings) drawSettings(c);
     if (overlay_ == Overlay::Name) drawNaming(c);
+    if (overlay_ == Overlay::StartOver) drawStartOver(c);
     if (overlay_ == Overlay::Game) drawGame(c);
 }
 
@@ -2466,6 +2502,28 @@ void Scene::drawNaming(Canvas& c) {
     (void)faint;
 }
 
+void Scene::drawStartOver(Canvas& c) {
+    const Rgb ink = 0x3B2A1E, faint = 0x8A7A66;
+    c.tint(0x000000, 0.6f);
+    c.fillRoundRect(24, 40, 432, 400, 20, kUiLight);
+    c.text(240, 62, "START OVER?", 3, 0x7A2E1E, Align::Center);
+    const char* name = sim_.state().name[0] ? sim_.state().name : "THIS PET";
+    char line[48];
+    std::snprintf(line, sizeof line, "%.10s WILL BE GONE FOR GOOD,", name);
+    c.text(240, 112, line, 2, ink, Align::Center);
+    c.text(240, 136, "AND A NEW EGG WILL BE LAID.", 2, ink, Align::Center);
+    c.text(240, 166, "SETTINGS AND WI-FI STAY AS THEY ARE.", 1, faint, Align::Center);
+    Rect k = startKeepArea(), w = startWipeArea(), x = startCancelArea();
+    c.fillRoundRect(k.x, k.y + 3, k.w, k.h - 6, 14, kButton);
+    c.text(k.cx(), k.y + 13.0f, "NEW EGG, KEEP PHOTOS", 2, kUiLight, Align::Center);
+    c.text(k.cx(), k.y + 39.0f, "AND FOOTPRINTS AND THE TRAIL MAP", 1, 0xD9CFBC, Align::Center);
+    c.fillRoundRect(w.x, w.y + 3, w.w, w.h - 6, 14, 0x8A3A2A);
+    c.text(w.cx(), w.y + 13.0f, "NEW EGG, WIPE EVERYTHING", 2, kUiLight, Align::Center);
+    c.text(w.cx(), w.y + 39.0f, "A COMPLETELY FRESH START", 1, 0xF2D0C4, Align::Center);
+    c.fillRoundRect(x.x, x.y + 3, x.w, x.h - 6, 14, 0xD9CFBC);
+    c.text(x.cx(), x.cy() - 7.0f, "CANCEL", 2, ink, Align::Center);
+}
+
 void Scene::drawSettings(Canvas& c) {
     const Rgb ink = 0x3B2A1E, faint = 0x8A7A66, off = 0xD9CFBC;
     c.tint(0x000000, 0.55f);
@@ -2498,7 +2556,9 @@ void Scene::drawSettings(Canvas& c) {
             c.fillRoundRect(240 - w / 2 + i * (pip + gap), y + 48.0f, pip, 8, 4, i < lit ? kGold : off);
     }
 
-    Rect d = settingsDoneArea();
+    Rect o = startOverArea(), d = settingsDoneArea();
+    c.fillRoundRect(o.x, o.y + 4, o.w, o.h - 8, 14, 0xD9CFBC);
+    c.text(o.cx(), o.cy() - 7.0f, "START OVER", 2, 0x7A2E1E, Align::Center);
     c.fillRoundRect(d.x, d.y + 4, d.w, d.h - 8, 14, kButton);
     c.text(d.cx(), d.cy() - 7.0f, "DONE", 2, kUiLight, Align::Center);
 }

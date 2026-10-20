@@ -33,6 +33,22 @@ void Sim::newGame(int64_t nowEpoch, int32_t tzOffsetSecs, uint64_t seed) {
     evHead_ = evCount_ = 0;
 }
 
+void Sim::startOver(bool keepCollection) {
+    const State keep = s_;
+    uint64_t seed = keep.rng ^ (static_cast<uint64_t>(keep.now) * 0x9E3779B97F4A7C15ull);
+    newGame(keep.now, keep.tzOffset, seed ? seed : 1);
+    if (keepCollection) {
+        s_.photos = keep.photos;
+        s_.footprints = keep.footprints;
+        std::memcpy(s_.trails, keep.trails, sizeof s_.trails);
+        s_.trailCount = keep.trailCount;
+        std::memcpy(s_.visited, keep.visited, sizeof s_.visited);
+        s_.visitedHead = keep.visitedHead;
+        s_.trailsVisited = keep.trailsVisited;
+    }
+    emit(EventType::LaidEgg, 1);
+}
+
 // ---------------------------------------------------------------- time
 
 void Sim::tick(int64_t seconds) {

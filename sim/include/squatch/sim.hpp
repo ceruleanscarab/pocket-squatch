@@ -220,6 +220,10 @@ public:
 
     // Start a brand-new first-generation egg.
     void newGame(int64_t nowEpoch, int32_t tzOffsetSecs, uint64_t seed);
+    // Start over, now: a new first-generation egg with fresh DNA. keepCollection keeps the
+    // sighting photos, footprints and trail map, as an Elder's egg would; otherwise all of it
+    // goes too. Emits LaidEgg.
+    void startOver(bool keepCollection);
 
     // Advance the world. Any amount: a frame, an hour, a week powered off.
     void tick(int64_t seconds);

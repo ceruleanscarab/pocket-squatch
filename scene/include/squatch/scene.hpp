@@ -33,7 +33,7 @@ public:
         int cy() const { return y + h / 2; }
     };
 
-    enum class Overlay : uint8_t { None, Stats, Gallery, Trails, Settings, Name, Game };
+    enum class Overlay : uint8_t { None, Stats, Gallery, Trails, Settings, Name, Game, StartOver };
 
     // Things you can pick up from the tray and give to Squatch.
     enum class Item : uint8_t { None, Berries, Fish, Roots, Brush, Poultice, Pinecone };
@@ -137,6 +137,12 @@ public:
     // The settings page: row 0 brightness, 1 screen timeout, 2 volume, each with - and +.
     Rect settingButtonArea(int row, bool plus) const;
     Rect settingsDoneArea() const;
+    // Start over: a button on the settings page, then a page to confirm: a new egg keeping the
+    // photos, footprints and trail map, a new egg with nothing kept, or cancel.
+    Rect startOverArea() const;
+    Rect startKeepArea() const;
+    Rect startWipeArea() const;
+    Rect startCancelArea() const;
 
     // ---- layout queries, for the tests and the front end
     Rect squatchArea() const;  // where tapping or dropping reaches the pet (or egg)
@@ -288,6 +294,8 @@ private:
     void drawTrails(Canvas& c);
     void drawSettings(Canvas& c);
     void drawNaming(Canvas& c);
+    void drawStartOver(Canvas& c);
+    void startOver(bool keepCollection);
     void drawForagingBanner(Canvas& c);
     void drawLandmarkIcon(Canvas& c, LandmarkKind k, float x, float y, float size);
 

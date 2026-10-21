@@ -168,6 +168,14 @@ public:
     // it all every frame (for tests that compare the two).
     void setSceneryCache(bool on) { cacheScenery_ = on; sceneryKey_ = -1; }
 
+    // Extra detail for screens with pixels and speed to spare (the phone): fur texture and
+    // shading on the pet, layered pines, grass, stones and flowers. The boards leave it off.
+    void setDetail(bool on) {
+        detail_ = on;
+        sceneryKey_ = -1;
+    }
+    bool detail() const { return detail_; }
+
     // Just the clearing and the pet: no status strip, tray or messages, and no naming page.
     // For the watch, which draws its own controls on top.
     void setCompact(bool on) {
@@ -274,6 +282,10 @@ private:
     void drawGround(Canvas& c);
     void drawTree(Canvas& c, float x, float base, float size);
     void drawStump(Canvas& c);
+    void drawGroundDetail(Canvas& c);
+    void drawTreeDetail(Canvas& c, float x, float base, float size);
+    void drawFur(Canvas& c, float cx, float cy, float rx, float ry, Rgb fur, float s, int n, uint32_t seed, bool radial);
+    void drawFringe(Canvas& c, float cx, float cy, float rx, float ry, Rgb lit, Rgb shade, float s, int n, float from, float to);
     void drawCampfire(Canvas& c, bool flames);
     void drawLantern(Canvas& c);
     void drawEgg(Canvas& c);
@@ -335,6 +347,7 @@ private:
     int sceneryKey_ = -1;
     bool cacheScenery_ = true;
     bool compact_ = false;
+    bool detail_ = false;
     Settings settings_;
     Cue cues_[8];
     int cueCount_ = 0;

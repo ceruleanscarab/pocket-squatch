@@ -1105,6 +1105,43 @@ static void testStartOver() {
     CHECK(d.scene.overlay() == Scene::Overlay::Name);
 }
 
+static void testDetail() {
+    std::printf("the phone's detailed drawing: richer, cached the same, and off again gives the plain picture\n");
+    std::vector<uint16_t> plain(Scene::kSize * Scene::kSize), rich(plain.size()), uncached(plain.size());
+    Canvas cp(plain.data(), Scene::kSize, Scene::kSize), cr(rich.data(), Scene::kSize, Scene::kSize),
+        cu(uncached.data(), Scene::kSize, Scene::kSize);
+    for (int64_t hours : {12, 20, 30}) {
+        Driver d;
+        d.sim.tick(hours * 3600);
+        d.settle();
+        CHECK(!d.scene.detail());
+        d.scene.draw(cp);
+        d.scene.setDetail(true);
+        CHECK(d.scene.detail());
+        d.scene.draw(cr);
+        d.scene.draw(cr);  // from the cache, which was redrawn when detail came on
+        d.scene.setSceneryCache(false);
+        d.scene.draw(cu);
+        int changed = 0, cacheDiff = 0;
+        for (size_t i = 0; i < plain.size(); i++) {
+            changed += plain[i] != rich[i];
+            cacheDiff += rich[i] != uncached[i];
+        }
+        CHECK(changed > 20000);  // grass, boughs, fur: a good part of the screen
+        CHECK(cacheDiff == 0);
+        // The tray and the status strip aren't touched.
+        CHECK(cp.pixel(240, 20) == cr.pixel(240, 20));
+        CHECK(cp.pixel(240, 470) == cr.pixel(240, 470));
+        // Turning it off again gives the plain picture back.
+        d.scene.setDetail(false);
+        d.scene.setSceneryCache(true);
+        d.scene.draw(cu);
+        int back = 0;
+        for (size_t i = 0; i < plain.size(); i++) back += plain[i] != uncached[i];
+        CHECK(back == 0);
+    }
+}
+
 int main() {
     testTap();
     testLongPressThenDrag();
@@ -1136,6 +1173,7 @@ int main() {
     testSharperScale();
     testWrist();
     testStartOver();
+    testDetail();
 
     std::printf("\n%d checks, %d failed\n", gChecks, gFailures);
     return gFailures ? 1 : 0;

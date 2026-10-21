@@ -340,6 +340,7 @@ int main(int, char**) {
     std::srand(static_cast<unsigned>(now));
 
     Scene scene(sim);
+    scene.setDetail(true);  // a phone has the pixels and speed for the extra fur, grass and boughs
     Scene::Settings settings;
     if (readSettings(settingsPath, settings)) scene.setSettings(settings);
 

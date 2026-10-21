@@ -81,6 +81,16 @@ bool isFood(Scene::Item it) {
     return it == Scene::Item::Berries || it == Scene::Item::Fish || it == Scene::Item::Roots;
 }
 
+// A repeatable 0..1 from a number: where each blade of grass or tuft of fur goes.
+float noise01(uint32_t n) {
+    n = (n ^ 61u) ^ (n >> 16);
+    n *= 9u;
+    n ^= n >> 4;
+    n *= 0x27d4eb2du;
+    n ^= n >> 15;
+    return static_cast<float>(n & 0xFFFFFFu) / 16777216.0f;
+}
+
 float smooth(float t) { return t * t * (3 - 2 * t); }
 
 float segmentDistance(float px, float py, float x0, float y0, float x1, float y1) {
@@ -1600,11 +1610,17 @@ void Scene::drawSky(Canvas& c) {
         c.fillCircle(330, 70, 18, halloween() ? 0xF5B95E : 0xF4F1DE, a);  // a harvest moon at Halloween
         c.fillCircle(338, 64, 15, mix(keys[i].top, keys[i + 1].top, t), a);  // crescent
     } else if (overcast() < 0.45f) {
-        c.fillCircle(150, 76, 22, 0xFFE9A8, (1 - dark_ / 0.3f) * (1 - overcast()));
+        const float sunA = (1 - dark_ / 0.3f) * (1 - overcast());
+        if (detail_) c.glow(150, 76, 80, 0xFFF4C8, 0.35f * sunA);
+        c.fillCircle(150, 76, 22, 0xFFE9A8, sunA);
     }
 }
 
 void Scene::drawGround(Canvas& c) {
+    if (detail_) {
+        drawGroundDetail(c);
+        return;
+    }
     c.fillEllipse(110, kHorizon + 14, 210, 62, sh(0x5B7F8F));
     c.fillEllipse(390, kHorizon + 18, 230, 72, sh(0x4F7584));
     for (int i = 0; i < 16; i++) {  // distant tree line
@@ -1623,6 +1639,10 @@ void Scene::drawGround(Canvas& c) {
 }
 
 void Scene::drawTree(Canvas& c, float x, float base, float size) {
+    if (detail_) {
+        drawTreeDetail(c, x, base, size);
+        return;
+    }
     c.fillRoundRect(x - 14 * size, base - 150 * size, 28 * size, 150 * size, 6, sh(kTrunk));
     c.fillEllipse(x, base, 30 * size, 7 * size, sh(0x3F5E2E));  // roots in shadow
     for (int i = 0; i < 4; i++) {
@@ -1635,9 +1655,27 @@ void Scene::drawTree(Canvas& c, float x, float base, float size) {
 
 void Scene::drawStump(Canvas& c) {
     float x = kStumpX, y = kStumpY;
-    c.fillRoundRect(x - 30, y - 26, 60, 30, 8, sh(kTrunk));
-    c.fillEllipse(x, y - 26, 30, 9, sh(0xC49A6C));
-    c.ring(x, y - 26, 14, 2, sh(0xA67C52));
+    if (detail_) {
+        const Rgb bark = sh(kTrunk), deep = sh(mix(kTrunk, 0x000000, 0.35f));
+        c.fillEllipse(x + 14, y + 3, 44, 7, 0x000000, 0.16f);                   // its shadow
+        c.fillTriangle(x - 40, y + 4, x - 20, y + 4, x - 26, y - 12, bark);      // roots
+        c.fillTriangle(x + 40, y + 4, x + 20, y + 4, x + 26, y - 12, deep);
+        c.fillRoundRect(x - 30, y - 26, 60, 30, 8, bark);
+        c.line(x + 21, y - 22, x + 21, y + 1, 12, deep, 0.6f);                   // the shady side
+        for (int j = 0; j < 6; j++) {                                           // bark grooves
+            const float bx = x - 23 + j * 9.0f;
+            c.line(bx, y - 20 + (j % 2) * 4.0f, bx + 1.5f, y + 1, 1.6f, deep, 0.75f);
+        }
+        const Rgb top = sh(0xC9A06F), ringC = sh(0xA67C52);
+        const float rings[][2] = {{30, 9}, {23, 6.9f}, {21.4f, 6.4f}, {14, 4.2f}, {12.6f, 3.8f}, {5, 1.6f}};
+        for (int r = 0; r < 6; r++)
+            c.fillEllipse(x, y - 26, rings[r][0], rings[r][1], r % 2 ? ringC : top);
+        c.fillEllipse(x - 10, y - 28, 9, 2.4f, 0xFFFFFF, 0.18f);  // a shine on the cut
+    } else {
+        c.fillRoundRect(x - 30, y - 26, 60, 30, 8, sh(kTrunk));
+        c.fillEllipse(x, y - 26, 30, 9, sh(0xC49A6C));
+        c.ring(x, y - 26, 14, 2, sh(0xA67C52));
+    }
     if (foodLeftToday()) {
         c.fillEllipse(x, y - 30, 20, 8, sh(0x9C6B3A));
         c.fillCircle(x - 7, y - 36, 5, sh(0x8E2A4F));
@@ -1652,6 +1690,7 @@ void Scene::drawCampfire(Canvas& c, bool flames) {
         for (int i = 0; i < 7; i++) {
             float a = i * 2 * kPi / 7;
             c.fillEllipse(x + std::cos(a) * 26, y + std::sin(a) * 9, 8, 5, sh(0x8C8C86));
+            if (detail_) c.fillEllipse(x + std::cos(a) * 26 - 1.5f, y + std::sin(a) * 9 - 1.8f, 5, 2.4f, sh(0xC4C4BC));
         }
         c.line(x - 16, y + 2, x + 14, y - 4, 7, sh(0x5A3A22));
         c.line(x - 14, y - 4, x + 16, y + 2, 7, sh(0x6B4A2F));
@@ -1790,12 +1829,32 @@ void Scene::drawSquatch(Canvas& c, const Look& L) {
     const float s = L.s, x = L.x, f = L.foot, w = L.wide, b = L.breath;
     const Rgb dark = mix(L.fur, 0x1E140C, 0.45f);
 
-    c.fillEllipse(x, L.ground, 60 * s * w, 10 * s, 0x000000, 0.18f);
+    const Rgb lit = mix(L.fur, 0xFFF4E0, 0.22f), shade = mix(L.fur, 0x1E140C, 0.25f);
+    if (detail_) {  // a soft shadow, darkest right under it
+        c.fillEllipse(x, L.ground, 70 * s * w, 12 * s, 0x000000, 0.07f);
+        c.fillEllipse(x, L.ground, 58 * s * w, 9.5f * s, 0x000000, 0.08f);
+        c.fillEllipse(x, L.ground, 44 * s * w, 7 * s, 0x000000, 0.1f);
+    } else {
+        c.fillEllipse(x, L.ground, 60 * s * w, 10 * s, 0x000000, 0.18f);
+    }
     c.fillEllipse(x - 26 * s * w, f - 9 * s, 24 * s, 11 * s, dark);
     c.fillEllipse(x + 26 * s * w, f - 9 * s, 24 * s, 11 * s, dark);
+    if (detail_)
+        for (float side : {-1.0f, 1.0f})
+            for (int t = -1; t <= 1; t++)  // toes
+                c.line(x + side * 26 * s * w + t * 8 * s, f - 3 * s, x + side * 26 * s * w + t * 9 * s, f - 1 * s,
+                       2 * s, mix(dark, 0x000000, 0.3f), 0.6f);
 
     const float bodyY = f - 66 * s * b, bodyRx = 56 * s * w, bodyRy = 62 * s * b;
-    c.fillEllipse(x, bodyY, bodyRx, bodyRy, L.fur);
+    if (detail_) {  // lit from the upper left: a darker rim low on the right, a soft highlight
+        drawFringe(c, x, bodyY, bodyRx, bodyRy, L.fur, shade, s, 48, 0.0f, 2 * kPi);
+        c.fillEllipse(x, bodyY, bodyRx, bodyRy, shade);
+        c.fillEllipse(x - bodyRx * 0.06f, bodyY - bodyRy * 0.06f, bodyRx * 0.93f, bodyRy * 0.93f, L.fur);
+        c.glow(x - bodyRx * 0.35f, bodyY - bodyRy * 0.4f, bodyRx * 0.75f, lit, 0.35f);
+        drawFur(c, x, bodyY, bodyRx, bodyRy, L.fur, s, 150, 101, false);
+    } else {
+        c.fillEllipse(x, bodyY, bodyRx, bodyRy, L.fur);
+    }
     // Shaggy coats stick out in tufts down both sides.
     if (L.shag > 0) {
         const int n = 2 + L.shag * 2;
@@ -1814,6 +1873,10 @@ void Scene::drawSquatch(Canvas& c, const Look& L) {
         }
     }
     c.fillEllipse(x, f - 56 * s, 34 * s * w, 40 * s * b, L.face);
+    if (detail_) {
+        c.glow(x - 8 * s, f - 70 * s, 26 * s, mix(L.face, 0xFFFFFF, 0.3f), 0.3f);
+        drawFur(c, x, f - 56 * s, 30 * s * w, 36 * s * b, L.face, s * 0.7f, 40, 202, false);
+    }
     if (L.markings == 1) c.fillEllipse(x, f - 64 * s, 16 * s * w, 24 * s * b, L.mark);  // chest blaze
     if (L.markings == 3) {  // speckles on the shoulders
         const float dots[][2] = {{-38, -92}, {-30, -76}, {-44, -70}, {36, -94}, {28, -80}, {42, -72}, {-20, -104}};
@@ -1824,8 +1887,15 @@ void Scene::drawSquatch(Canvas& c, const Look& L) {
         float sx = x + side * 44 * s * w, sy = f - 102 * s * b;
         float hx = x + side * (60 * s * w + raise * 16 * s);
         float hy = (f - 46 * s) + raise * (-122 * s);
-        c.line(sx, sy, hx, hy, 22 * s, L.fur);
+        if (detail_) {
+            c.line(sx, sy, hx, hy, 23 * s, shade);
+            c.line(sx - 2 * s, sy - 1 * s, hx - 2 * s, hy - 1 * s, 18 * s, L.fur);
+            c.line(sx - 4 * s, sy - 2 * s, hx - 4 * s, hy - 2 * s, 6 * s, lit, 0.35f);
+        } else {
+            c.line(sx, sy, hx, hy, 22 * s, L.fur);
+        }
         c.fillCircle(hx, hy, 12 * s, dark);
+        if (detail_) c.fillCircle(hx - 3 * s, hy - 3 * s, 5 * s, mix(dark, 0xFFFFFF, 0.15f), 0.5f);
     };
     arm(-1, L.armL);
     arm(1, L.armR);
@@ -1838,7 +1908,15 @@ void Scene::drawSquatch(Canvas& c, const Look& L) {
         c.fillCircle(x + side * hr * 0.9f, hy + hr * 0.05f, hr * 0.24f, L.fur);
         c.fillCircle(x + side * hr * 0.92f, hy + hr * 0.07f, hr * 0.12f, L.face);
     }
-    c.fillCircle(x, hy, hr, L.fur);
+    if (detail_) {
+        drawFringe(c, x, hy, hr, hr, L.fur, shade, s, 30, -0.8f * kPi, 0.8f * kPi);
+        c.fillCircle(x, hy, hr, shade);
+        c.fillCircle(x - hr * 0.05f, hy - hr * 0.05f, hr * 0.94f, L.fur);
+        c.glow(x - hr * 0.4f, hy - hr * 0.45f, hr * 0.8f, lit, 0.35f);
+        drawFur(c, x, hy, hr, hr, L.fur, s, 70, 303, true);
+    } else {
+        c.fillCircle(x, hy, hr, L.fur);
+    }
     if (L.shag > 1) {  // a wild coat gets a mop on top
         for (int j = -L.shag; j <= L.shag; j++) {
             float a = j * 0.32f;
@@ -1849,6 +1927,12 @@ void Scene::drawSquatch(Canvas& c, const Look& L) {
         }
     }
     c.fillEllipse(fx, hy + hr * 0.2f, hr * 0.7f, hr * 0.62f, L.face);
+    if (detail_) {
+        c.fillEllipse(fx, hy + hr * 0.5f, hr * 0.5f, hr * 0.28f, mix(L.face, 0x000000, 0.08f), 0.6f);  // muzzle
+        c.glow(fx - hr * 0.2f, hy + hr * 0.02f, hr * 0.4f, 0xFFFFFF, 0.18f);
+        for (float side : {-1.0f, 1.0f})  // rosy cheeks
+            c.glow(fx + side * hr * 0.46f, hy + hr * 0.36f, hr * 0.2f, 0xF07A7A, 0.4f);
+    }
     if (L.markings == 2) c.fillEllipse(fx, hy + hr * 0.07f, hr * 0.56f, hr * 0.22f, L.mark);  // eye mask
 
     if (L.angry) {
@@ -1865,11 +1949,16 @@ void Scene::drawSquatch(Canvas& c, const Look& L) {
             c.line(ex - er, ey, ex + er, ey, std::max(1.5f, er * 0.45f), kEye);
         } else {
             c.fillEllipse(ex, ey, er, er * (1 - L.blink * 0.8f), kEye);
+            if (detail_ && L.blink < 0.3f) {  // a warm brown iris and a second glint
+                c.ring(ex, ey + er * 0.1f, er * 0.62f, er * 0.28f, 0x6B3F1F, 0.75f);
+                c.fillCircle(ex - er * 0.38f, ey + er * 0.4f, er * 0.16f, 0xFFFFFF, 0.7f);
+            }
             c.fillCircle(ex + er * 0.35f, ey - er * 0.35f, er * 0.35f, 0xFFFFFF, 0.9f);
         }
     }
 
     c.fillEllipse(fx, hy + hr * 0.33f, hr * 0.15f, hr * 0.1f, dark);
+    if (detail_) c.fillEllipse(fx - hr * 0.04f, hy + hr * 0.3f, hr * 0.06f, hr * 0.035f, 0xFFFFFF, 0.45f);  // a shiny nose
     const float my = hy + hr * 0.53f, mw = hr * 0.2f;
     if (L.mouth > 1.5f) {
         float open = 0.5f + 0.5f * static_cast<float>(std::sin(t_ * 14));
@@ -1886,6 +1975,171 @@ void Scene::drawSquatch(Canvas& c, const Look& L) {
         c.fillTriangle(x - hr * 0.55f, by, x + hr * 0.55f, by, x + tilt, by - hr * 1.25f, hat);
         c.fillRoundRect(x - hr * 0.52f, by - hr * 0.2f, hr * 1.04f, hr * 0.16f, hr * 0.05f, band);
         c.fillEllipse(x, by + hr * 0.02f, hr * 0.95f, hr * 0.17f, hat);
+    }
+}
+
+// Short strokes of lighter and darker fur over an ellipse. Radial strokes point out from the
+// middle (a head); the rest hang down and a little outward (a body).
+void Scene::drawFur(Canvas& c, float cx, float cy, float rx, float ry, Rgb fur, float s, int n, uint32_t seed,
+                    bool radial) {
+    const Rgb lite = mix(fur, 0xFFF4E0, 0.28f), deep = mix(fur, 0x120C06, 0.3f);
+    const float len = 7 * s, w = std::max(0.9f, 1.4f * s);
+    for (int i = 0; i < n; i++) {
+        const uint32_t k3 = seed * 7919u + static_cast<uint32_t>(i) * 3u;
+        const float u = noise01(k3), v = noise01(k3 + 1), k = noise01(k3 + 2);
+        const float r = std::sqrt(u) * 0.88f, a = v * 2 * kPi;
+        const float ox = std::cos(a) * r, oy = std::sin(a) * r;
+        const float px = cx + ox * rx, py = cy + oy * ry;
+        float dx = radial ? ox : ox * 0.45f, dy = radial ? oy - 0.2f : 1.0f;
+        float dl = std::hypot(dx, dy);
+        if (dl < 1e-3f) {
+            dx = 0;
+            dy = 1;
+            dl = 1;
+        }
+        dx /= dl;
+        dy /= dl;
+        const float l = len * (0.6f + 0.7f * k);
+        // Light strokes mostly on the upper left, dark ones on the lower right.
+        const bool light = (k + 0.35f * (-ox - oy)) > 0.5f;
+        c.line(px, py, px + dx * l, py + dy * l, w, light ? lite : deep, 0.3f + 0.3f * k);
+    }
+}
+
+// Tufts sticking out round the edge of an ellipse, between two angles (0 is straight up,
+// clockwise), so the outline looks furry rather than cut out.
+void Scene::drawFringe(Canvas& c, float cx, float cy, float rx, float ry, Rgb lit, Rgb shade, float s, int n,
+                       float from, float to) {
+    for (int j = 0; j < n; j++) {
+        const float a = from + (to - from) * (j + 0.5f) / static_cast<float>(n);
+        const float px = cx + rx * std::sin(a), py = cy - ry * std::cos(a);
+        float nx = std::sin(a) / rx, ny = -std::cos(a) / ry;
+        const float nl = std::hypot(nx, ny);
+        nx /= nl;
+        ny /= nl;
+        const float r1 = noise01(static_cast<uint32_t>(j) * 31u + 7u), r2 = noise01(static_cast<uint32_t>(j) * 31u + 8u);
+        const float len = (3 + 3 * r1) * s, w = 2.6f * s;
+        const Rgb col = mix(lit, shade, std::max(0.0f, 0.35f + 0.45f * (nx + ny) * 0.7071f));
+        // Fur hangs: each wisp bends down a little, more on the sides than on top.
+        const float dx = nx, dy = ny + 0.45f * std::fabs(nx);
+        const float bx = px - nx * 2 * s, by = py - ny * 2 * s, sp = (r2 - 0.5f) * 3 * s;
+        c.line(bx - ny * sp, by + nx * sp, bx - ny * sp + dx * len, by + nx * sp + dy * len, w, col);
+    }
+}
+
+void Scene::drawGroundDetail(Canvas& c) {
+    // Far hills, a misty ridge of trees, then the nearer tree line with a shady side.
+    c.fillEllipse(270, kHorizon + 8, 300, 46, sh(0x7C9DA8));
+    c.fillEllipse(110, kHorizon + 14, 210, 62, sh(0x5B7F8F));
+    c.fillEllipse(390, kHorizon + 18, 230, 72, sh(0x4F7584));
+    const Rgb mist = sh(mix(kBackTrees, 0x8FB0B8, 0.45f));
+    for (int i = 0; i < 24; i++) {
+        const float x = i * 21.0f + noise01(i + 900) * 10 - 6, hgt = 26 + noise01(i + 950) * 22;
+        c.fillTriangle(x - 11, kHorizon + 8, x + 11, kHorizon + 8, x, kHorizon + 8 - hgt, mist);
+    }
+    const Rgb back = sh(kBackTrees), backDark = sh(mix(kBackTrees, 0x0A1A16, 0.35f));
+    for (int i = 0; i < 16; i++) {
+        const float x = static_cast<float>(i * 32 + (i % 3) * 7 - 10);
+        const float hgt = 46 + static_cast<float>((i * 37) % 28), b = kHorizon + 12;
+        c.fillTriangle(x - 18, b, x + 18, b, x, b - hgt, back);
+        c.fillTriangle(x, b, x + 18, b, x, b - hgt, backDark);
+    }
+
+    // Grass, lighter toward the horizon and deeper near the bottom.
+    c.fillRect(0, kHorizon, S, S - kHorizon, sh(kGrass));
+    for (int b = 0; b < 16; b++) {  // thin bands, so the fades have no edges
+        c.fillRect(0, kHorizon + b * 3.0f, S, 3, sh(0x93C070), 0.4f * (1 - b / 16.0f));
+        c.fillRect(0, S - 60 + b * 3.75f, S, 3.75f, sh(0x2E5A2A), 0.22f * b / 16.0f);
+    }
+
+    // The clearing, with a soft edge, a sunny middle and patches of bare earth.
+    for (int r = 0; r < 4; r++)
+        c.fillEllipse(240, 372, 252 + (4 - r) * 4.0f, 122 + (4 - r) * 2.0f, sh(kClearing), 0.25f);
+    c.fillEllipse(240, 372, 252, 122, sh(kClearing));
+    for (int r = 0; r < 6; r++)  // a sunny middle, fading out
+        c.fillEllipse(234, 356, 200 - r * 24.0f, 84 - r * 10.0f, sh(0xC4D88A), 0.09f);
+    const float dirt[][4] = {{150, 398, 44, 11}, {300, 422, 36, 9}, {262, 334, 28, 6}};
+    for (const auto& d : dirt)
+        for (int r = 0; r < 3; r++) c.fillEllipse(d[0], d[1], d[2] * (1 - r * 0.25f), d[3] * (1 - r * 0.25f), sh(0xB89A68), 0.12f);
+
+    // Blades of grass, bigger the nearer they are, sparse on the clearing.
+    const Rgb greens[] = {sh(0x4C8A3A), sh(0x6FAF4E), sh(0x3E7A32), sh(0x83BD5C)};
+    for (int i = 0; i < 520; i++) {
+        const float y = kHorizon + 6 + noise01(i * 5 + 1) * (S - kHorizon - 4);
+        const float x = noise01(i * 5 + 2) * S;
+        const float ex = (x - 240) / 252, ey = (y - 372) / 122;
+        const bool onClearing = ex * ex + ey * ey < 0.85f;
+        if (onClearing && noise01(i * 5 + 3) < 0.8f) continue;
+        const float near = (y - kHorizon) / (S - kHorizon);
+        const float len = 3 + 10 * near, lean = (noise01(i * 5 + 4) - 0.5f) * 5 * (0.4f + near);
+        const Rgb col = greens[i % 4];
+        c.line(x, y, x + lean, y - len, 0.8f + 1.1f * near, col, 0.85f);
+        if (near > 0.4f) c.line(x + 2, y, x + 2 + lean * 1.6f, y - len * 0.75f, 0.8f + near, col, 0.75f);
+    }
+
+    // A few flowers in the long grass, and pebbles on the clearing.
+    const Rgb petals[] = {0xFFFFFF, 0xF6D65A, 0xB78AD8, 0xF4A1B8};
+    for (int i = 0; i < 18; i++) {
+        const float y = kHorizon + 24 + noise01(i + 400) * 250, x = noise01(i + 450) * S;
+        const float ex = (x - 240) / 252, ey = (y - 372) / 122;
+        if (ex * ex + ey * ey < 1.1f) continue;
+        const float r = 1.6f + 1.8f * (y - kHorizon) / (S - kHorizon);
+        c.fillCircle(x, y, r, sh(petals[i % 4]), 0.9f);
+        c.fillCircle(x, y, r * 0.4f, sh(0xE0A030));
+    }
+    for (int i = 0; i < 12; i++) {
+        const float a = noise01(i + 600) * 2 * kPi, r = 0.35f + 0.5f * noise01(i + 650);
+        const float x = 240 + std::cos(a) * 252 * r, y = 372 + std::sin(a) * 122 * r;
+        const float sz = 2.5f + 2.5f * noise01(i + 700);
+        c.fillEllipse(x + 1, y + sz * 0.5f, sz * 1.3f, sz * 0.5f, 0x000000, 0.15f);
+        c.fillEllipse(x, y, sz * 1.2f, sz * 0.75f, sh(0x9A968A));
+        c.fillEllipse(x - sz * 0.3f, y - sz * 0.25f, sz * 0.6f, sz * 0.3f, sh(0xD0CCC0));
+    }
+}
+
+void Scene::drawTreeDetail(Canvas& c, float x, float base, float size) {
+    const Rgb trunk = sh(kTrunk), trunkDark = sh(mix(kTrunk, 0x000000, 0.35f));
+    c.fillEllipse(x + 26 * size, base + 2, 62 * size, 11 * size, 0x000000, 0.14f);  // shadow, away from the sun
+    c.fillRoundRect(x - 14 * size, base - 150 * size, 28 * size, 150 * size, 6, trunk);
+    c.line(x + 8 * size, base - 146 * size, x + 8 * size, base - 3, 9 * size, trunkDark, 0.8f);
+    for (int j = 0; j < 6; j++) {  // bark
+        const float bx = x + (-10 + j * 4.2f) * size;
+        const float y0 = base - (20 + (j * 37) % 70) * size, y1 = y0 - (30 + (j * 23) % 40) * size;
+        c.line(bx, y0, bx + 1, y1, 1.5f * size, trunkDark, 0.6f);
+    }
+    c.fillTriangle(x - 24 * size, base + 2, x - 8 * size, base + 2, x - 10 * size, base - 14 * size, trunk);  // roots
+    c.fillTriangle(x + 24 * size, base + 2, x + 8 * size, base + 2, x + 10 * size, base - 14 * size, trunkDark);
+    c.fillEllipse(x, base, 30 * size, 6 * size, sh(0x3F5E2E), 0.6f);
+
+    for (int i = 0; i < 4; i++) {
+        const float y = base - 90 * size - i * 45 * size, hw = (78 - i * 14) * size, top = y - 85 * size;
+        const Rgb leaf = sh(i % 2 ? kLeaves2 : kLeaves1);
+        const Rgb deep = sh(mix(i % 2 ? kLeaves2 : kLeaves1, 0x0C2416, 0.4f));
+        const Rgb light = sh(mix(i % 2 ? kLeaves2 : kLeaves1, 0xC8E890, 0.25f));
+        // The whole tier in shadow, with drooping bough tips along the bottom.
+        c.fillTriangle(x - hw, y, x + hw, y, x, top, deep);
+        const int tips = 6;
+        for (int k = 0; k < tips; k++) {
+            const float bx = x - hw + (k + 0.5f) * (2 * hw / tips), half = hw / tips * 1.1f;
+            c.fillTriangle(bx - half, y - 5 * size, bx + half, y - 5 * size, bx + half * 0.3f, y + 7 * size,
+                           k < tips / 2 ? leaf : deep);
+        }
+        // The sunny left side, and a brighter edge on it.
+        c.fillTriangle(x - hw * 0.94f, y - 2 * size, x + hw * 0.1f, y - 2 * size, x - hw * 0.02f, top + 4 * size, leaf);
+        c.fillTriangle(x - hw * 0.8f, y - 8 * size, x - hw * 0.35f, y - 8 * size, x - hw * 0.08f, top + 16 * size,
+                       light, 0.55f);
+        // Needles: little strokes hanging off the boughs.
+        for (int k = 0; k < 10; k++) {
+            const float u = noise01(i * 40 + k + static_cast<uint32_t>(x)), v = noise01(i * 40 + k + 500);
+            const float py = top + (0.35f + 0.6f * v) * (y - top);
+            const float span = hw * (py - top) / (y - top);
+            const float px = x + (u * 2 - 1) * span * 0.85f;
+            c.line(px, py, px + (px < x ? -3.0f : 3.0f) * size, py + 6 * size, 1.4f * size, px < x ? light : deep, 0.6f);
+        }
+        if (weather_.sky == Sky::Snow) {  // a cap of snow on each tier
+            c.fillTriangle(x - hw * 0.42f, y - 50 * size, x + hw * 0.42f, y - 50 * size, x, top, sh(0xEEF3F8));
+            c.fillTriangle(x, y - 50 * size, x + hw * 0.42f, y - 50 * size, x, top, sh(0xC8D4E2));
+        }
     }
 }
 

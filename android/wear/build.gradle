@@ -4,13 +4,13 @@ apply plugin: 'com.android.application'
 // that's how the Wear OS Data Layer knows the two belong together.
 android {
     namespace "com.ceruleanscarab.pocketsquatch.wear"
-    compileSdkVersion 34
+    compileSdkVersion 36
     if (System.getenv("ANDROID_NDK_LATEST_HOME")) ndkPath = System.getenv("ANDROID_NDK_LATEST_HOME")
     defaultConfig {
         applicationId "com.ceruleanscarab.pocketsquatch"
         minSdkVersion 30
-        targetSdkVersion 34
-        versionCode = (System.getenv("VERSION_CODE") ?: "1").toInteger()
+        targetSdkVersion 35  // what Google Play asks of Wear OS apps
+        versionCode = (System.getenv("VERSION_CODE") ?: "1").toInteger() * 10 + 1  // the phone's number, plus one
         versionName = "0.1." + (System.getenv("VERSION_CODE") ?: "0")
         externalNativeBuild {
             cmake {

@@ -2,15 +2,16 @@ apply plugin: 'com.android.application'
 
 android {
     namespace "com.ceruleanscarab.pocketsquatch"
-    compileSdkVersion 34
+    compileSdkVersion 36
     // Use the NDK the build machine already has (GitHub's runners set this), else AGP's default.
     if (System.getenv("ANDROID_NDK_LATEST_HOME")) ndkPath = System.getenv("ANDROID_NDK_LATEST_HOME")
     defaultConfig {
         applicationId "com.ceruleanscarab.pocketsquatch"
         minSdkVersion 21
-        targetSdkVersion 34
-        // CI sets these from the run number, so each build installs over the last.
-        versionCode = (System.getenv("VERSION_CODE") ?: "1").toInteger()
+        targetSdkVersion 36  // what Google Play asks of new apps
+        // CI sets these from the run number, so each build installs over the last. The phone and the
+        // watch builds share one Play listing, which needs a different number for each: phone even, watch odd.
+        versionCode = (System.getenv("VERSION_CODE") ?: "1").toInteger() * 10
         versionName = "0.1." + (System.getenv("VERSION_CODE") ?: "0")
         externalNativeBuild {
             cmake {

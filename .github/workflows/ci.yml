@@ -77,6 +77,10 @@ jobs:
 
   android:
     runs-on: ubuntu-latest
+    env:
+      # A Google Cloud service account's JSON key, allowed to release this app in the Play Console.
+      # Without it the builds still go to the GitHub release, just not to Google Play.
+      PLAY_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
     steps:
       - uses: actions/checkout@v4
 
@@ -107,12 +111,14 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          ./gradlew --no-daemon assembleRelease 2>&1 | tee build.log || {
+          ./gradlew --no-daemon assembleRelease bundleRelease 2>&1 | tee build.log || {
             grep -E "error:|ERROR|FAILED|What went wrong" -A3 build.log | head -30 | while read -r line; do echo "::error::$line"; done
             exit 1
           }
           cp app/build/outputs/apk/release/app-release.apk ../pocket-squatch.apk
           cp wear/build/outputs/apk/release/wear-release.apk ../pocket-squatch-watch.apk
+          cp app/build/outputs/bundle/release/app-release.aab ../pocket-squatch.aab
+          cp wear/build/outputs/bundle/release/wear-release.aab ../pocket-squatch-watch.aab
 
       - uses: actions/upload-artifact@v4
         with:
@@ -120,6 +126,8 @@ jobs:
           path: |
             pocket-squatch.apk
             pocket-squatch-watch.apk
+            pocket-squatch.aab
+            pocket-squatch-watch.aab
 
       - name: Publish to the "android" release
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
@@ -130,3 +138,27 @@ jobs:
             --title "Pocket Squatch for Android (latest build)" \
             --notes "The newest Android build from main. Download pocket-squatch.apk on your phone and open it to install. pocket-squatch-watch.apk is the Galaxy Watch (Wear OS) companion."
           gh release upload android pocket-squatch.apk pocket-squatch-watch.apk --clobber
+
+      # Google Play's internal testing: testers' phones and watches update on their own.
+      # The phone app and the watch app have tracks of their own ("wear:" is the watch's).
+      # Until the app's first release has been rolled out by hand in the Play Console, Play only
+      # takes drafts: set the repository variable PLAY_RELEASE_STATUS to "draft" until then.
+      - name: Send the phone app to Google Play (internal testing)
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push' && env.PLAY_JSON != ''
+        uses: r0adkll/upload-google-play@v1.1.3
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.ceruleanscarab.pocketsquatch
+          releaseFiles: pocket-squatch.aab
+          track: internal
+          status: ${{ vars.PLAY_RELEASE_STATUS || 'completed' }}
+
+      - name: Send the watch app to Google Play (Wear OS internal testing)
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push' && env.PLAY_JSON != ''
+        uses: r0adkll/upload-google-play@v1.1.3
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.ceruleanscarab.pocketsquatch
+          releaseFiles: pocket-squatch-watch.aab
+          track: wear:internal
+          status: ${{ vars.PLAY_RELEASE_STATUS || 'completed' }}

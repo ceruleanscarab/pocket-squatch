@@ -58,6 +58,13 @@ constexpr Note kForageBack[] = {{Tri, 170, 120, 50, 140, 0.8f},   {Tri, 170, 120
 constexpr Note kPhoto[] = {{Noise, 6000, 6000, 25, 45, 0.6f}, {Noise, 4000, 4000, 45, 0, 0.55f}};
 constexpr Note kThunder[] = {{Noise, 260, 70, 300, 0, 0.9f}, {Noise, 120, 50, 900, 0, 0.8f}};
 constexpr Note kBoo[] = {{Sine, 240, 430, 420, 0, 0.55f}, {Sine, 430, 220, 560, 0, 0.5f}};
+constexpr Note kBoop[] = {{Sine, 900, 1400, 60, 0, 0.5f}, {Sine, 1400, 1000, 50, 0, 0.45f}};
+constexpr Note kGiggle[] = {{Sine, 1000, 1300, 55, 35, 0.45f}, {Sine, 1100, 1450, 55, 35, 0.45f},
+                            {Sine, 1050, 1400, 55, 35, 0.45f}, {Sine, 1200, 1650, 70, 0, 0.45f}};
+constexpr Note kRustle[] = {{Noise, 2500, 5000, 130, 20, 0.4f}, {Noise, 4500, 2000, 180, 0, 0.35f}};
+constexpr Note kCrackle[] = {{Noise, 4000, 4000, 15, 60, 0.5f}, {Noise, 2500, 2500, 12, 90, 0.45f},
+                             {Noise, 5000, 5000, 10, 40, 0.4f}, {Noise, 3000, 3000, 14, 0, 0.45f}};
+constexpr Note kBabble[] = {{Tri, 700, 900, 45, 30, 0.3f}, {Tri, 600, 750, 40, 25, 0.3f}, {Tri, 800, 650, 60, 0, 0.3f}};
 constexpr Note kWarning[] = {{Square, A5, A5, 130, 90, 0.3f}, {Square, E5, E5, 220, 0, 0.3f}};
 
 #define SHAPE(a) {a, static_cast<int>(sizeof a / sizeof a[0])}
@@ -66,6 +73,7 @@ constexpr Shape kShapes[static_cast<int>(Cue::Count)] = {
     SHAPE(kLightOn), SHAPE(kLightOff), SHAPE(kHappy),  SHAPE(kSneeze),    SHAPE(kSulk),    SHAPE(kKnock),
     SHAPE(kHatch),   SHAPE(kGrowUp),   SHAPE(kNewEgg), SHAPE(kSick),      SHAPE(kRanAway), SHAPE(kReturned),
     SHAPE(kForageBack), SHAPE(kPhoto), SHAPE(kWarning), SHAPE(kThunder), SHAPE(kBoo),
+    SHAPE(kBoop), SHAPE(kGiggle), SHAPE(kRustle), SHAPE(kCrackle), SHAPE(kBabble),
 };
 #undef SHAPE
 
@@ -82,7 +90,8 @@ const char* toString(Cue c) {
     static const char* kNames[] = {"tick",     "pickup",   "eat",       "clean",  "heal",    "play",
                                    "light on", "light off", "happy",    "sneeze", "sulk",    "knock",
                                    "hatch",    "grow up",  "new egg",   "sick",   "ran away", "returned",
-                                   "forage back", "photo", "warning", "thunder", "boo"};
+                                   "forage back", "photo", "warning", "thunder", "boo",
+                                   "boop", "giggle", "rustle", "crackle", "babble"};
     int i = static_cast<int>(c);
     return i < static_cast<int>(Cue::Count) ? kNames[i] : "?";
 }

@@ -35,6 +35,11 @@ enum class Cue : uint8_t {
     Warning,     // low battery
     Thunder,
     Boo,         // the jack-o'-lantern
+    Boop,        // a tap on the nose
+    Giggle,      // tickled
+    Rustle,      // a tree shaken
+    Crackle,     // the campfire lit
+    Babble,      // it says something
     Count
 };
 

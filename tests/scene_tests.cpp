@@ -372,6 +372,7 @@ static void testTouchTargets() {
     CHECK(big(d.scene.settingsDoneArea()));
     CHECK(big(d.scene.startOverArea()) && big(d.scene.startKeepArea()) && big(d.scene.startWipeArea()) &&
           big(d.scene.startCancelArea()));
+    CHECK(big(d.scene.treeArea(0)) && big(d.scene.treeArea(1)) && big(d.scene.fireArea()));
     d.sim.mutableState().trust = 10;  // hiding behind the tree
     CHECK(big(d.scene.squatchArea()));
 }
@@ -1142,6 +1143,94 @@ static void testDetail() {
     }
 }
 
+static bool says(Driver& d, const char* what) {
+    const char* b = d.scene.bubble();
+    return b && std::strcmp(b, what) == 0;
+}
+
+static void testPlayAndTalk() {
+    std::printf("play: tickle, pat and poke it, shake a tree, fetch a pinecone, light the fire; it talks back\n");
+    {
+        Driver d;
+        for (int i = 0; i < 80; i++) d.step();
+        CHECK(d.scene.bubble() != nullptr);  // a hello (it's hungry, so it says so)
+        CHECK(says(d, "SO HUNGRY..."));
+        for (int i = 0; i < 200; i++) d.step();  // let that one go
+        const Scene::Rect r = d.scene.squatchArea();
+        d.tap(r.cx(), r.y + r.h * 3 / 4);  // the belly
+        CHECK(says(d, "HEE HEE!"));
+        d.tap(r.cx(), r.y + r.h * 3 / 4);
+        d.tap(r.cx(), r.y + r.h * 3 / 4);
+        CHECK(says(d, "HAHAHA! STOP!"));
+        d.tap(r.cx(), r.y + 6);  // the top of its head
+        CHECK(says(d, "MMM..."));
+        for (int i = 0; i < 3; i++) d.tap(r.cx(), r.y + 6);
+        CHECK(says(d, "HEY! GENTLY!"));  // seven pokes in a few seconds
+        const float happy = d.sim.state().happiness;
+
+        // Shake a tree until a pinecone falls; it runs after it and brings it back.
+        for (int i = 0; i < 3 && !d.scene.coneOnGround() && !d.scene.fetching(); i++) {
+            d.tap(d.scene.treeArea(1));
+            for (int k = 0; k < 120; k++) d.step();
+        }
+        bool fetched = false, back = false;
+        for (int k = 0; k < 1200 && !back; k++) {
+            d.step();
+            fetched = fetched || d.scene.fetching();
+            back = fetched && d.scene.coneOnGround();
+        }
+        CHECK(fetched && back);
+        CHECK(says(d, "AGAIN! AGAIN!") || says(d, "THROW IT!"));
+        CHECK(d.sim.state().happiness > happy);  // it counts as a cuddle
+
+        // Tap it to toss it (no flick needed): off it goes again.
+        for (int k = 0; k < 60; k++) d.step();
+        d.tap(d.scene.coneArea());
+        CHECK(!d.scene.coneOnGround());
+        fetched = false;
+        for (int k = 0; k < 300 && !fetched; k++) {
+            d.step();
+            fetched = d.scene.fetching();
+        }
+        CHECK(fetched);
+    }
+    {
+        Driver d;  // the campfire, any time of day, but not in the rain
+        CHECK(!d.scene.fireLit());
+        d.tap(d.scene.fireArea());
+        CHECK(d.scene.fireLit());
+    }
+    {
+        Driver d;
+        Weather w;
+        w.sky = Sky::Rain;
+        d.scene.setWeather(w);
+        d.settle();
+        d.tap(d.scene.fireArea());
+        CHECK(!d.scene.fireLit());
+    }
+    {
+        Driver d;  // it chats now and then, on its own
+        State& s = d.sim.mutableState();
+        s.hunger = s.happiness = 4;
+        int heard = 0;
+        const char* last = nullptr;
+        for (int k = 0; k < 120 * 60; k++) {  // two minutes
+            d.step();
+            const char* b = d.scene.bubble();
+            if (b && b != last) heard++;
+            last = b;
+        }
+        CHECK(heard >= 2);  // the hello and at least one more
+    }
+    {
+        Driver d;  // asleep: no hello, and its pinecone waits
+        d.sim.mutableState().asleep = true;
+        for (int i = 0; i < 100; i++) d.step();
+        CHECK(d.scene.bubble() == nullptr);
+    }
+}
+
 int main() {
     testTap();
     testLongPressThenDrag();
@@ -1174,6 +1263,7 @@ int main() {
     testWrist();
     testStartOver();
     testDetail();
+    testPlayAndTalk();
 
     std::printf("\n%d checks, %d failed\n", gChecks, gFailures);
     return gFailures ? 1 : 0;

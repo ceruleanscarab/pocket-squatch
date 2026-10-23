@@ -75,4 +75,7 @@ Wiki: https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-4B
   `Wrist::nextNeed` via the `forecast` JNI export in main.cpp) — done, not yet run on a phone. It draws at 2x/3x (`Canvas` scale) inside a handheld frame.
 - Galaxy Watch companion (`android/wear`, Java + the sim/scene via JNI; `scene/` `wrist.hpp` is its screen): the save
   syncs over the Wear OS Data Layer (item `/pet`, newest `at` wins), a tile, and predicted nudges. Not yet run on a watch.
+- Play and talk (`scene/`): boop, tickle and pat the pet (its eyes follow your finger), shake a tree for a pinecone
+  and play fetch (tap or flick to toss), light the campfire; speech bubbles (`Scene::speak`) for replies, a hello when
+  the screen comes back on, and chatter about needs, weather and seasons. All optional; none of it is timing-critical.
 - Later: Bluetooth visitors between two boards.

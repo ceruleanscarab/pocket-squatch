@@ -381,6 +381,11 @@ void Scene::touch(const TouchEvent& e) {
         waking_ = fingers_ != 0;
         return;
     }
+    if (e.phase != TouchPhase::Up && e.y >= kStripTouchH) {  // its eyes follow your finger
+        fingerX_ = e.x;
+        fingerY_ = e.y;
+        fingerUntil_ = now_ + 1500;
+    }
     // Berry Catch: the basket goes wherever the finger is.
     if (overlay_ == Overlay::Game && game_ == Game::Berry && !gameOver_ && e.phase != TouchPhase::Up &&
         e.y >= kStripTouchH)
@@ -536,7 +541,25 @@ void Scene::onTap(int x, int y) {
         tapPumpkin();
         return;
     }
-    if (squatchArea().contains(x, y)) tapPet();
+    if (coneArea().contains(x, y)) {  // toss it somewhere else (the no-flick way)
+        float tx = coneX_ < 240 ? 320 + rand01() * 90 : 70 + rand01() * 90;  // well away from it
+        float ty = 312 + rand01() * 100;
+        tossCone((tx - coneX_) / 0.8f, (ty - coneY_) / 0.8f, 480);
+        return;
+    }
+    if (squatchArea().contains(x, y)) {
+        const State& s = sim_.state();
+        if (hatched() && sim_.trustLevel() == TrustLevel::Friendly && !s.asleep && !s.calling) touchPet(x, y);
+        else tapPet();
+        return;
+    }
+    for (int i = 0; i < 2; i++) {
+        if (treeArea(i).contains(x, y)) {
+            shakeTree(i);
+            return;
+        }
+    }
+    if (fireArea().contains(x, y)) lightFire();
 }
 
 void Scene::pressSlot(Slot s) {
@@ -605,6 +628,11 @@ void Scene::onDragStart(const Gesture& g) {
         return;
     }
     if (g.startY < kStripTouchH) return;
+    if (held_ == Item::None && fetch_ == Fetch::Lying && coneArea().contains(g.startX, g.startY)) {
+        drag_ = DragMode::Toss;  // picked up; it goes where it's flicked
+        onDragMove(g);
+        return;
+    }
     if (held_ != Item::None) {
         drag_ = DragMode::Item;
         return;
@@ -616,6 +644,12 @@ void Scene::onDragStart(const Gesture& g) {
 void Scene::onDragMove(const Gesture& g) {
     dragX_ = g.x;
     dragY_ = g.y;
+    if (drag_ == DragMode::Toss) {
+        coneX_ = std::max(30.0f, std::min(450.0f, static_cast<float>(g.x)));
+        coneY_ = std::max(300.0f, std::min(430.0f, static_cast<float>(g.y) + 30));
+        coneZ_ = coneY_ - static_cast<float>(g.y) + 10;  // held up, just above the finger
+        return;
+    }
     if (drag_ != DragMode::Stroke) return;
 
     float mx = (g.x + g.prevX) * 0.5f, my = (g.y + g.prevY) * 0.5f;
@@ -646,6 +680,16 @@ void Scene::onDragEnd(const Gesture& g) {
     dragX_ = g.x;
     dragY_ = g.y;
     if (drag_ == DragMode::Item) useItem(held_, g.x, g.y);  // a miss just goes back to the tray
+    if (drag_ == DragMode::Toss) {
+        const float dx = static_cast<float>(g.x - g.prevX), dy = static_cast<float>(g.y - g.prevY);
+        const float len = std::hypot(dx, dy);
+        if (len > 0.5f && g.speed > 150) {
+            const float sp = std::min(g.speed, 1600.0f), ux = dx / len, uy = dy / len;
+            tossCone(ux * sp * 0.45f, uy * sp * 0.12f, -uy * sp * 0.55f + 220);
+        } else {
+            tossCone(0, 0, 0);  // let go: it drops where it is
+        }
+    }
     drag_ = DragMode::None;
 }
 
@@ -699,6 +743,7 @@ void Scene::doFeed(Food f) {
     if (r == Result::Ok) {
         cue(Cue::Eat);
         react(React::Eat, 1400);
+        speak(f == Food::Berries ? "BERRIES!" : (f == Food::Fish ? "FISHY!" : "CRUNCHY!"));
         for (int i = 0; i < 5; i++)
             spawn(ParticleKind::Crumb, squatchX() + (rand01() - 0.5f) * 20, headY() + 30 * squatchScale(),
                   (rand01() - 0.5f) * 80, -40 - rand01() * 60, 900);
@@ -768,6 +813,7 @@ void Scene::doPet() {
     if (r == Result::Ok) {
         cue(Cue::Happy);
         react(React::Happy, 1200);
+        speak(rand01() < 0.5f ? "AHH..." : "MORE PLEASE!");
         for (int i = 0; i < 3; i++)
             spawn(ParticleKind::Heart, squatchX() + (rand01() - 0.5f) * 60, headY() - 20, (rand01() - 0.5f) * 30,
                   -50, 1300);
@@ -886,10 +932,339 @@ void Scene::tapPet() {
         return;
     }
     switch (sim_.trustLevel()) {
-        case TrustLevel::Hiding: react(React::Flinch, 1500); break;
-        case TrustLevel::Wandering: react(React::Peek, 1000); break;
+        case TrustLevel::Hiding:
+            react(React::Flinch, 1500);
+            speak("EEP!");
+            break;
+        case TrustLevel::Wandering:
+            react(React::Peek, 1000);
+            speak("OH! HI...");
+            break;
         case TrustLevel::Friendly: react(React::Wave, 1600); break;
     }
+}
+
+// ================================================================ play in the clearing
+
+void Scene::touchPet(int x, int y) {
+    // Pokes add up: lots in a short while and it gets grumpy (it's only for fun, though).
+    if (now_ - pokeSince_ > 6000) {
+        pokeSince_ = now_;
+        pokes_ = tickles_ = 0;
+    }
+    if (++pokes_ >= 7) {
+        pokes_ = tickles_ = 0;
+        react(React::Swat, 900);
+        cue(Cue::Sulk);
+        speak("HEY! GENTLY!");
+        return;
+    }
+    const float k = squatchScale(), hr = 44 * k * headRatio(sim_.state().stage), hy = headY();
+    const float nx = squatchX() + lookX_ * hr * 0.12f, ny = hy + hr * 0.33f;
+    const float bx = (x - squatchX()) / (34 * k), by = (y - (squatchFoot() - 56 * k)) / (40 * k);
+    if (std::hypot(x - nx, y - ny) < std::max(hr * 0.32f, 20.0f)) {
+        react(React::Boop, 900);
+        cue(Cue::Boop);
+        speak("BOOP!");
+    } else if (bx * bx + by * by < 1) {
+        react(React::Giggle, 1100);
+        cue(Cue::Giggle);
+        if (++tickles_ >= 3) {  // a laughing fit
+            tickles_ = 0;
+            speak("HAHAHA! STOP!");
+            react(React::Giggle, 1800);
+            for (int i = 0; i < 3; i++)
+                spawn(ParticleKind::Heart, squatchX() + (rand01() - 0.5f) * 80, hy - 10, (rand01() - 0.5f) * 40,
+                      -50, 1200);
+        } else {
+            speak(tickles_ == 1 ? "HEE HEE!" : "THAT TICKLES!");
+        }
+    } else if (y < hy - hr * 0.3f) {
+        react(React::Pat, 1200);
+        cue(Cue::Happy);
+        speak("MMM...");
+        spawn(ParticleKind::Heart, squatchX(), hy - hr - 10, 0, -40, 1100);
+    } else {
+        react(React::Wave, 1600);
+        static const char* kHi[] = {"HI!", "HELLO!", "HUH?", "YES?"};
+        speak(kHi[static_cast<int>(rand01() * 4) & 3]);
+    }
+}
+
+bool Scene::canPlay() const {
+    const State& s = sim_.state();
+    return hatched() && sim_.trustLevel() == TrustLevel::Friendly && !s.asleep && !s.calling && !s.sick &&
+           overlay_ == Overlay::None && !petOverride_;
+}
+
+void Scene::shakeTree(int i) {
+    const float tx = i ? kRightTreeX : kLeftTreeX, base = i ? kRightTreeBase : kLeftTreeBase;
+    shakingTree_ = i;
+    shakeUntil_ = now_ + 900;
+    cue(Cue::Rustle);
+    for (int n = 0; n < 6; n++)
+        spawn(ParticleKind::Leaf, tx + (rand01() - 0.5f) * 110, base - 120 - rand01() * 150, 0, 20, 2200);
+    if (hiding() && i == 0) {  // it was hiding behind that one
+        react(React::Flinch, 1200);
+        speak("EEP!");
+        return;
+    }
+    // Every other shake or so a pinecone drops, if there isn't one out already.
+    if (fetch_ == Fetch::None && (++shakes_ >= 2 || rand01() < 0.4f)) {
+        shakes_ = 0;
+        fetch_ = Fetch::Flying;
+        coneX_ = tx + (i ? -40.0f : 40.0f);
+        coneY_ = base + 8;
+        coneZ_ = 170;
+        coneVx_ = (i ? -1.0f : 1.0f) * (30 + rand01() * 40);
+        coneVy_ = 20;
+        coneVz_ = 0;
+        coneSince_ = now_;
+        if (canPlay()) speak("OOH! A PINECONE!");
+    } else if (canPlay() && rand01() < 0.5f) {
+        speak("RUSTLE RUSTLE");
+    }
+}
+
+void Scene::tossCone(float vx, float vy, float vz) {
+    if (fetch_ == Fetch::Chase || fetch_ == Fetch::Carry) return;
+    fetch_ = Fetch::Flying;
+    coneVx_ = vx;
+    coneVy_ = vy;
+    coneVz_ = vz;
+    coneSince_ = now_;
+    cue(Cue::Pickup);
+}
+
+void Scene::endFetch() {
+    if (fetch_ == Fetch::Carry) {  // dropped where it stands
+        coneX_ = fetchX_ + 40;
+        coneY_ = squatchFoot() + 10;
+        coneZ_ = 0;
+    }
+    if (fetch_ == Fetch::Chase || fetch_ == Fetch::Carry) fetch_ = Fetch::Lying;
+}
+
+void Scene::updateFetch(float dt) {
+    if (fetch_ == Fetch::None) return;
+    if (!hatched() && sim_.state().stage != Stage::Egg) {  // it left the clearing: so does the pinecone
+        fetch_ = Fetch::None;
+        return;
+    }
+    if (fetch_ == Fetch::Flying) {
+        coneX_ += coneVx_ * dt;
+        coneY_ += coneVy_ * dt;
+        coneVz_ -= 1200 * dt;
+        coneZ_ += coneVz_ * dt;
+        if (coneX_ < 50 || coneX_ > 430) {  // off a tree trunk
+            coneX_ = std::max(50.0f, std::min(430.0f, coneX_));
+            coneVx_ = -coneVx_ * 0.4f;
+        }
+        coneY_ = std::max(300.0f, std::min(430.0f, coneY_));
+        if (coneZ_ <= 0) {
+            coneZ_ = 0;
+            if (coneVz_ < -250) {  // a little bounce
+                coneVz_ = -coneVz_ * 0.3f;
+                coneVx_ *= 0.5f;
+                coneVy_ *= 0.5f;
+            } else {
+                fetch_ = Fetch::Lying;
+                coneSince_ = now_;
+            }
+        }
+        return;
+    }
+    const float speed = 170 * std::max(0.6f, squatchScale());
+    if (fetch_ == Fetch::Lying) {
+        const int32_t lying = static_cast<int32_t>(now_ - coneSince_);  // below 0 just after it's dropped
+        if (lying > 180000) {  // left alone for three minutes: it rolls off into the grass
+            fetch_ = Fetch::None;
+            return;
+        }
+        // Off it goes, if it's in the mood and the pinecone isn't right at its feet.
+        if (canPlay() && drag_ != DragMode::Toss && lying > 400 && std::fabs(coneX_ - squatchX()) > 50) {
+            fetchX_ = squatchX();
+            fetch_ = Fetch::Chase;
+        }
+        return;
+    }
+    if (!canPlay()) {  // called away (a game, sleep, a call): drop it
+        endFetch();
+        return;
+    }
+    const float target = fetch_ == Fetch::Chase ? coneX_ : 240.0f;
+    const float step = std::min(std::fabs(target - fetchX_), speed * dt);
+    fetchX_ += target > fetchX_ ? step : -step;
+    if (std::fabs(target - fetchX_) > 1) return;
+    if (fetch_ == Fetch::Chase) {
+        fetch_ = Fetch::Carry;
+        speak("GOT IT!");
+        return;
+    }
+    // Back with it: dropped at your feet, and that counts as a cuddle.
+    fetch_ = Fetch::Lying;
+    coneX_ = 240 + 46;
+    coneY_ = squatchFoot() + 30;
+    coneZ_ = 0;
+    coneSince_ = now_ + 600;  // a moment before it'll chase again
+    react(React::Happy, 1200);
+    cue(Cue::Play);
+    speak(rand01() < 0.5f ? "AGAIN! AGAIN!" : "THROW IT!");
+    if (sim_.pet() == Result::Ok) {
+        saveRequested_ = true;
+        spawn(ParticleKind::Heart, 240, headY() - 30, 0, -45, 1200);
+    }
+}
+
+void Scene::lightFire() {
+    const Sky sky = weather_.sky;
+    if (sky == Sky::Rain || sky == Sky::Drizzle || sky == Sky::Storm) {
+        say("TOO WET FOR A FIRE", true);
+        return;
+    }
+    cue(Cue::Crackle);
+    for (int i = 0; i < 6; i++)
+        spawn(ParticleKind::Ember, kFireX + (rand01() - 0.5f) * 24, kFireY - 20, (rand01() - 0.5f) * 60,
+              -80 - rand01() * 60, 1200);
+    if (fireLit()) {  // already going: a poke sends up sparks
+        if (canPlay() && rand01() < 0.5f) speak("OOH, SPARKS!");
+        return;
+    }
+    fireUntil_ = now_ + 180000;  // three minutes
+    if (canPlay()) {
+        speak("COZY!");
+        react(React::Happy, 1000);
+    }
+}
+
+bool Scene::fireLit() const {
+    const float h = hourOfDay();
+    return (h >= 17 && h < 23) || now_ < fireUntil_;
+}
+
+float Scene::treeSway(float treeX) const {
+    if (now_ >= shakeUntil_) return 0;
+    const float tx = shakingTree_ ? kRightTreeX : kLeftTreeX;
+    if (std::fabs(treeX - tx) > 1) return 0;
+    const float left = static_cast<float>(shakeUntil_ - now_) / 900.0f;
+    return 9 * left * static_cast<float>(std::sin(t_ * 32));
+}
+
+Scene::Rect Scene::treeArea(int i) const {
+    return i ? Rect{S - 96, 96, 96, 214} : Rect{0, 96, 96, 224};  // the trunks and the boughs above
+}
+
+Scene::Rect Scene::fireArea() const { return {static_cast<int>(kFireX) - 46, static_cast<int>(kFireY) - 36, 84, 68}; }
+
+Scene::Rect Scene::coneArea() const {
+    if (fetch_ != Fetch::Lying) return {0, 0, 0, 0};
+    return {static_cast<int>(coneX_) - 32, static_cast<int>(coneY_) - 44, 64, 64};
+}
+
+void Scene::drawCone(Canvas& c) {
+    float x = coneX_, y = coneY_ - coneZ_ - 8;
+    if (fetch_ == Fetch::Carry) {  // in its paw
+        const float k = squatchScale();
+        x = fetchX_ + 60 * k;
+        y = squatchFoot() - 64 * k;
+    } else {
+        const float lift = std::min(1.0f, coneZ_ / 200);
+        c.fillEllipse(coneX_, coneY_, 11 * (1 - lift * 0.5f), 3.5f, 0x000000, 0.2f * (1 - lift * 0.6f));
+    }
+    drawItem(c, Item::Pinecone, x, y, 0.85f);
+}
+
+// ================================================================ talking
+
+void Scene::speak(const char* text, uint32_t ms) {
+    std::snprintf(bubble_, sizeof bubble_, "%s", text);
+    bubbleUntil_ = now_ + ms;
+    cue(Cue::Babble);
+}
+
+const char* Scene::bubble() const {
+    if (!bubble_[0] || now_ >= bubbleUntil_) return nullptr;
+    const State& s = sim_.state();
+    if (s.stage == Stage::Egg || s.stage == Stage::Away || s.foraging) return nullptr;
+    return bubble_;
+}
+
+void Scene::greet() {
+    greeted_ = true;
+    const State& s = sim_.state();
+    if (!hatched() || s.asleep || overlay_ != Overlay::None || screenOff_ || compact_) return;
+    nextChatter_ = now_ + 40000;
+    if (hiding()) {
+        speak("...");
+        return;
+    }
+    if (sim_.trustLevel() == TrustLevel::Wandering) {
+        speak("OH! IT'S YOU.");
+        return;
+    }
+    if (s.calling) speak("THERE YOU ARE!");
+    else if (s.hunger <= 1) speak("SO HUNGRY...");
+    else if (s.happiness <= 1) speak("I MISSED YOU!");
+    else {
+        const float h = hourOfDay();
+        speak(h >= 5 && h < 11 ? "GOOD MORNING!" : h < 17 ? "HI THERE!" : h < 21 ? "GOOD EVENING!" : "UP LATE?");
+    }
+    react(React::Wave, 1600);
+}
+
+void Scene::chatter() {
+    nextChatter_ = now_ + 45000 + static_cast<uint32_t>(rand01() * 45000);
+    const State& s = sim_.state();
+    if (!hatched() || s.asleep || overlay_ != Overlay::None || screenOff_ || compact_ || toastCount_ ||
+        sim_.trustLevel() != TrustLevel::Friendly || now_ < bubbleUntil_ || fetching())
+        return;
+    // What's on its mind: a need first, then the weather and the season, then idle chatter.
+    if (s.sick) return speak("I FEEL ICKY...");
+    if (s.hunger <= 1.5f) return speak("TUMMY RUMBLES...");
+    if (s.happiness <= 1.5f) return speak("PLAY WITH ME?");
+    if (s.messes >= 2) return speak("STINKY IN HERE...");
+    const float h = hourOfDay();
+    if (h >= 21 || h < 5) return speak("YAWN... SLEEPY");
+    if (rand01() < 0.5f) {
+        switch (weather_.sky) {
+            case Sky::Rain:
+            case Sky::Drizzle: return speak("DRIP DRIP DRIP");
+            case Sky::Storm: return speak("THUNDER IS LOUD!");
+            case Sky::Snow: return speak("SNOW! SNOW!");
+            case Sky::Fog: return speak("SO FOGGY...");
+            default: break;
+        }
+        if (halloween()) return speak("BOO! HEE HEE");
+        if (autumn()) return speak("CRUNCHY LEAVES!");
+    }
+    static const char* kIdle[] = {"HMM HMM HMM",      "LA LA LA",       "WHAT'S THAT?", "SNIFF SNIFF",
+                                  "NICE DAY!",        "I LIKE IT HERE", "BOOP MY NOSE?", "TOSS A PINECONE?",
+                                  "SHAKE A TREE?",    "YOU'RE NICE"};
+    constexpr int n = static_cast<int>(sizeof kIdle / sizeof kIdle[0]);
+    int pick = static_cast<int>(rand01() * n) % n;
+    if (pick == lastChatter_) pick = (pick + 1) % n;
+    lastChatter_ = static_cast<uint8_t>(pick);
+    speak(kIdle[pick]);
+}
+
+void Scene::drawBubble(Canvas& c) {
+    const char* text = bubble();
+    if (!text) return;
+    const float k = squatchScale(), hr = 44 * k * headRatio(sim_.state().stage);
+    float ax = squatchX(), ay = headY() - hr - (hatWeek() ? 34 * k : 8);  // the point of the tail
+    if (hiding()) {
+        ax = kHideX + 10;
+        ay = kHideY - 30;
+    }
+    const float w = static_cast<float>(Canvas::textWidth(text, 2)) + 24, h = 30;
+    float bx = std::max(8.0f, std::min(static_cast<float>(S) - 8 - w, ax - w / 2));
+    float by = std::max(46.0f, ay - 12 - h);
+    // Fades out at the end.
+    const float left = static_cast<float>(bubbleUntil_ - now_);
+    const float a = std::min(1.0f, left / 250.0f);
+    c.fillTriangle(ax - 8, by + h - 2, ax + 8, by + h - 2, ax + (ax < 240 ? 6.0f : -6.0f), std::max(by + h + 2, ay), 0xFFF8EC, a);
+    c.fillRoundRect(bx, by, w, h, 14, 0xFFF8EC, a);
+    c.text(bx + w / 2, by + 8, text, 2, 0x2B2118, Align::Center, a);
 }
 
 // ================================================================ animation
@@ -937,6 +1312,16 @@ void Scene::update(uint32_t nowMs) {
         openNaming();
         suggestion_ = 0;
     }
+
+    // It says hello when the screen comes back on after a while, and chats now and then.
+    if (screenOff_ && !wasOff_) offAt_ = now_;
+    if (!screenOff_ && wasOff_ && now_ - offAt_ >= 60000) {
+        greeted_ = false;
+        greetAt_ = now_ + 700;
+    }
+    wasOff_ = screenOff_;
+    if (!greeted_ && now_ >= greetAt_) greet();
+    if (now_ >= nextChatter_) chatter();
 
     const uint32_t timeout = screenTimeoutMs();
     if (!screenOff_ && timeout && fingers_ == 0 && nowMs - lastInputMs_ >= timeout) screenOff_ = true;
@@ -1120,7 +1505,29 @@ void Scene::animate(float dt) {
                 react(React::Wave, 1600);
         }
     }
-    lookX_ += (lookTarget_ - lookX_) * std::min(1.0f, dt * 4);
+    lookTargetY_ = 0;
+    if (hatched() && !s.asleep && sim_.trustLevel() == TrustLevel::Friendly) {
+        float tx = -1, ty = 0;
+        if (fetch_ == Fetch::Flying || fetch_ == Fetch::Chase) {  // watching the pinecone
+            tx = coneX_;
+            ty = coneY_ - coneZ_;
+        } else if (now_ < fingerUntil_) {
+            tx = fingerX_;
+            ty = fingerY_;
+        }
+        if (tx >= 0) {
+            lookTarget_ = std::max(-1.0f, std::min(1.0f, (tx - squatchX()) / 140));
+            lookTargetY_ = std::max(-1.0f, std::min(1.0f, (ty - headY()) / 160));
+        }
+    }
+    lookX_ += (lookTarget_ - lookX_) * std::min(1.0f, dt * 6);
+    lookY_ += (lookTargetY_ - lookY_) * std::min(1.0f, dt * 6);
+    updateFetch(dt);
+    if (fireLit() && now_ >= nextEmber_) {
+        spawn(ParticleKind::Ember, kFireX + (rand01() - 0.5f) * 16, kFireY - 30, (rand01() - 0.5f) * 20,
+              -50 - rand01() * 30, 1300);
+        nextEmber_ = now_ + 350 + static_cast<uint32_t>(rand01() * 400);
+    }
 
     bool wandering = hatched() && !s.asleep && sim_.trustLevel() == TrustLevel::Wandering;
     if (wandering) {
@@ -1179,6 +1586,10 @@ void Scene::animate(float dt) {
         bool falls = p.kind == ParticleKind::Pinecone || p.kind == ParticleKind::Crumb ||
                      p.kind == ParticleKind::Shell || p.kind == ParticleKind::Drop;
         if (falls) p.vy += 600 * dt;
+        if (p.kind == ParticleKind::Leaf) {  // drifts down, swaying
+            p.vy += (70 - p.vy) * std::min(1.0f, dt * 3);
+            p.vx = static_cast<float>(std::sin((now_ - p.born) * 0.006 + p.born)) * 40;
+        }
         p.x += p.vx * dt;
         p.y += p.vy * dt;
         particles_[keep++] = p;
@@ -1209,6 +1620,7 @@ float Scene::squatchScale() const {
 
 float Scene::squatchX() const {
     if (petOverride_) return gameX_;
+    if (fetch_ == Fetch::Chase || fetch_ == Fetch::Carry) return fetchX_;
     switch (sim_.trustLevel()) {
         case TrustLevel::Hiding: return kHideX;
         case TrustLevel::Wandering: return wanderX_;
@@ -1355,7 +1767,10 @@ void Scene::draw(Canvas& c) {
     // The scenery: from the cache when it's still the same minute, else drawn afresh.
     const int key = ((static_cast<int>(hourOfDay() * 60) * 2 + (s.lightsOn ? 1 : 0)) * 8 + static_cast<int>(weather_.sky)) * 2 +
                     (foodLeftToday() ? 1 : 0);
-    if (cacheScenery_ && c.width() == S && c.height() == S) {
+    if (now_ < shakeUntil_) {  // a tree is swaying: draw it all this frame, and redo the cache after
+        drawScenery(c);
+        sceneryKey_ = -1;
+    } else if (cacheScenery_ && c.width() == S && c.height() == S) {
         const size_t n = static_cast<size_t>(c.pixelCount());
         if (scenery_.size() != n) {
             scenery_.assign(n, 0);
@@ -1396,12 +1811,17 @@ void Scene::draw(Canvas& c) {
         drawBush(c, 160, 318);
         drawBush(c, 300, 318);
     }
+    const bool coneBehind = fetch_ != Fetch::Carry && coneY_ < squatchFoot();
+    if (fetch_ != Fetch::None && coneBehind) drawCone(c);
     if (s.stage == Stage::Egg) drawEgg(c);
     else if (petAway) {}
     else if (hiding()) drawHidingEyes(c);
     else if (hatched()) drawPet(c);
-    float h = hourOfDay();
-    drawCampfire(c, h >= 17 && h < 23);
+    if (fetch_ != Fetch::None && !coneBehind) drawCone(c);
+    const float h = hourOfDay();
+    if (fireLit() && !(h >= 17 && h < 23))  // lit by you: its light isn't in the scenery
+        c.glow(kFireX, kFireY - 20, 90, 0xFFB347, 0.15f + 0.35f * dark_);
+    drawCampfire(c, fireLit());
     drawParticles(c);
     drawPrecipitation(c);
     const Sky sky = weather_.sky;
@@ -1416,6 +1836,7 @@ void Scene::draw(Canvas& c) {
     if (now_ < lightningUntil_) c.tint(0xF4F6FF, static_cast<float>(lightningUntil_ - now_) / 220.0f * 0.55f);
     if (now_ < flashUntil_) c.tint(0xFFFFFF, static_cast<float>(flashUntil_ - now_) / 400.0f * 0.8f);
 
+    if (!compact_ && overlay_ == Overlay::None) drawBubble(c);
     if (!compact_) drawStrip(c);
     if (s.foraging) drawForagingBanner(c);
     const bool playing = overlay_ == Overlay::Game && game_ != Game::Pick;  // the game has the screen to itself
@@ -1645,7 +2066,9 @@ void Scene::drawTree(Canvas& c, float x, float base, float size) {
     }
     c.fillRoundRect(x - 14 * size, base - 150 * size, 28 * size, 150 * size, 6, sh(kTrunk));
     c.fillEllipse(x, base, 30 * size, 7 * size, sh(0x3F5E2E));  // roots in shadow
+    const float sway = treeSway(x), x0 = x;
     for (int i = 0; i < 4; i++) {
+        x = x0 + sway * (i + 1) / 4;  // the top moves most
         float y = base - 90 * size - i * 45 * size, hw = (78 - i * 14) * size;
         c.fillTriangle(x - hw, y, x + hw, y, x, y - 85 * size, sh(i % 2 ? kLeaves2 : kLeaves1));
         if (weather_.sky == Sky::Snow)  // a cap of snow on each tier
@@ -1748,7 +2171,7 @@ struct Scene::Look {
     float x, foot, ground, s, head;
     Rgb fur, face, mark;
     uint8_t markings, shag;
-    float blink, lookX, armL, armR;
+    float blink, lookX, lookY, armL, armR;
     float mouth;  // -1 frown, 0 flat, 1 smile, 2 chewing
     float breath, wide;
     bool angry;
@@ -1778,6 +2201,7 @@ void Scene::drawPet(Canvas& c) {
     float t = static_cast<float>(t_);
     L.blink = (s.asleep || now_ < blinkUntil_) ? 1.0f : 0.0f;
     L.lookX = lookX_;
+    L.lookY = lookY_;
     L.breath = 1 + 0.018f * std::sin(t * (s.asleep ? 1.6f : 2.6f));
     L.mouth = s.happiness >= 2 ? 1.0f : (s.happiness < 1 ? -1.0f : 0.0f);
     L.angry = s.misbehaving;
@@ -1820,7 +2244,32 @@ void Scene::drawPet(Canvas& c) {
             L.lookX = -0.9f;
             L.angry = false;
             break;
+        case React::Boop:  // scrunches its nose
+            L.blink = 1;
+            L.mouth = 1;
+            L.s *= 0.98f;
+            break;
+        case React::Giggle:
+            L.foot -= std::fabs(std::sin(t * 16)) * 5 * L.s;
+            L.blink = 1;
+            L.mouth = 2;
+            L.armL = L.armR = 0.2f;
+            break;
+        case React::Pat:
+            L.blink = 1;
+            L.mouth = 1;
+            L.breath *= 1.02f;
+            break;
+        case React::Swat:
+            L.angry = true;
+            L.mouth = -1;
+            L.armR = 0.45f + 0.45f * std::sin(t * 14);
+            break;
         default: break;
+    }
+    if (fetch_ == Fetch::Chase || fetch_ == Fetch::Carry) {
+        L.foot -= std::fabs(std::sin(t * 10)) * 5 * L.s;  // trotting
+        if (fetch_ == Fetch::Carry) L.armR = 0.25f;
     }
     drawSquatch(c, L);
 }
@@ -1942,9 +2391,10 @@ void Scene::drawSquatch(Canvas& c, const Look& L) {
         c.line(fx - hr * 0.46f, hy - hr * 0.14f, fx + hr * 0.46f, hy - hr * 0.14f, hr * 0.14f, dark);
     }
 
-    const float er = hr * 0.13f, ey = hy + hr * 0.07f;
+    const float er = hr * 0.13f, ey0 = hy + hr * 0.07f;
     for (float side : {-1.0f, 1.0f}) {
         float ex = fx + side * hr * 0.28f + L.lookX * hr * 0.05f;
+        const float ey = ey0 + L.lookY * hr * 0.04f;
         if (L.blink > 0.8f) {
             c.line(ex - er, ey, ex + er, ey, std::max(1.5f, er * 0.45f), kEye);
         } else {
@@ -2111,7 +2561,9 @@ void Scene::drawTreeDetail(Canvas& c, float x, float base, float size) {
     c.fillTriangle(x + 24 * size, base + 2, x + 8 * size, base + 2, x + 10 * size, base - 14 * size, trunkDark);
     c.fillEllipse(x, base, 30 * size, 6 * size, sh(0x3F5E2E), 0.6f);
 
+    const float sway = treeSway(x), x0 = x;
     for (int i = 0; i < 4; i++) {
+        x = x0 + sway * (i + 1) / 4;  // the top moves most
         const float y = base - 90 * size - i * 45 * size, hw = (78 - i * 14) * size, top = y - 85 * size;
         const Rgb leaf = sh(i % 2 ? kLeaves2 : kLeaves1);
         const Rgb deep = sh(mix(i % 2 ? kLeaves2 : kLeaves1, 0x0C2416, 0.4f));
@@ -2130,7 +2582,7 @@ void Scene::drawTreeDetail(Canvas& c, float x, float base, float size) {
                        light, 0.55f);
         // Needles: little strokes hanging off the boughs.
         for (int k = 0; k < 10; k++) {
-            const float u = noise01(i * 40 + k + static_cast<uint32_t>(x)), v = noise01(i * 40 + k + 500);
+            const float u = noise01(i * 40 + k + static_cast<uint32_t>(x0)), v = noise01(i * 40 + k + 500);
             const float py = top + (0.35f + 0.6f * v) * (y - top);
             const float span = hw * (py - top) / (y - top);
             const float px = x + (u * 2 - 1) * span * 0.85f;
@@ -2193,6 +2645,13 @@ void Scene::drawParticles(Canvas& c) {
             case ParticleKind::Shell: c.fillEllipse(p.x, p.y, 7, 4, sh(0xE8E0C8), std::min(1.0f, a * 2)); break;
             case ParticleKind::PlusOne: c.text(p.x, p.y, "+1", 2, kGold, Align::Center, a); break;
             case ParticleKind::Ring: c.ring(p.x, p.y, 10 + age * 40, 4, 0xF3EBD9, 0.7f * a); break;
+            case ParticleKind::Leaf: {
+                const Sky sky = weather_.sky;
+                const Rgb col = sky == Sky::Snow ? 0xF2F6FA : (autumn() ? 0xD9822B : 0x3E7A3A);
+                c.fillEllipse(p.x, p.y, 4, 2, sh(col), std::min(1.0f, a * 2));
+                break;
+            }
+            case ParticleKind::Ember: c.fillCircle(p.x, p.y, 2, 0xFFB040, a); break;
         }
     }
 }

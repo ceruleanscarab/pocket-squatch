@@ -176,6 +176,16 @@ public:
     }
     bool detail() const { return detail_; }
 
+    // Things to do in the clearing, and what it says. All just for fun: none of them is
+    // needed to raise it, and none needs quick fingers.
+    Rect treeArea(int i) const;  // 0 left, 1 right: tap to shake it (a pinecone may fall)
+    Rect fireArea() const;       // tap to light the campfire for a while
+    Rect coneArea() const;       // a pinecone on the ground: tap to toss it, or flick it
+    bool coneOnGround() const { return fetch_ == Fetch::Lying; }
+    bool fetching() const { return fetch_ == Fetch::Chase || fetch_ == Fetch::Carry; }
+    bool fireLit() const;
+    const char* bubble() const;  // what it's saying, or nullptr
+
     // Just the clearing and the pet: no status strip, tray or messages, and no naming page.
     // For the watch, which draws its own controls on top.
     void setCompact(bool on) {
@@ -184,9 +194,11 @@ public:
     }
 
 private:
-    enum class React : uint8_t { None, Flinch, Peek, Wave, Happy, Eat, Shake, Sneeze, Wobble, Sulk };
-    enum class DragMode : uint8_t { None, Item, Stroke };
-    enum class ParticleKind : uint8_t { Heart, Sparkle, Crumb, Zzz, Pinecone, Drop, Shell, PlusOne, Ring };
+    enum class React : uint8_t { None, Flinch, Peek, Wave, Happy, Eat, Shake, Sneeze, Wobble, Sulk, Boop, Giggle, Pat, Swat };
+    enum class DragMode : uint8_t { None, Item, Stroke, Toss };
+    enum class ParticleKind : uint8_t { Heart, Sparkle, Crumb, Zzz, Pinecone, Drop, Shell, PlusOne, Ring, Leaf, Ember };
+    // A pinecone to play fetch with: lying in the grass, in the air, chased, or carried back.
+    enum class Fetch : uint8_t { None, Lying, Flying, Chase, Carry };
 
     struct Particle {
         ParticleKind kind;
@@ -228,6 +240,20 @@ private:
     void requestScan();
     void note(const char* text);
     void tapPet();
+    void touchPet(int x, int y);  // a tap on a friendly pet: nose, belly or head
+    void shakeTree(int i);
+    void tossCone(float vx, float vy, float vz);
+    void lightFire();
+    void updateFetch(float dt);
+    void endFetch();
+    bool canPlay() const;
+    void drawCone(Canvas& c);
+    float treeSway(float treeX) const;
+    // ---- talking
+    void speak(const char* text, uint32_t ms = 2400);
+    void greet();
+    void chatter();
+    void drawBubble(Canvas& c);
     void sayNotNow();
     void saved(Result r);
 
@@ -391,6 +417,26 @@ private:
     uint32_t nextWander_ = 0;
     uint32_t nextZ_ = 0, nextThrow_ = 0, nextSneeze_ = 0, nextKnock_ = 0;
     uint32_t flashUntil_ = 0;
+    float lookY_ = 0, lookTargetY_ = 0;
+    float fingerX_ = 240, fingerY_ = 240;
+    uint32_t fingerUntil_ = 0;  // its eyes follow a finger until then
+    uint32_t pokeSince_ = 0;
+    int pokes_ = 0, tickles_ = 0;
+
+    // the clearing
+    int shakingTree_ = -1, shakes_ = 0;
+    uint32_t shakeUntil_ = 0;
+    Fetch fetch_ = Fetch::None;
+    float coneX_ = 0, coneY_ = 0, coneZ_ = 0, coneVx_ = 0, coneVy_ = 0, coneVz_ = 0;
+    float fetchX_ = 240;  // where the pet is while it fetches
+    uint32_t coneSince_ = 0;
+    uint32_t fireUntil_ = 0, nextEmber_ = 0;
+
+    // talking
+    char bubble_[28] = {};
+    uint32_t bubbleUntil_ = 0, nextChatter_ = 30000, greetAt_ = 1200, offAt_ = 0;
+    bool greeted_ = false, wasOff_ = false;
+    uint8_t lastChatter_ = 255;
 
     static constexpr size_t kMaxParticles = 48;
     Particle particles_[kMaxParticles]{};

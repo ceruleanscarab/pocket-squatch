@@ -13,7 +13,7 @@ android {
     }
     defaultConfig {
         applicationId "com.ceruleanscarab.pocketsquatch"
-        minSdkVersion 21
+        minSdkVersion 24  // Android 7; Play's automatic protection needs at least this
         targetSdkVersion 36  // what Google Play asks of new apps
         // CI sets these from the run number, so each build installs over the last. The phone and the
         // watch builds share one Play listing, which needs a different number for each: phone even, watch odd.

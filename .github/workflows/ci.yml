@@ -137,7 +137,7 @@ jobs:
           gh release view android >/dev/null 2>&1 || gh release create android --prerelease \
             --title "Pocket Squatch for Android (latest build)" \
             --notes "The newest Android build from main. Download pocket-squatch.apk on your phone and open it to install. pocket-squatch-watch.apk is the Galaxy Watch (Wear OS) companion."
-          gh release upload android pocket-squatch.apk pocket-squatch-watch.apk --clobber
+          gh release upload android pocket-squatch.apk pocket-squatch-watch.apk pocket-squatch.aab pocket-squatch-watch.aab --clobber
 
       # Google Play's internal testing: testers' phones and watches update on their own.
       # The phone app and the watch app have tracks of their own ("wear:" is the watch's).

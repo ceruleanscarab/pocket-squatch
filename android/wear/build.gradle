@@ -5,7 +5,13 @@ apply plugin: 'com.android.application'
 android {
     namespace "com.ceruleanscarab.pocketsquatch.wear"
     compileSdkVersion 36
-    if (System.getenv("ANDROID_NDK_LATEST_HOME")) ndkPath = System.getenv("ANDROID_NDK_LATEST_HOME")
+    def ndkHome = System.getenv("ANDROID_NDK_LATEST_HOME")
+    if (ndkHome) {  // and tell AGP which version that is, or it refuses a mismatch
+        ndkPath = ndkHome
+        def ndkProps = new Properties()
+        file("${ndkHome}/source.properties").withInputStream { ndkProps.load(it) }
+        ndkVersion = ndkProps.getProperty("Pkg.Revision")
+    }
     defaultConfig {
         applicationId "com.ceruleanscarab.pocketsquatch"
         minSdkVersion 30

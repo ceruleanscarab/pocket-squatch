@@ -4,7 +4,13 @@ android {
     namespace "com.ceruleanscarab.pocketsquatch"
     compileSdkVersion 36
     // Use the NDK the build machine already has (GitHub's runners set this), else AGP's default.
-    if (System.getenv("ANDROID_NDK_LATEST_HOME")) ndkPath = System.getenv("ANDROID_NDK_LATEST_HOME")
+    def ndkHome = System.getenv("ANDROID_NDK_LATEST_HOME")
+    if (ndkHome) {  // and tell AGP which version that is, or it refuses a mismatch
+        ndkPath = ndkHome
+        def ndkProps = new Properties()
+        file("${ndkHome}/source.properties").withInputStream { ndkProps.load(it) }
+        ndkVersion = ndkProps.getProperty("Pkg.Revision")
+    }
     defaultConfig {
         applicationId "com.ceruleanscarab.pocketsquatch"
         minSdkVersion 21

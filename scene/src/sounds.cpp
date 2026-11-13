@@ -1,5 +1,7 @@
 #include "squatch/sounds.hpp"
 
+#include "horse_sounds.hpp"
+
 #include <algorithm>
 #include <cmath>
 
@@ -83,6 +85,7 @@ constexpr Note kSnort[] = {{Noise, 900, 380, 150, 30, 0.55f}, {Noise, 2600, 600,
 constexpr Note kClop[] = {{Tri, 420, 150, 22, 75, 0.55f}, {Tri, 360, 140, 22, 0, 0.5f}};
 constexpr Note kMunch[] = {{Noise, 1900, 900, 40, 80, 0.55f}, {Noise, 1700, 800, 40, 80, 0.5f},
                            {Noise, 2000, 900, 40, 90, 0.5f}, {Noise, 1600, 800, 45, 0, 0.45f}};
+constexpr Note kBrush[] = {{Noise, 3000, 5000, 120, 40, 0.35f}, {Noise, 3000, 5000, 120, 0, 0.35f}};
 constexpr Note kWarning[] = {{Square, A5, A5, 130, 90, 0.3f}, {Square, E5, E5, 220, 0, 0.3f}};
 
 #define SHAPE(a) {a, static_cast<int>(sizeof a / sizeof a[0])}
@@ -92,7 +95,7 @@ constexpr Shape kShapes[static_cast<int>(Cue::Count)] = {
     SHAPE(kHatch),   SHAPE(kGrowUp),   SHAPE(kNewEgg), SHAPE(kSick),      SHAPE(kRanAway), SHAPE(kReturned),
     SHAPE(kForageBack), SHAPE(kPhoto), SHAPE(kWarning), SHAPE(kThunder), SHAPE(kBoo),
     SHAPE(kBoop), SHAPE(kGiggle), SHAPE(kRustle), SHAPE(kCrackle), SHAPE(kBabble),
-    SHAPE(kNeigh), SHAPE(kNicker), SHAPE(kSnort), SHAPE(kClop), SHAPE(kMunch),
+    SHAPE(kNeigh), SHAPE(kNicker), SHAPE(kSnort), SHAPE(kClop), SHAPE(kMunch), SHAPE(kBrush),
 };
 #undef SHAPE
 
@@ -103,6 +106,27 @@ constexpr float kTwoPi = 6.2831853f;
 
 int samples(int ms) { return ms * Synth::kRate / 1000; }
 
+// The recording behind a cue, if it has one.
+const HorseClip* clipFor(Cue c) {
+    switch (c) {
+        case Cue::Neigh: return &kHorseClips[kClipNeigh];
+        case Cue::Nicker: return &kHorseClips[kClipNicker];
+        case Cue::Snort: return &kHorseClips[kClipSnort];
+        case Cue::Clop: return &kHorseClips[kClipClop];
+        case Cue::Munch: return &kHorseClips[kClipMunch];
+        case Cue::Brush: return &kHorseClips[kClipBrush];
+        default: return nullptr;
+    }
+}
+
+// G.711 mu-law to -1..1.
+float fromMulaw(uint8_t u) {
+    u = static_cast<uint8_t>(~u);
+    const int sign = u & 0x80, exp = (u >> 4) & 7, mant = u & 0x0F;
+    const int mag = ((mant << 3) + 0x84) << exp;
+    return static_cast<float>(sign ? 0x84 - mag : mag - 0x84) / 32768.0f;
+}
+
 }  // namespace
 
 const char* toString(Cue c) {
@@ -111,12 +135,13 @@ const char* toString(Cue c) {
                                    "hatch",    "grow up",  "new egg",   "sick",   "ran away", "returned",
                                    "forage back", "photo", "warning", "thunder", "boo",
                                    "boop", "giggle", "rustle", "crackle", "babble",
-                                   "neigh", "nicker", "snort", "clop", "munch"};
+                                   "neigh", "nicker", "snort", "clop", "munch", "brush"};
     int i = static_cast<int>(c);
     return i < static_cast<int>(Cue::Count) ? kNames[i] : "?";
 }
 
 int Synth::lengthMs(Cue c) {
+    if (const HorseClip* clip = clipFor(c)) return clip->length * 1000 / kRate;
     const Shape& s = kShapes[static_cast<int>(c)];
     int ms = 0;
     for (int i = 0; i < s.count; i++) ms += s.notes[i].ms + s.notes[i].gapMs;
@@ -139,6 +164,10 @@ void Synth::play(Cue c, int volume) {
     v->cue = c;
     v->gain = kGain[volume];
     v->age = ++started_;
+    if (const HorseClip* clip = clipFor(c)) {
+        v->clip = clip->data;
+        v->clipLength = clip->length;
+    }
 }
 
 bool Synth::active() const {
@@ -156,6 +185,11 @@ bool Synth::render(int16_t* out, int n) {
         float mix = 0;
         for (Voice& v : voices_) {
             if (!v.on) continue;
+            if (v.clip) {  // a recording, already levelled: just a little louder than the tones
+                mix += fromMulaw(v.clip[v.pos]) * v.gain * 1.4f;
+                if (++v.pos >= v.clipLength) v.on = false;
+                continue;
+            }
             const Shape& sh = kShapes[static_cast<int>(v.cue)];
             const Note& note = sh.notes[v.note];
             const int len = samples(note.ms), total = len + samples(note.gapMs);

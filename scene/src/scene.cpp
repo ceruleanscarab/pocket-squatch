@@ -791,7 +791,8 @@ void Scene::doBrush() {
     Result r = sim_.brush();
     saved(r);
     if (r == Result::Ok) {
-        cue(Cue::Clean);
+        cue(species_ == Species::Horse ? Cue::Brush : Cue::Clean);
+        if (species_ == Species::Horse) speak(rand01() < 0.5f ? "SO SHINY!" : "MMM, THAT'S NICE");
         react(React::Happy, 1000);
         for (int i = 0; i < 6; i++)
             spawn(ParticleKind::Sparkle, squatchX() + (rand01() - 0.5f) * 90 * squatchScale(),

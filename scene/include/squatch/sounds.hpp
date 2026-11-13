@@ -4,7 +4,7 @@
 // cues into 16-bit mono samples, and the front end sends those to a speaker (SDL audio
 // on the PC, the ES8311 codec on the board). Every cue is a few notes made in code:
 // sine, triangle and square tones with pitch sweeps, and filtered noise for swishes and
-// cracks, so there are no sound files to carry around.
+// cracks. The horse edition's own sounds are short real recordings, played back instead.
 #pragma once
 
 #include <cstdint>
@@ -45,6 +45,7 @@ enum class Cue : uint8_t {
     Snort,
     Clop,        // hooves, while it trots
     Munch,
+    Brush,       // being groomed (the horse edition)
     Count
 };
 
@@ -76,6 +77,8 @@ private:
         float phase = 0;    // 0..1
         float lp = 0;       // the noise filter's state
         uint32_t age = 0;   // when it started, to pick the oldest
+        const uint8_t* clip = nullptr;  // a recording to play instead of notes (mu-law)
+        int clipLength = 0;
     };
     static constexpr int kVoices = 3;
     Voice voices_[kVoices];

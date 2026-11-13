@@ -170,6 +170,15 @@ public:
 
     // Extra detail for screens with pixels and speed to spare (the phone): fur texture and
     // shading on the pet, layered pines, grass, stones and flowers. The boards leave it off.
+    // Which animal lives here. The game is the same; the horse edition draws a foal that
+    // grows into a horse (a rare one is a unicorn) instead of a Squatch.
+    enum class Species : uint8_t { Squatch, Horse };
+    void setSpecies(Species s) {
+        species_ = s;
+        sceneryKey_ = -1;
+    }
+    Species species() const { return species_; }
+
     void setDetail(bool on) {
         detail_ = on;
         sceneryKey_ = -1;
@@ -278,6 +287,9 @@ private:
     int visibleMesses() const;
     bool foodLeftToday() const;
     void furColours(Rgb& fur, Rgb& face, Rgb& mark) const;
+    // A horse's coat, mane and tail, and its markings; unicorn says whether it has a horn.
+    void horseColours(Rgb& coat, Rgb& mane, Rgb& muzzle, bool& unicorn, bool& golden) const;
+    void drawHorse(Canvas& c, const Look& look);
 
     // ---- drawing
     Rgb sh(Rgb c) const;  // shade a scenery colour for the time of day
@@ -374,6 +386,8 @@ private:
     bool cacheScenery_ = true;
     bool compact_ = false;
     bool detail_ = false;
+    Species species_ = Species::Squatch;
+    float faceDir_ = 1;  // the horse faces right (1) or left (-1)
     Settings settings_;
     Cue cues_[8];
     int cueCount_ = 0;

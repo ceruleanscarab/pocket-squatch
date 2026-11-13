@@ -2176,6 +2176,7 @@ struct Scene::Look {
     float breath, wide;
     bool angry;
     bool hat;  // a witch's hat, Halloween week
+    float gait = -1;  // walking: the legs' phase; below 0 standing still
 };
 
 void Scene::drawPet(Canvas& c) {
@@ -2270,8 +2271,252 @@ void Scene::drawPet(Canvas& c) {
     if (fetch_ == Fetch::Chase || fetch_ == Fetch::Carry) {
         L.foot -= std::fabs(std::sin(t * 10)) * 5 * L.s;  // trotting
         if (fetch_ == Fetch::Carry) L.armR = 0.25f;
+        L.gait = t * 10;
+    }
+    if (sim_.trustLevel() == TrustLevel::Wandering && !s.asleep && std::fabs(wanderTarget_ - wanderX_) > 1)
+        L.gait = t * 8;
+    if (species_ == Species::Horse) {
+        // It turns to face where it's looking, but not back and forth on every glance.
+        if (L.gait >= 0 && fetch_ != Fetch::None) faceDir_ = (fetch_ == Fetch::Chase ? coneX_ : 240.0f) >= L.x ? 1.0f : -1.0f;
+        else if (L.lookX > 0.35f) faceDir_ = 1;
+        else if (L.lookX < -0.35f) faceDir_ = -1;
+        drawHorse(c, L);
+        return;
     }
     drawSquatch(c, L);
+}
+
+// ================================================================ the horse edition
+
+void Scene::horseColours(Rgb& coat, Rgb& mane, Rgb& muzzle, bool& unicorn, bool& golden) const {
+    const State& s = sim_.state();
+    const Traits t = sim_.traits();
+    unicorn = t.rarity == Rarity::Epic || t.rarity == Rarity::Mythic;
+    golden = t.variant == Variant::Golden;
+    switch (t.variant) {
+        case Variant::Golden:  // a golden unicorn, the rarest of all
+            coat = 0xE9C46A;
+            mane = 0xFFF3D6;
+            break;
+        case Variant::Snowcoat:
+        case Variant::Albino:  // a white unicorn with a rainbow mane (or, if only Rare, a white horse)
+            coat = 0xF4F1EC;
+            mane = 0xE7E2DA;
+            break;
+        case Variant::Swamp:  // a dapple grey
+            coat = 0xA7AAAE;
+            mane = 0x4A4C50;
+            break;
+        case Variant::None: {
+            // The ordinary coats, from dark to light: black, bay, chestnut, buckskin, palomino.
+            const float h = t.hue;  // browns; nudges each coat's warmth a little
+            if (t.shade < 0.32f) {
+                coat = hsv(h, 0.35f, 0.24f);
+                mane = 0x18120F;
+            } else if (t.shade < 0.5f) {
+                coat = hsv(h - 6, 0.68f, 0.5f);
+                mane = 0x1E1612;
+            } else if (t.shade < 0.66f) {
+                coat = hsv(h - 4, 0.66f, 0.66f);
+                mane = hsv(h - 6, 0.7f, 0.5f);
+            } else if (t.shade < 0.8f) {
+                coat = hsv(h + 6, 0.45f, 0.78f);
+                mane = 0x221A15;
+            } else {
+                coat = hsv(h + 12, 0.55f, 0.88f);
+                mane = 0xFAEED2;
+            }
+            break;
+        }
+    }
+    if (s.stage == Stage::Elder) coat = mix(coat, 0xC9C4BE, 0.35f);  // greying
+    if (s.sick) coat = mix(coat, 0x9DB58A, 0.3f);
+    muzzle = mix(coat, golden ? 0xFFF1D8 : (t.variant == Variant::None ? 0x6B5A52 : 0xE8C8C0), 0.35f);
+    coat = mix(coat, kNight, dark_ * 0.35f);
+    mane = mix(mane, kNight, dark_ * 0.35f);
+    muzzle = mix(muzzle, kNight, dark_ * 0.35f);
+}
+
+// A cartoon horse side on, with its head turned a little toward you. Same poses as the
+// Squatch: armR lifts a front hoof (a wave), mouth smiles or chews, blink closes the eye.
+void Scene::drawHorse(Canvas& c, const Look& L) {
+    const State& st = sim_.state();
+    const Traits dna = sim_.traits();
+    Rgb coat, mane, muzzle;
+    bool unicorn, golden;
+    horseColours(coat, mane, muzzle, unicorn, golden);
+    const float s = L.s, f = L.foot, dir = faceDir_, b = L.breath, w = L.wide;
+    const float hd = L.head;  // foals have bigger heads
+    // Foals are mostly legs.
+    const float legLen = (st.stage == Stage::Baby ? 62 : st.stage == Stage::Child ? 56 : st.stage == Stage::Teen ? 52 : 50);
+    const float bodyRx = (st.stage == Stage::Baby ? 46 : 58) * w, bodyRy = (st.stage == Stage::Baby ? 26 : 31) * b;
+    const float bodyY = -legLen - bodyRy * 0.55f;
+    auto X = [&](float dx) { return L.x + dir * dx * s; };
+    auto Y = [&](float dy) { return f + dy * s; };
+    const Rgb shade = mix(coat, 0x140C08, 0.3f), lit = mix(coat, 0xFFF6E8, 0.25f);
+    const Rgb hoof = mix(0x3A2E28, kNight, dark_ * 0.35f);
+    const bool socks = dna.markings == 1, points = dna.markings == 2, spots = dna.markings == 3;
+    const Rgb white = mix(0xFAF7F2, kNight, dark_ * 0.35f);
+    static const Rgb kRainbow[] = {0xF7A8C8, 0xC9A8F2, 0xA8D8F2, 0xB8F0C8, 0xFBE3A0};
+    auto maneCol = [&](int i) -> Rgb {
+        if (unicorn && !golden) return mix(kRainbow[i % 5], kNight, dark_ * 0.35f);
+        if (golden && i % 2) return mix(0xFFE08A, kNight, dark_ * 0.35f);
+        return mane;
+    };
+
+    // Its shadow.
+    c.fillEllipse(L.x, L.ground, 72 * s * w, 10 * s, 0x000000, detail_ ? 0.12f : 0.18f);
+
+    // Legs: far pair first (darker), then the body, then the near pair.
+    const float legW = (st.stage == Stage::Baby ? 10.5f : 13) * s;
+    auto leg = [&](float dx, bool near, float phase, float lift) {
+        float swing = L.gait >= 0 ? std::sin(L.gait + phase) * 7 : 0;
+        const float topX = X(dx), topY = Y(-legLen - 4);
+        float footX = X(dx + swing), footY = Y(-std::max(0.0f, L.gait >= 0 ? std::cos(L.gait + phase) * 5 : 0.0f));
+        if (lift > 0) {  // a raised front hoof, bent at the knee
+            footX = X(dx + 14 * lift);
+            footY = Y(-legLen * 0.45f * lift - 4);
+        }
+        const Rgb col = near ? coat : shade;
+        const Rgb low = points ? mix(0x1E1612, kNight, dark_ * 0.35f) : (socks && near ? white : col);
+        const float kneeX = (topX + footX) / 2 + (lift > 0 ? dir * 6 * s : 0), kneeY = (topY + footY) / 2;
+        c.line(topX, topY, kneeX, kneeY, legW, col);
+        c.line(kneeX, kneeY, footX, footY, legW * 0.85f, low);
+        c.fillRoundRect(footX - legW * 0.62f, footY - 7 * s, legW * 1.24f, 8 * s, 3 * s, hoof);
+    };
+    const float lift = std::max(0.0f, std::min(1.0f, L.armR * 1.2f));
+    leg(20, false, 0.0f, 0);
+    leg(-48, false, 3.1f, 0);
+
+    // The tail, swishing gently.
+    const float swish = static_cast<float>(std::sin(t_ * 1.3)) * 4;
+    for (int k = 0; k < 5; k++) {
+        float px = X(-bodyRx + 4), py = Y(bodyY - bodyRy * 0.5f);
+        for (int i = 1; i <= 6; i++) {
+            const float nx = X(-bodyRx - 4 - i * 2.2f - (k - 2) * 2.5f) - dir * std::sin(i * 0.5f) * swish * s;
+            const float ny = Y(bodyY - bodyRy * 0.5f + i * 9 + k * 1.5f);
+            c.line(px, py, nx, ny, (9 - i * 0.9f) * s, maneCol(k));
+            px = nx;
+            py = ny;
+        }
+    }
+
+    // The body: a darker belly and a lit back, so it looks round.
+    const float bx = L.x, by = Y(bodyY);
+    c.fillEllipse(bx, by, bodyRx * s, bodyRy * s, shade);
+    c.fillEllipse(bx, by - bodyRy * s * 0.1f, bodyRx * s * 0.97f, bodyRy * s * 0.86f, coat);
+    if (detail_) c.glow(bx - dir * bodyRx * s * 0.1f, by - bodyRy * s * 0.45f, bodyRx * s * 0.6f, lit, 0.3f);
+    if (spots) {  // an appaloosa's spotted blanket over the rump
+        c.fillEllipse(X(-bodyRx * 0.45f), by - bodyRy * s * 0.15f, bodyRx * s * 0.42f, bodyRy * s * 0.62f, white);
+        for (int i = 0; i < 9; i++) {
+            const float u = noise01(i * 3 + 11), v = noise01(i * 3 + 12);
+            c.fillCircle(X(-bodyRx * (0.15f + 0.6f * u)), by + (v - 0.6f) * bodyRy * s * 0.9f, (2 + 2 * noise01(i + 40)) * s,
+                         mix(coat, 0x1A120E, 0.35f));
+        }
+    }
+    if (st.stage == Stage::Baby)  // a foal's fuzzy little tail-end and belly
+        c.fillEllipse(bx, by + bodyRy * s * 0.55f, bodyRx * s * 0.6f, bodyRy * s * 0.25f, shade, 0.5f);
+
+    leg(40, true, 1.6f, lift);
+    leg(-30, true, 4.7f, 0);
+
+    // The neck, up and forward to the head.
+    const float hx = X(bodyRx * 0.95f + 6), hy = Y(bodyY - 50 - (hd - 1) * 12);
+    const float nbx = X(bodyRx * 0.6f), nby = Y(bodyY - bodyRy * 0.2f);
+    // A broad base in the shoulders, tapering to the throat: two strokes and the wedge between.
+    const float topX = nbx - dir * 16 * s, topY = nby - 10 * s, chestX = nbx + dir * 14 * s, chestY = nby + 14 * s;
+    c.fillTriangle(topX, topY, chestX, chestY, hx + dir * 4 * s, hy + 12 * s * hd, coat);
+    c.fillTriangle(topX, topY, hx - dir * 8 * s * hd, hy - 4 * s * hd, hx + dir * 4 * s, hy + 12 * s * hd, coat);
+    c.line(topX, topY, hx - dir * 6 * s * hd, hy, 20 * s, coat);
+    c.line(chestX, chestY, hx + dir * 2 * s, hy + 12 * s * hd, 18 * s, coat);
+    if (detail_) c.line(chestX, chestY, hx + dir * 4 * s, hy + 16 * s * hd, 7 * s, shade, 0.45f);
+
+    // The mane along the top of the neck.
+    for (int i = 0; i < 7; i++) {
+        const float u = i / 6.0f;
+        const float mx = hx - dir * 10 * s * hd + (topX - (hx - dir * 10 * s * hd)) * u - dir * 4 * std::sin(u * 3.1f) * s;
+        const float my = hy - 10 * s * hd + (topY - (hy - 10 * s * hd)) * u - 4 * s;
+        c.fillCircle(mx, my, (8.5f - u * 2) * s, maneCol(i));
+        c.fillTriangle(mx - 6 * s, my, mx + 6 * s, my, mx - dir * 9 * s, my + 16 * s, maneCol(i));
+    }
+
+    // The head: a round skull and a long, soft muzzle.
+    const float r = 20 * s * hd;
+    const float mxz = hx + dir * 18 * s * hd, myz = hy + 12 * s * hd;
+    c.line(hx, hy, mxz, myz, 24 * s * hd, coat);
+    c.fillCircle(hx, hy, r, coat);
+    // Ears, the far one behind.
+    c.fillTriangle(hx - dir * 12 * s * hd, hy - 12 * s * hd, hx - dir * 2 * s * hd, hy - 17 * s * hd,
+                   hx - dir * 12 * s * hd, hy - 33 * s * hd, shade);
+    c.fillTriangle(hx - dir * 6 * s * hd, hy - 15 * s * hd, hx + dir * 4 * s * hd, hy - 18 * s * hd,
+                   hx - dir * 3 * s * hd, hy - 35 * s * hd, coat);
+    c.fillTriangle(hx - dir * 3.5f * s * hd, hy - 18 * s * hd, hx + dir * 1.5f * s * hd, hy - 19 * s * hd,
+                   hx - dir * 2.5f * s * hd, hy - 29 * s * hd, mix(0xE8A3A8, kNight, dark_ * 0.35f));
+    c.fillEllipse(mxz, myz, 17 * s * hd, 12.5f * s * hd, muzzle);
+    if (detail_) c.glow(hx - dir * 6 * s * hd, hy - 8 * s * hd, r * 0.9f, lit, 0.28f);
+    if (socks)  // a white blaze down the face
+        c.line(hx + dir * 1 * s * hd, hy - 14 * s * hd, mxz + dir * 2 * s * hd, myz - 6 * s * hd, 6.5f * s * hd, white);
+    else if (points || spots)  // a little white star
+        c.fillCircle(hx + dir * 3 * s * hd, hy - 10 * s * hd, 3.2f * s * hd, white);
+
+    // Forelock over the forehead.
+    c.fillCircle(hx - dir * 2 * s * hd, hy - 17 * s * hd, 6.5f * s * hd, maneCol(2));
+    c.fillTriangle(hx - dir * 8 * s * hd, hy - 18 * s * hd, hx + dir * 4 * s * hd, hy - 20 * s * hd,
+                   hx + dir * 7 * s * hd, hy - 5 * s * hd, maneCol(3));
+
+    // The unicorn's horn, spiralled.
+    if (unicorn) {
+        const Rgb horn = golden ? 0xF2C14E : 0xF7EEDC, groove = golden ? 0xC8962E : 0xD9C9A8;
+        const float bx0 = hx + dir * 4 * s * hd, by0 = hy - 19 * s * hd;
+        const float tx = hx + dir * 13 * s * hd, ty = hy - 50 * s * hd;
+        c.glow(tx, ty + 8 * s, 16 * s * hd, golden ? 0xFFE08A : 0xFFF4FF, 0.45f + 0.15f * std::sin(t_ * 3));
+        c.fillTriangle(bx0 - 5 * s * hd, by0 + 1 * s, bx0 + 5 * s * hd, by0 - 1 * s, tx, ty, horn);
+        for (int i = 1; i <= 3; i++) {
+            const float u = i / 4.0f, cx0 = bx0 + (tx - bx0) * u, cy0 = by0 + (ty - by0) * u, half = 5 * s * hd * (1 - u);
+            c.line(cx0 - half, cy0 + 2 * s * (1 - u), cx0 + half, cy0 - 2 * s * (1 - u), 1.4f * s, groove);
+        }
+    }
+
+    // The eye: big, dark and shiny, with lashes. Closed, it's a soft curve.
+    const float ex = hx + dir * 4 * s * hd + L.lookX * dir * 1.0f * s, ey = hy - 3 * s * hd + L.lookY * 1.2f * s;
+    const float er = 6.8f * s * hd;
+    if (L.blink >= 0.5f) {
+        c.line(ex - er, ey, ex, ey + er * 0.45f, 2.2f * s, 0x2A1A14);
+        c.line(ex, ey + er * 0.45f, ex + er, ey, 2.2f * s, 0x2A1A14);
+    } else {
+        c.fillEllipse(ex, ey, er, er * 1.08f, 0x1E120E);
+        c.ring(ex, ey + er * 0.15f, er * 0.6f, er * 0.25f, golden ? 0x8A5A20 : 0x5A3420, 0.7f);
+        c.fillCircle(ex + dir * er * 0.32f, ey - er * 0.35f, er * 0.34f, 0xFFFFFF, 0.95f);
+        c.fillCircle(ex - dir * er * 0.3f, ey + er * 0.35f, er * 0.15f, 0xFFFFFF, 0.7f);
+        for (int k = 0; k < 3; k++)  // lashes
+            c.line(ex + dir * (er * 0.2f + k * er * 0.35f), ey - er * 0.95f, ex + dir * (er * 0.45f + k * er * 0.45f),
+                   ey - er * 1.35f, 1.6f * s, 0x1E120E);
+    }
+    if (L.angry) c.line(ex - er * 1.1f, ey - er * 1.5f, ex + er * 1.1f, ey - er * 1.0f, 2.4f * s, 0x1E120E);
+    if (detail_ || st.stage == Stage::Baby)  // rosy cheek
+        c.glow(hx + dir * 8 * s * hd, hy + 8 * s * hd, 7 * s * hd, 0xF07A7A, 0.35f);
+
+    // Nostril and mouth.
+    c.fillEllipse(mxz + dir * 9 * s * hd, myz - 2 * s * hd, 2.4f * s * hd, 1.8f * s * hd, mix(muzzle, 0x000000, 0.55f));
+    const float mmx = mxz + dir * 4 * s * hd, mmy = myz + 7 * s * hd;
+    const Rgb lip = mix(muzzle, 0x000000, 0.5f);
+    if (L.mouth >= 1.5f) {  // chewing
+        const float open = std::fabs(std::sin(t_ * 14)) * 3 * s * hd;
+        c.fillEllipse(mmx, mmy, 5 * s * hd, 1.5f * s * hd + open, lip);
+    } else if (L.mouth > 0.5f) {
+        c.line(mmx - dir * 7 * s * hd, mmy - 2 * s * hd, mmx, mmy + 1.5f * s * hd, 1.8f * s, lip);
+        c.line(mmx, mmy + 1.5f * s * hd, mmx + dir * 5 * s * hd, mmy - 1 * s * hd, 1.8f * s, lip);
+    } else if (L.mouth < -0.5f) {
+        c.line(mmx - dir * 6 * s * hd, mmy + 1 * s * hd, mmx, mmy - 1.5f * s * hd, 1.8f * s, lip);
+        c.line(mmx, mmy - 1.5f * s * hd, mmx + dir * 5 * s * hd, mmy + 1 * s * hd, 1.8f * s, lip);
+    } else {
+        c.line(mmx - dir * 6 * s * hd, mmy, mmx + dir * 5 * s * hd, mmy, 1.8f * s, lip);
+    }
+
+    // A unicorn sparkles now and then.
+    if (unicorn && !compact_ && noise01(static_cast<uint32_t>(t_ * 4)) < 0.08f)
+        spawn(ParticleKind::Sparkle, X((noise01(static_cast<uint32_t>(t_ * 7)) - 0.5f) * 120),
+              Y(bodyY - 40 - 40 * noise01(static_cast<uint32_t>(t_ * 9))), 0, -20, 900);
 }
 
 void Scene::drawSquatch(Canvas& c, const Look& L) {

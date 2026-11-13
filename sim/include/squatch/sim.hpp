@@ -100,6 +100,16 @@ struct Tuning {
     float trustPerWellCaredHour = 0.25f;  // awake, fed, content, clean and well
     float trustWandering = 30;
     float trustFriendly = 70;
+    // The horse edition's: a foal that's shy for its first hours rather than days, and
+    // friendly by about day 3 with good care, while it's still a foal. (A gift for a child:
+    // the Bigfoot is meant to be a slow, wary cryptid; a foal can't keep her waiting a week.)
+    static Tuning quickToTrust() {
+        Tuning t;
+        t.trustWandering = 17;
+        t.trustFriendly = 40;
+        t.trustPerWellCaredHour = 0.5f;
+        return t;
+    }
 
     // adult form rules (checked in this order after Legend)
     float guardianTrust = 65;

@@ -55,7 +55,11 @@ constexpr bool kAudioRail = false;
 constexpr int kChargeMa = 300, kTrickleMa = 50;  // gentle enough for a cell of 300 mAh or more
 #endif
 
+#if CONFIG_SQUATCH_PET_HORSE
+Sim gSim(Tuning::quickToTrust());  // a foal warms up in hours, not days
+#else
 Sim gSim;
+#endif
 bool gHavePower = false;  // the AXP2101 answered
 Scene gScene(gSim);
 

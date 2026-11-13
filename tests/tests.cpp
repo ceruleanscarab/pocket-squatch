@@ -114,6 +114,30 @@ static void keepComfortable(Sim& sim) {
     s.messes = 0;
 }
 
+static void testQuickToTrust() {
+    std::printf("the horse edition's foal comes out the day it's born and is friendly by about day 3\n");
+    for (bool quick : {true, false}) {
+        Sim sim = quick ? Sim(Tuning::quickToTrust()) : Sim();
+        sim.newGame(kStart + 8 * 3600 - kTz, kTz, 5);  // a foal arriving at 8 in the morning
+        sim.tick(20 * 60);
+        CHECK(sim.state().stage == Stage::Baby);
+        int firstOut = -1, friendly = -1;
+        for (int h = 0; h < 6 * 24; h++) {  // fed, happy and clean, every hour
+            keepComfortable(sim);
+            sim.tick(3600);
+            if (firstOut < 0 && sim.trustLevel() != TrustLevel::Hiding) firstOut = h + 1;
+            if (friendly < 0 && sim.trustLevel() == TrustLevel::Friendly) friendly = h + 1;
+        }
+        if (quick) {
+            CHECK(firstOut > 0 && firstOut <= 10);           // out from behind the tree the same day
+            CHECK(friendly > 36 && friendly <= 4 * 24);      // a little patience, then friends by about day 3
+        } else {
+            CHECK(firstOut > 24);                            // the Bigfoot stays wary for longer
+            CHECK(friendly < 0);
+        }
+    }
+}
+
 static void testElderLaysEgg() {
     std::printf("an Elder lays the next generation's egg and the gallery carries over\n");
     Sim sim = fresh();
@@ -457,6 +481,7 @@ int main() {
     testCatchUpMatchesRealTime();
     testSaveRoundTrip();
     testRunsAwayAndComesBack();
+    testQuickToTrust();
     testElderLaysEgg();
     testFullGalleryMakesALegend();
     testScoldingForNothingHurts();

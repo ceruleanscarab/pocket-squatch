@@ -87,11 +87,17 @@ struct RunResult {
     int photos = 0, mistakes = 0, timesRanAway = 0, timesSick = 0;
 };
 
+// The balance every run uses: the default, or the horse edition's (--quick-trust).
+inline Tuning& harnessTuning() {
+    static Tuning t;
+    return t;
+}
+
 // Raise one pet from egg to its adult form (day 10) plus a day, under one player.
 inline RunResult raise(const Player& p, uint64_t seed, int days = 11,
                        void (*onDay)(const Sim&, int) = nullptr,
                        void (*onEvent)(const Event&) = nullptr) {
-    Sim sim;
+    Sim sim(harnessTuning());
     sim.newGame(1798761600 /* 2027-01-01 00:00 UTC */, -7 * 3600, seed);
     RunResult r;
     uint32_t counter = 0;

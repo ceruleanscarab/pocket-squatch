@@ -72,8 +72,9 @@ int main(int argc, char** argv) {
         else if (!std::strcmp(argv[i], "--days") && i + 1 < argc) days = std::atoi(argv[++i]);
         else if (!std::strcmp(argv[i], "--runs") && i + 1 < argc) runs = std::atoi(argv[++i]);
         else if (!std::strcmp(argv[i], "--events")) gShowEvents = true;
+        else if (!std::strcmp(argv[i], "--quick-trust")) harnessTuning() = Tuning::quickToTrust();
         else {
-            std::fprintf(stderr, "usage: %s [--runs N] | --player NAME [--seed N] [--days N] [--events]\nplayers:", argv[0]);
+            std::fprintf(stderr, "usage: %s [--quick-trust] [--runs N] | --player NAME [--seed N] [--days N] [--events]\nplayers:", argv[0]);
             for (const auto& p : kPlayers) std::fprintf(stderr, " %s", p.name);
             std::fprintf(stderr, "\n");
             return 2;

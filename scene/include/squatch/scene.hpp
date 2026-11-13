@@ -294,7 +294,10 @@ private:
     void horseColours(Rgb& coat, Rgb& mane, Rgb& muzzle, bool& unicorn, bool& golden) const;
     void drawHorse(Canvas& c, const Look& look, bool mother = false);
     void drawMare(Canvas& c);
-    bool newborn() const;  // the horse edition's 'egg': its mother, waiting for the foal
+    bool newborn() const;
+    const char* stageName(Stage st) const;     // the horse edition says FOAL, YEARLING...
+    const char* formName(AdultForm f) const;
+    void horseCoatName(char* out, size_t n) const;  // the horse edition's 'egg': its mother, waiting for the foal
     void drawFence(Canvas& c);
     void drawAppleTree(Canvas& c, float x, float base);
     void drawBarn(Canvas& c);

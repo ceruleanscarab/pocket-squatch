@@ -179,7 +179,7 @@ void Wrist::draw(Canvas& c) {
     scene_.draw(c);
 
     // Name and status at the top, in pills that stay inside the round screen.
-    const char* name = s.name[0] ? s.name : "SQUATCH";
+    const char* name = s.name[0] ? s.name : (scene_.species() == Scene::Species::Horse ? "FOAL" : "SQUATCH");
     const int ns = Canvas::textWidth(name, 3) <= 260 ? 3 : 2;
     float w = static_cast<float>(Canvas::textWidth(name, ns)) + 36;
     c.fillRoundRect(240 - w / 2, 42, w, 40, 20, kDim, 0.8f);

@@ -51,6 +51,11 @@ constexpr int kKeyX = (480 - kKeyCols * kKeyW) / 2, kKeyY = 118;
 constexpr const char* kSuggestedNames[] = {"MOSS",   "BRAMBLE", "HUCKLE", "FERN",   "BIRCH",  "TIMBER",
                                            "CEDAR",  "JUNIPER", "HAZEL",  "BISCUIT", "SCOUT", "PEBBLE",
                                            "THISTLE", "MAPLE",  "BOULDER", "WILLOW", "SHAGGY", "ROWAN"};
+// Horse names, for the horse edition (18, the same count, so the DNA's pick still works).
+constexpr const char* kHorseNames[] = {"STAR",   "CLOVER", "MAPLE",  "DAISY",  "COMET",  "BUTTONS",
+                                       "HONEY",  "SPIRIT", "PEPPER", "WILLOW", "SUNNY",  "BISCUIT",
+                                       "STARDUST", "MAGIC", "TWINKLE", "ACORN", "BLAZE", "NUTMEG"};
+static_assert(sizeof kHorseNames == sizeof kSuggestedNames, "keep the name lists the same length");
 
 // ---- the settings page
 constexpr int kSetX = 24, kSetY = 28, kSetW = 432, kSetH = 424;
@@ -264,7 +269,8 @@ void Scene::openNaming() {
 void Scene::suggestName() {
     constexpr int n = static_cast<int>(sizeof kSuggestedNames / sizeof kSuggestedNames[0]);
     if (suggestion_ == 0) suggestion_ = static_cast<uint8_t>(1 + (sim_.state().genome.g[0] % n));  // its DNA picks the first
-    std::snprintf(nameDraft_, sizeof nameDraft_, "%.10s", kSuggestedNames[(suggestion_ - 1) % n]);
+    const char* const* names = species_ == Species::Horse ? kHorseNames : kSuggestedNames;
+    std::snprintf(nameDraft_, sizeof nameDraft_, "%.10s", names[(suggestion_ - 1) % n]);
     suggestion_ = static_cast<uint8_t>(suggestion_ % n + 1);
 }
 
@@ -313,9 +319,9 @@ void Scene::setWeather(const Weather& w) {
     switch (w.sky) {
         case Sky::Clear: msg = first ? nullptr : "THE SKY CLEARED"; break;
         case Sky::Cloudy: msg = first ? nullptr : "CLOUDS ROLLED IN"; break;
-        case Sky::Fog: msg = "FOG IN THE WOODS"; break;
+        case Sky::Fog: msg = species_ == Species::Horse ? "FOG OVER THE FIELDS" : "FOG IN THE WOODS"; break;
         case Sky::Drizzle: msg = "A LITTLE DRIZZLE"; break;
-        case Sky::Rain: msg = "RAIN IN THE FOREST"; break;
+        case Sky::Rain: msg = species_ == Species::Horse ? "RAIN ON THE PADDOCK" : "RAIN IN THE FOREST"; break;
         case Sky::Snow: msg = "SNOW IS FALLING!"; break;
         case Sky::Storm: msg = "A STORM IS COMING"; break;
         case Sky::Unknown: break;
@@ -1432,14 +1438,14 @@ void Scene::handleEvent(const Event& e) {
         case EventType::StageChanged: {
             Stage st = static_cast<Stage>(e.a);
             if (st == Stage::Child || st == Stage::Teen || st == Stage::Elder) {
-                std::snprintf(buf, sizeof buf, "NOW A %s", toString(st));
+                std::snprintf(buf, sizeof buf, "NOW A %s", stageName(st));
                 say(buf);
                 cue(Cue::GrowUp);
             }
             break;
         }
         case EventType::BecameAdult:
-            std::snprintf(buf, sizeof buf, "GREW UP: %s", toString(static_cast<AdultForm>(e.a)));
+            std::snprintf(buf, sizeof buf, "GREW UP: %s", formName(static_cast<AdultForm>(e.a)));
             say(buf);
             cue(Cue::GrowUp);
             break;
@@ -1460,7 +1466,7 @@ void Scene::handleEvent(const Event& e) {
             nextThrow_ = now_;
             break;
         case EventType::RanAway:
-            say("IT RAN OFF INTO THE WOODS");
+            say(species_ == Species::Horse ? "IT RAN OFF ACROSS THE FIELDS" : "IT RAN OFF INTO THE WOODS");
             cue(Cue::RanAway);
             break;
         case EventType::Returned:
@@ -3776,7 +3782,7 @@ void Scene::drawStartOver(Canvas& c) {
     Rect k = startKeepArea(), w = startWipeArea(), x = startCancelArea();
     c.fillRoundRect(k.x, k.y + 3, k.w, k.h - 6, 14, kButton);
     c.text(k.cx(), k.y + 13.0f, species_ == Species::Horse ? "NEW FOAL, KEEP PHOTOS" : "NEW EGG, KEEP PHOTOS", 2, kUiLight, Align::Center);
-    c.text(k.cx(), k.y + 39.0f, "AND FOOTPRINTS AND THE TRAIL MAP", 1, 0xD9CFBC, Align::Center);
+    c.text(k.cx(), k.y + 39.0f, species_ == Species::Horse ? "AND HOOFPRINTS AND THE TRAIL MAP" : "AND FOOTPRINTS AND THE TRAIL MAP", 1, 0xD9CFBC, Align::Center);
     c.fillRoundRect(w.x, w.y + 3, w.w, w.h - 6, 14, 0x8A3A2A);
     c.text(w.cx(), w.y + 13.0f, species_ == Species::Horse ? "NEW FOAL, WIPE EVERYTHING" : "NEW EGG, WIPE EVERYTHING", 2, kUiLight, Align::Center);
     c.text(w.cx(), w.y + 39.0f, "A COMPLETELY FRESH START", 1, 0xF2D0C4, Align::Center);
@@ -3944,6 +3950,59 @@ void Scene::drawItem(Canvas& c, Item it, float x, float y, float k) {
     }
 }
 
+// ---- names: the horse edition has its own words for stages, grown-up forms and coats
+
+const char* Scene::stageName(Stage st) const {
+    if (species_ != Species::Horse) return toString(st);
+    switch (st) {
+        case Stage::Egg: return "ON THE WAY";
+        case Stage::Baby: return "FOAL";
+        case Stage::Child: return "YEARLING";
+        case Stage::Teen: return "YOUNG HORSE";
+        case Stage::Adult: return "HORSE";
+        case Stage::Elder: return "OLD HORSE";
+        case Stage::Away: return "AWAY";
+    }
+    return "?";
+}
+
+const char* Scene::formName(AdultForm f) const {
+    if (species_ != Species::Horse) return toString(f);
+    switch (f) {  // the same paths as the Squatch's, in horse terms
+        case AdultForm::None: return "NONE";
+        case AdultForm::Guardian: return "TRUSTY STEED";
+        case AdultForm::RidgeRunner: return "RACER";
+        case AdultForm::CouchSquatch: return "LAZY PONY";
+        case AdultForm::Hermit: return "WILD MUSTANG";
+        case AdultForm::Legend: return "CHAMPION";
+    }
+    return "?";
+}
+
+void Scene::horseCoatName(char* out, size_t n) const {
+    const Traits t = sim_.traits();  // the same split as horseColours()
+    if (t.rarity == Rarity::Mythic) {
+        std::snprintf(out, n, "GOLDEN UNICORN (MYTHIC)");
+        return;
+    }
+    if (t.rarity == Rarity::Epic) {
+        std::snprintf(out, n, "UNICORN (EPIC)");
+        return;
+    }
+    if (t.variant == Variant::Swamp) {
+        std::snprintf(out, n, "DAPPLE GREY (RARE)");
+        return;
+    }
+    if (t.variant != Variant::None) {
+        std::snprintf(out, n, "WHITE (RARE)");
+        return;
+    }
+    const char* colour = t.shade < 0.32f ? "BLACK" : t.shade < 0.5f ? "BAY" : t.shade < 0.66f ? "CHESTNUT"
+                       : t.shade < 0.8f ? "BUCKSKIN" : "PALOMINO";
+    const char* mark = t.markings == 1 ? ", BLAZE" : t.markings == 2 ? ", STAR" : t.markings == 3 ? ", SPOTS" : "";
+    std::snprintf(out, n, "%s%s%s", colour, mark, t.rarity == Rarity::Uncommon ? " (UNCOMMON)" : "");
+}
+
 void Scene::drawStats(Canvas& c) {
     const State& s = sim_.state();
     c.tint(0x000000, 0.55f);
@@ -3957,21 +4016,26 @@ void Scene::drawStats(Canvas& c) {
     int n = 0;
     Stage stage = s.stage == Stage::Away ? s.stageBeforeAway : s.stage;
     if (s.adult != AdultForm::None)
-        std::snprintf(lines[n++], 40, "STAGE: %s (%s)", toString(stage), toString(s.adult));
+        std::snprintf(lines[n++], 40, "STAGE: %s (%s)", stageName(stage), formName(s.adult));
     else
-        std::snprintf(lines[n++], 40, "STAGE: %s", toString(stage));
+        std::snprintf(lines[n++], 40, "STAGE: %s", stageName(stage));
     int64_t age = sim_.ageSecs();
     int days = static_cast<int>(age / 86400), hours = static_cast<int>(age % 86400 / 3600);
     std::snprintf(lines[n++], 40, "AGE: %d DAY%s %d HR%s", days, days == 1 ? "" : "S", hours, hours == 1 ? "" : "S");
     std::snprintf(lines[n++], 40, "GENERATION: %u", static_cast<unsigned>(s.generation));
     std::snprintf(lines[n++], 40, "TRUST: %s", s.stage == Stage::Away ? "AWAY" : trustName(sim_.trustLevel()));
     std::snprintf(lines[n++], 40, "PHOTOS: %d OF %d", sim_.photoCount(), Sim::kPhotoCount);
-    std::snprintf(lines[n++], 40, "FOOTPRINTS: %u", static_cast<unsigned>(s.footprints));
+    std::snprintf(lines[n++], 40, "%s: %u", species_ == Species::Horse ? "HOOFPRINTS" : "FOOTPRINTS", static_cast<unsigned>(s.footprints));
     const Traits t = sim_.traits();
-    if (t.variant != Variant::None)
+    if (species_ == Species::Horse) {
+        char coat[34];
+        horseCoatName(coat, sizeof coat);
+        std::snprintf(lines[n++], 40, "COAT: %s", coat);
+    } else if (t.variant != Variant::None) {
         std::snprintf(lines[n++], 40, "COAT: %s %s", toString(t.rarity), toString(t.variant));
-    else
+    } else {
         std::snprintf(lines[n++], 40, "COAT: %s", toString(t.rarity));
+    }
     char code[12];
     dnaCode(s.genome, code, sizeof code);
     std::snprintf(lines[n++], 40, "DNA: %s  TRAILS: %u", code, static_cast<unsigned>(s.trailsVisited));

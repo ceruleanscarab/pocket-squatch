@@ -186,6 +186,7 @@ void Scene::setSettings(const Settings& s) {
     settings_.brightness = std::min<uint8_t>(s.brightness, kBrightnessSteps - 1);
     settings_.timeout = std::min<uint8_t>(s.timeout, kTimeoutSteps - 1);
     settings_.volume = std::min<uint8_t>(s.volume, kVolumeSteps - 1);
+    settings_.rudolph = s.rudolph ? 1 : 0;
 }
 
 // The pet's own voice (and body), as against the world's sounds and the buttons.
@@ -494,6 +495,8 @@ void Scene::previewDate(int month, int day) {
 // Where a holiday's decoration stands (the pumpkin's spot): tap it.
 Scene::Rect Scene::pumpkinArea() const {
     if (holiday() == Holiday::Christmas) return {static_cast<int>(kPumpkinX) - 36, static_cast<int>(kPumpkinY) - 96, 72, 104};
+    if (holiday() == Holiday::Thanksgiving)  // wherever it has strutted to
+        return {static_cast<int>(kPumpkinX) - 120, static_cast<int>(kPumpkinY) - 44, 152, 70};
     return {static_cast<int>(kPumpkinX) - 32, static_cast<int>(kPumpkinY) - 38, 64, 64};
 }
 
@@ -1160,7 +1163,15 @@ void Scene::touchPet(int x, int y) {
         react(React::Boop, 900);
         if (species_ == Species::Horse) cue(Cue::Blow);  // a puff through the nose
         else cue(Cue::Boop);
-        speak("BOOP!");
+        if (species_ == Species::Horse && holiday() == Holiday::Christmas) {  // a boop switches the reindeer nose
+            settings_.rudolph = settings_.rudolph ? 0 : 1;
+            settingsChanged_ = true;
+            speak(settings_.rudolph ? "I'M A REINDEER!" : "JUST A PONY AGAIN");
+            for (int i = 0; i < 4; i++)
+                spawn(ParticleKind::Sparkle, nx + (rand01() - 0.5f) * 40, ny + (rand01() - 0.5f) * 30, (rand01() - 0.5f) * 40, -30, 900);
+        } else {
+            speak("BOOP!");
+        }
     } else if (bx * bx + by * by < 1) {
         react(React::Giggle, 1100);
         const bool fit = ++tickles_ >= 3;
@@ -2243,28 +2254,48 @@ void Scene::tapDecoration() {
 void Scene::drawDecoration(Canvas& c) {
     const float x = kPumpkinX, y = kPumpkinY, t = static_cast<float>(t_);
     switch (holiday()) {
-        case Holiday::Thanksgiving: {  // a turkey, strutting to and fro; tapped, it fans its tail
-            const float tx = x - 22 + 20 * std::sin(t * 0.4f), step = std::fabs(std::sin(t * 3)) * 2;
-            const bool left = std::cos(t * 0.4f) < 0, fan = now_ < fanUntil_;
-            const float dir = left ? -1.0f : 1.0f, ty = y + 2 - step;
+        case Holiday::Thanksgiving: {  // a turkey with things to do: struts, pecks, shows off its tail
+            // A 15-second routine: strut left, peck, strut right, peck, puff up and fan the tail.
+            const float xl = x - 92, xr = x - 14, cyc = std::fmod(t, 15.0f);
+            float tx = xr, walk = 0, peck = 0;
+            bool left = true, show = false;
+            if (cyc < 4) tx = xr + (xl - xr) * (cyc / 4), walk = 1;
+            else if (cyc < 6.5f) tx = xl, peck = 1;
+            else if (cyc < 10.5f) tx = xl + (xr - xl) * ((cyc - 6.5f) / 4), walk = 1, left = false;
+            else if (cyc < 12.5f) tx = xr, peck = 1, left = false;
+            else tx = xr, show = true, left = std::fmod(t, 30.0f) >= 15;  // turns to show you
+            const bool fan = show || now_ < fanUntil_;
+            const float dir = left ? -1.0f : 1.0f;
+            const float stride = walk * std::sin(t * 7);                      // legs swing as it walks
+            const float bob = walk * std::fabs(std::sin(t * 7)) * 2.5f;       // up and down with each step
+            const float nod = walk * std::sin(t * 7 + 1.2f) * 3.5f;           // the head jerks forward and back
+            const float dip = peck * std::max(0.0f, std::sin(t * 9.0f)) * 1.0f;  // down to the ground and up
+            const float puff = fan ? 1.12f : 1.0f;
+            const float ty = y + 2 - bob;
             c.fillEllipse(tx, y + 16, 22, 5, 0x000000, 0.2f);
-            // The tail: a fan of feathers behind, wider when shown off.
+            // The tail: a fan of feathers behind, wider when shown off, with a little shiver.
             const Rgb feathers[] = {sh(0x8C4A22), sh(0xC8742E), sh(0xE0A33A), sh(0x6B3A1E)};
             const int n = fan ? 9 : 6;
-            const float spread = fan ? 1.5f : 1.0f, len = fan ? 34 : 26;
+            const float spread = fan ? 1.6f : 1.0f, len = fan ? 36 : 26;
+            const float shiver = fan ? std::sin(t * 30) * 0.03f : walk * std::sin(t * 7) * 0.05f;
             for (int i = 0; i < n; i++) {
-                const float a = (-0.5f + i / static_cast<float>(n - 1)) * spread - dir * 0.35f;
+                const float a = (-0.5f + i / static_cast<float>(n - 1)) * spread - dir * (fan ? 0.1f : 0.35f) + shiver;
                 c.line(tx - dir * 6, ty - 6, tx - dir * 6 + std::sin(a) * len, ty - 6 - std::cos(a) * len, 8, feathers[i % 4]);
             }
-            c.line(tx - 3, ty + 8, tx - 4, y + 16, 2, sh(0xC8962E));  // legs
-            c.line(tx + 3, ty + 8, tx + 4, y + 16, 2, sh(0xC8962E));
-            c.fillEllipse(tx, ty, 13, 11, sh(0x5A3420));  // body
-            c.fillEllipse(tx - dir * 2, ty - 2, 8, 6, sh(0x7A4A2A));
-            c.line(tx + dir * 7, ty - 4, tx + dir * 10, ty - 16, 6, sh(0x5A3420));  // neck
-            c.fillCircle(tx + dir * 11, ty - 19, 5.5f, sh(0x9A7A6A));  // head
-            c.fillTriangle(tx + dir * 15, ty - 20, tx + dir * 15, ty - 17, tx + dir * 20, ty - 18.5f, sh(0xE8A23A));  // beak
-            c.line(tx + dir * 15, ty - 16, tx + dir * 14, ty - 10, 2.5f, sh(0xC0392B));  // wattle
-            c.fillCircle(tx + dir * 12, ty - 20.5f, 1.4f, 0x1A1A1A);
+            c.line(tx - 3, ty + 8, tx - 4 + stride * 4, y + 16, 2, sh(0xC8962E));  // legs
+            c.line(tx + 3, ty + 8, tx + 4 - stride * 4, y + 16, 2, sh(0xC8962E));
+            c.fillEllipse(tx, ty, 13 * puff, 11 * puff, sh(0x5A3420));  // body
+            c.fillEllipse(tx - dir * 2, ty - 2, 8 * puff, 6 * puff, sh(0x7A4A2A));
+            // Neck and head: forward with each step, or right down to peck at the ground.
+            const float hx = tx + dir * (11 + nod + dip * 9), hy = ty - 19 + dip * 30;
+            c.line(tx + dir * 7, ty - 4, hx - dir * 1, hy + 3, 6, sh(0x5A3420));  // neck
+            c.fillCircle(hx, hy, 5.5f, sh(0x9A7A6A));  // head
+            c.fillTriangle(hx + dir * 4, hy - 1.5f, hx + dir * 4, hy + 1.5f, hx + dir * 9, hy + dip * 2, sh(0xE8A23A));  // beak
+            const float swing = std::sin(t * 7 + 2) * (walk + peck) * 2;
+            c.line(hx + dir * 4, hy + 3, hx + dir * 3 + swing, hy + 9 + (fan ? 2 : 0), 2.5f, sh(0xC0392B));  // wattle
+            c.fillCircle(hx + dir * 1, hy - 1.5f, 1.4f, 0x1A1A1A);
+            if (peck > 0 && dip > 0.95f && noise01(static_cast<uint32_t>(t * 9 / 6.2831853f)) < 0.5f)
+                c.fillCircle(hx + dir * 9, y + 16, 1.2f, sh(0xD8C080));  // a seed, found
             break;
         }
         case Holiday::Christmas: {  // a little decorated fir, lights twinkling, presents from the 20th
@@ -3200,8 +3231,17 @@ void Scene::drawHorse(Canvas& c, const Look& L, bool mother) {
     if (detail_ || stage == Stage::Baby)  // rosy cheek
         c.glow(hx + dir * 8 * s * hd, hy + 8 * s * hd, 7 * s * hd, 0xF07A7A, 0.35f);
 
-    // Nostril and mouth.
-    c.fillEllipse(mxz + dir * 9 * s * hd, myz - 2 * s * hd, 2.4f * s * hd, 1.8f * s * hd, mix(muzzle, 0x000000, 0.55f));
+    // Nostril and mouth; or at Christmas, if you booped it on, a shiny red reindeer nose that glows in the dark.
+    if (!mother && settings_.rudolph && holiday() == Holiday::Christmas) {
+        const float nx = mxz + dir * 13 * s * hd, ny = myz - 1 * s * hd, r = std::max(6.0f, 9.0f * s * hd);
+        const float pulse = 0.5f + 0.5f * static_cast<float>(std::sin(t_ * 3));
+        c.glow(nx, ny, r * 4, 0xFF3A2A, 0.3f + 0.5f * dark_ + 0.15f * pulse);
+        c.fillCircle(nx, ny, r, 0xD8261C);
+        c.fillCircle(nx - dir * r * 0.15f, ny - r * 0.1f, r * 0.75f, 0xF0392B);
+        c.fillCircle(nx - dir * r * 0.3f, ny - r * 0.35f, r * 0.28f, 0xFFD0C8);  // the shine
+    } else {
+        c.fillEllipse(mxz + dir * 9 * s * hd, myz - 2 * s * hd, 2.4f * s * hd, 1.8f * s * hd, mix(muzzle, 0x000000, 0.55f));
+    }
     const float mmx = mxz + dir * 4 * s * hd, mmy = myz + 7 * s * hd;
     const Rgb lip = mix(muzzle, 0x000000, 0.5f);
     if (L.mouth >= 1.5f) {  // chewing

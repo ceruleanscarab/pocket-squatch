@@ -396,6 +396,28 @@ static void testHorseTouchVoices() {
     CHECK(home == Cue::Neigh);
 }
 
+static void testRudolphNose() {
+    std::printf("at Christmas a boop on the horse's nose switches its red reindeer nose, and it's kept\n");
+    for (int month : {12, 6}) {
+        Driver d;
+        d.scene.setSpecies(Scene::Species::Horse);
+        d.scene.previewDate(month, 12);
+        d.scene.takeSettingsChanged();
+        const Scene::Rect a = d.scene.squatchArea();
+        bool flipped = false;
+        for (int y = a.y + 4; y < a.y + a.h && !flipped; y += 6) {
+            for (int x = a.x + 4; x < a.x + a.w && !flipped; x += 6) {
+                d.tap(x, y);
+                flipped = d.scene.settings().rudolph == 1;
+                d.step(7000);
+                d.step();
+            }
+        }
+        CHECK(flipped == (month == 12));
+        CHECK(d.scene.takeSettingsChanged() == (month == 12));
+    }
+}
+
 static void testBoardingStable() {
     std::printf("More > Stable sends it to the stable; BRING HOME brings it back\n");
     Driver d;
@@ -1453,6 +1475,7 @@ static void testTownLookup() {
 int main() {
     testBoardingStable();
     testHorseTouchVoices();
+    testRudolphNose();
     testTap();
     testLongPressThenDrag();
     testDrag();

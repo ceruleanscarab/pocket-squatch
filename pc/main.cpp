@@ -84,13 +84,14 @@ void writeSave(const char* path, const State& s) {
 bool readSettings(const std::string& path, Scene::Settings& out) {
     std::FILE* f = std::fopen(path.c_str(), "r");
     if (!f) return false;
-    int b = 0, t = 0, v = out.volume;
-    bool ok = std::fscanf(f, "brightness %d timeout %d volume %d", &b, &t, &v) >= 2;  // older files have no volume
+    int b = 0, t = 0, v = out.volume, r = out.rudolph;
+    bool ok = std::fscanf(f, "brightness %d timeout %d volume %d rudolph %d", &b, &t, &v, &r) >= 2;  // older files have no volume
     std::fclose(f);
     if (ok) {
         out.brightness = static_cast<uint8_t>(std::max(0, b));
         out.timeout = static_cast<uint8_t>(std::max(0, t));
         out.volume = static_cast<uint8_t>(std::max(0, v));
+        out.rudolph = static_cast<uint8_t>(r ? 1 : 0);
     }
     return ok;
 }
@@ -98,7 +99,7 @@ bool readSettings(const std::string& path, Scene::Settings& out) {
 void writeSettings(const std::string& path, const Scene::Settings& s) {
     std::FILE* f = std::fopen(path.c_str(), "w");
     if (!f) return;
-    std::fprintf(f, "brightness %d timeout %d volume %d\n", s.brightness, s.timeout, s.volume);
+    std::fprintf(f, "brightness %d timeout %d volume %d rudolph %d\n", s.brightness, s.timeout, s.volume, s.rudolph);
     std::fclose(f);
 }
 

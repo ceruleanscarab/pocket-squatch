@@ -348,6 +348,54 @@ static void testAsleep() {
     CHECK(!d.sim.state().lightsOn);
 }
 
+static void testHorseTouchVoices() {
+    std::printf("the horse makes one sound per touch, a different one for nose, tummy and head\n");
+    Driver d;
+    d.scene.setSpecies(Scene::Species::Horse);
+    Cue c;
+    while (d.scene.takeCue(c)) {}
+    auto voices = [&](Cue& only) {
+        int n = 0;
+        while (d.scene.takeCue(c)) {
+            if (c == Cue::Nicker || c == Cue::Neigh || c == Cue::Snort || c == Cue::Blow || c == Cue::Chuckle ||
+                c == Cue::Sigh) {
+                n++;
+                only = c;
+            }
+        }
+        return n;
+    };
+    // Tap all over it (a pause between, so the pokes never add up to a swat).
+    const Scene::Rect a = d.scene.squatchArea();
+    bool sawBlow = false, sawChuckle = false, sawSigh = false, oneEach = true;
+    for (int y = a.y + 4; y < a.y + a.h; y += 8) {
+        for (int x = a.x + 4; x < a.x + a.w; x += 8) {
+            d.tap(x, y);
+            Cue got = Cue::Count;
+            if (voices(got) > 1) oneEach = false;
+            sawBlow |= got == Cue::Blow;
+            sawChuckle |= got == Cue::Chuckle;
+            sawSigh |= got == Cue::Sigh;
+            d.step(7000);
+            d.step();
+        }
+    }
+    CHECK(oneEach);
+    CHECK(sawBlow && sawChuckle && sawSigh);
+
+    std::printf("bringing it home from the stable is one whinny, not two sounds at once\n");
+    d.openTray();
+    d.pressSlot(Scene::Slot::More);
+    d.pressSlot(Scene::Slot::Stable);
+    CHECK(d.sim.state().boarding);
+    d.settle();
+    while (d.scene.takeCue(c)) {}
+    d.tap(d.scene.homeArea());
+    Cue home = Cue::Count;
+    CHECK(voices(home) == 1);
+    CHECK(home == Cue::Neigh);
+}
+
 static void testBoardingStable() {
     std::printf("More > Stable sends it to the stable; BRING HOME brings it back\n");
     Driver d;
@@ -1404,6 +1452,7 @@ static void testTownLookup() {
 
 int main() {
     testBoardingStable();
+    testHorseTouchVoices();
     testTap();
     testLongPressThenDrag();
     testDrag();

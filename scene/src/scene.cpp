@@ -188,8 +188,33 @@ void Scene::setSettings(const Settings& s) {
     settings_.volume = std::min<uint8_t>(s.volume, kVolumeSteps - 1);
 }
 
+// The pet's own voice (and body), as against the world's sounds and the buttons.
+static bool isVoice(Cue c) {
+    switch (c) {
+        case Cue::Happy: case Cue::Eat: case Cue::Sneeze: case Cue::Sulk: case Cue::Knock:
+        case Cue::Giggle: case Cue::Babble: case Cue::Neigh: case Cue::Nicker: case Cue::Snort:
+        case Cue::Munch: case Cue::Clop: case Cue::Blow: case Cue::Chuckle: case Cue::Sigh: return true;
+        default: return false;
+    }
+}
+
 void Scene::cue(Cue c) {
     if (settings_.volume == 0 || (screenOff_ && c != Cue::Knock)) return;
+    // Speaking adds a little babble, unless the pet already made a sound for this moment:
+    // one voice at a time, or a nicker on top of a whinny sounds wrong.
+    const bool babble = c == Cue::Babble;
+    for (int i = 0; i < cueCount_; i++) {
+        if (!isVoice(cues_[i])) continue;
+        if (babble) return;
+        if (cueBabble_[i]) {  // the babble gives way to the real sound
+            for (int j = i + 1; j < cueCount_; j++) {
+                cues_[j - 1] = cues_[j];
+                cueBabble_[j - 1] = cueBabble_[j];
+            }
+            cueCount_--;
+            break;
+        }
+    }
     if (species_ == Species::Horse) {  // the horse's own voice
         switch (c) {
             case Cue::Happy:
@@ -207,6 +232,7 @@ void Scene::cue(Cue c) {
         }
     }
     if (cueCount_ == static_cast<int>(sizeof cues_ / sizeof cues_[0])) return;  // nobody's listening
+    cueBabble_[cueCount_] = babble;
     cues_[cueCount_++] = c;
 }
 
@@ -214,7 +240,7 @@ float Scene::voicePitch(Cue c) const {
     switch (c) {  // the pet's voice and body; not the world's sounds or the buttons
         case Cue::Happy: case Cue::Eat: case Cue::Sneeze: case Cue::Sulk: case Cue::Knock:
         case Cue::Giggle: case Cue::Babble: case Cue::Neigh: case Cue::Nicker: case Cue::Snort:
-        case Cue::Munch: case Cue::Clop: break;
+        case Cue::Munch: case Cue::Clop: case Cue::Blow: case Cue::Chuckle: case Cue::Sigh: break;
         default: return 1;
     }
     switch (sim_.state().stage) {
@@ -229,7 +255,10 @@ float Scene::voicePitch(Cue c) const {
 bool Scene::takeCue(Cue& out) {
     if (cueCount_ == 0) return false;
     out = cues_[0];
-    for (int i = 1; i < cueCount_; i++) cues_[i - 1] = cues_[i];
+    for (int i = 1; i < cueCount_; i++) {
+        cues_[i - 1] = cues_[i];
+        cueBabble_[i - 1] = cueBabble_[i];
+    }
     cueCount_--;
     return true;
 }
@@ -1129,12 +1158,15 @@ void Scene::touchPet(int x, int y) {
     const float bx = (x - squatchX()) / (34 * k), by = (y - (squatchFoot() - 56 * k)) / (40 * k);
     if (std::hypot(x - nx, y - ny) < std::max(hr * 0.32f, 20.0f)) {
         react(React::Boop, 900);
-        cue(Cue::Boop);
+        if (species_ == Species::Horse) cue(Cue::Blow);  // a puff through the nose
+        else cue(Cue::Boop);
         speak("BOOP!");
     } else if (bx * bx + by * by < 1) {
         react(React::Giggle, 1100);
-        cue(Cue::Giggle);
-        if (++tickles_ >= 3) {  // a laughing fit
+        const bool fit = ++tickles_ >= 3;
+        if (species_ == Species::Horse) cue(fit ? Cue::Neigh : Cue::Chuckle);  // a whinny for the fit
+        else cue(Cue::Giggle);
+        if (fit) {  // a laughing fit
             tickles_ = 0;
             speak("HAHAHA! STOP!");
             react(React::Giggle, 1800);
@@ -1146,7 +1178,7 @@ void Scene::touchPet(int x, int y) {
         }
     } else if (y < hy - hr * 0.3f) {
         react(React::Pat, 1200);
-        cue(Cue::Happy);
+        cue(species_ == Species::Horse ? Cue::Sigh : Cue::Happy);
         speak("MMM...");
         spawn(ParticleKind::Heart, squatchX(), hy - hr - 10, 0, -40, 1100);
     } else {
@@ -3764,7 +3796,7 @@ void Scene::toggleBoarding() {
         trayTarget_ = 0;
         page_ = Page::Main;
         held_ = Item::None;
-        cue(Cue::Happy);
+        cue(Cue::Returned);  // the horse whinnies hello
         say("HOME AGAIN!", true);
         speak("I MISSED YOU!");
         return;

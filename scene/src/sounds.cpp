@@ -99,6 +99,7 @@ constexpr Shape kShapes[static_cast<int>(Cue::Count)] = {
     SHAPE(kForageBack), SHAPE(kPhoto), SHAPE(kWarning), SHAPE(kThunder), SHAPE(kBoo),
     SHAPE(kBoop), SHAPE(kGiggle), SHAPE(kRustle), SHAPE(kCrackle), SHAPE(kBabble),
     SHAPE(kNeigh), SHAPE(kNicker), SHAPE(kSnort), SHAPE(kClop), SHAPE(kMunch), SHAPE(kBrush), SHAPE(kGobble), SHAPE(kGobble),
+    SHAPE(kSnort), SHAPE(kNicker), SHAPE(kNicker),
 };
 #undef SHAPE
 
@@ -110,17 +111,30 @@ constexpr float kTwoPi = 6.2831853f;
 int samples(int ms) { return ms * Synth::kRate / 1000; }
 
 // The recording behind a cue, if it has one.
-const HorseClip* clipFor(Cue c) {
+// The recordings are few, so some cues play one of them differently: higher and softer,
+// lower and slower, or just its start.
+struct ClipStyle {
+    const HorseClip* clip;
+    float pitch;  // times the voice's own pitch
+    float gain;
+    float part;   // how much of the clip, from its start
+};
+
+ClipStyle clipFor(Cue c) {
+    const HorseClip* k = kHorseClips;
     switch (c) {
-        case Cue::Neigh: return &kHorseClips[kClipNeigh];
-        case Cue::Nicker: return &kHorseClips[kClipNicker];
-        case Cue::Snort: return &kHorseClips[kClipSnort];
-        case Cue::Clop: return &kHorseClips[kClipClop];
-        case Cue::Munch: return &kHorseClips[kClipMunch];
-        case Cue::Brush: return &kHorseClips[kClipBrush];
-        case Cue::Gobble: return &kHorseClips[kClipGobble];
-        case Cue::HoHoHo: return &kHorseClips[kClipHoHoHo];
-        default: return nullptr;
+        case Cue::Neigh: return {&k[kClipNeigh], 1, 1, 1};
+        case Cue::Nicker: return {&k[kClipNicker], 1, 1, 1};
+        case Cue::Snort: return {&k[kClipSnort], 1, 1, 1};
+        case Cue::Clop: return {&k[kClipClop], 1, 1, 1};
+        case Cue::Munch: return {&k[kClipMunch], 1, 1, 1};
+        case Cue::Brush: return {&k[kClipBrush], 1, 1, 1};
+        case Cue::Gobble: return {&k[kClipGobble], 1, 1, 1};
+        case Cue::HoHoHo: return {&k[kClipHoHoHo], 1, 1, 1};
+        case Cue::Blow: return {&k[kClipSnort], 1.3f, 0.55f, 1};      // a little puff, not a warning
+        case Cue::Chuckle: return {&k[kClipNicker], 1.3f, 0.9f, 0.55f};  // quick and bright
+        case Cue::Sigh: return {&k[kClipNicker], 0.8f, 0.7f, 1};       // low and slow
+        default: return {nullptr, 1, 1, 1};
     }
 }
 
@@ -140,13 +154,15 @@ const char* toString(Cue c) {
                                    "hatch",    "grow up",  "new egg",   "sick",   "ran away", "returned",
                                    "forage back", "photo", "warning", "thunder", "boo",
                                    "boop", "giggle", "rustle", "crackle", "babble",
-                                   "neigh", "nicker", "snort", "clop", "munch", "brush", "gobble", "ho ho ho"};
+                                   "neigh", "nicker", "snort", "clop", "munch", "brush", "gobble", "ho ho ho",
+                                   "blow", "chuckle", "sigh"};
     int i = static_cast<int>(c);
     return i < static_cast<int>(Cue::Count) ? kNames[i] : "?";
 }
 
 int Synth::lengthMs(Cue c) {
-    if (const HorseClip* clip = clipFor(c)) return clip->length * 1000 / kRate;
+    const ClipStyle st = clipFor(c);
+    if (st.clip) return static_cast<int>(st.clip->length * st.part) * 1000 / kRate;
     const Shape& s = kShapes[static_cast<int>(c)];
     int ms = 0;
     for (int i = 0; i < s.count; i++) ms += s.notes[i].ms + s.notes[i].gapMs;
@@ -169,10 +185,12 @@ void Synth::play(Cue c, int volume, float pitch) {
     v->cue = c;
     v->gain = kGain[volume];
     v->age = ++started_;
-    v->pitch = std::max(0.5f, std::min(2.0f, pitch));
-    if (const HorseClip* clip = clipFor(c)) {
-        v->clip = clip->data;
-        v->clipLength = clip->length;
+    const ClipStyle st = clipFor(c);
+    v->pitch = std::max(0.5f, std::min(2.0f, pitch * st.pitch));
+    if (st.clip) {
+        v->clip = st.clip->data;
+        v->clipLength = static_cast<int>(st.clip->length * st.part);
+        v->gain *= st.gain;
     }
 }
 
@@ -195,7 +213,8 @@ bool Synth::render(int16_t* out, int n) {
                 const int i0 = static_cast<int>(v.clipPos);
                 const float fr = v.clipPos - static_cast<float>(i0);
                 const float a = fromMulaw(v.clip[i0]), b = i0 + 1 < v.clipLength ? fromMulaw(v.clip[i0 + 1]) : 0.0f;
-                mix += (a + (b - a) * fr) * v.gain * 1.4f;
+                const float tail = std::min(1.0f, (static_cast<float>(v.clipLength) - v.clipPos) / 900.0f);  // no click if cut short
+                mix += (a + (b - a) * fr) * v.gain * 1.4f * tail;
                 v.clipPos += v.pitch;
                 if (v.clipPos >= static_cast<float>(v.clipLength)) v.on = false;
                 continue;

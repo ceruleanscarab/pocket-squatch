@@ -48,6 +48,9 @@ enum class Cue : uint8_t {
     Brush,       // being groomed (the horse edition)
     Gobble,      // the Thanksgiving turkey
     HoHoHo,      // Santa, from the Christmas tree
+    Blow,        // the horse edition, touched: a soft snort through the nose (booped)
+    Chuckle,     // a quick little nicker (tickled)
+    Sigh,        // a low, contented nicker (a pat on the head)
     Count
 };
 

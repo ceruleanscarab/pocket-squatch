@@ -432,6 +432,7 @@ private:
     float faceDir_ = 1;  // the horse faces right (1) or left (-1)
     Settings settings_;
     Cue cues_[8];
+    bool cueBabble_[8] = {};  // that cue was only speech babble
     int cueCount_ = 0;
     uint32_t nextKnockSound_ = 0;
     Weather weather_;

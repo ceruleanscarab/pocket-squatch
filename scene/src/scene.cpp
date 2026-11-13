@@ -2976,6 +2976,25 @@ void Scene::drawTreeDetail(Canvas& c, float x, float base, float size) {
 
 void Scene::drawHidingHead(Canvas& c) {
     if (react_ == React::Flinch) return;  // ducked out of sight
+    if (species_ == Species::Horse) {  // a shy foal's head round the trunk, looking at you
+        Rgb coat, mane, muzzle;
+        bool unicorn, golden;
+        horseColours(coat, mane, muzzle, unicorn, golden);
+        const Rgb shade = sh(mix(coat, 0x000000, 0.3f)), mshade = sh(mix(muzzle, 0x000000, 0.3f));
+        const float x = kHideX - 2, y = kHideY;
+        c.fillTriangle(x - 10, y - 12, x + 2, y - 17, x - 7, y - 34, shade);  // ears
+        c.fillTriangle(x - 2, y - 15, x + 9, y - 17, x + 3, y - 35, shade);
+        c.line(x, y, x + 18, y + 11, 22, shade);
+        c.fillCircle(x, y, 19, shade);
+        c.fillEllipse(x + 19, y + 11, 15, 11, mshade);
+        c.fillEllipse(x + 27, y + 9, 2.2f, 1.6f, sh(0x2A1A14));  // nostril
+        c.fillCircle(x - 2, y - 16, 6, sh(mix(mane, 0x000000, 0.3f)));  // forelock
+        if (unicorn) {
+            const Rgb horn = golden ? 0xF2C14E : 0xF7EEDC;
+            c.fillTriangle(x + 1, y - 18, x + 9, y - 20, x + 11, y - 46, sh(horn));
+        }
+        return;
+    }
     Rgb fur, face, mark;
     furColours(fur, face, mark);
     Rgb shadow = sh(mix(fur, 0x000000, 0.45f));  // in the tree's shade
@@ -2987,6 +3006,18 @@ void Scene::drawHidingEyes(Canvas& c) {
     if (react_ == React::Flinch) return;
     const State& s = sim_.state();
     bool closed = s.asleep || now_ < blinkUntil_;
+    if (species_ == Species::Horse) {  // one big shy eye, with lashes
+        const float ex = kHideX + 2, ey = kHideY - 3;
+        if (closed) {
+            c.line(ex - 6, ey, ex, ey + 3, 2, 0x1A120C);
+            c.line(ex, ey + 3, ex + 6, ey, 2, 0x1A120C);
+        } else {
+            c.fillEllipse(ex, ey, 6.5f, 7, 0x1E120E);
+            c.fillCircle(ex + 2 + lookX_, ey - 2.5f, 2.3f, 0xF3EED2);  // catches the light even at night
+            for (int k = 0; k < 3; k++) c.line(ex + 1 + k * 2.5f, ey - 6.5f, ex + 3 + k * 3.0f, ey - 9.5f, 1.4f, 0x1E120E);
+        }
+        return;
+    }
     for (float dx : {-4.0f, 10.0f}) {
         float ex = kHideX + dx, ey = kHideY - 4;
         if (closed) {

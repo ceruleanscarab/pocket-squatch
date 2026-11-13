@@ -290,6 +290,11 @@ private:
     // A horse's coat, mane and tail, and its markings; unicorn says whether it has a horn.
     void horseColours(Rgb& coat, Rgb& mane, Rgb& muzzle, bool& unicorn, bool& golden) const;
     void drawHorse(Canvas& c, const Look& look);
+    void drawFence(Canvas& c);
+    void drawAppleTree(Canvas& c, float x, float base);
+    void drawBarn(Canvas& c);
+    void drawHayBale(Canvas& c);
+    void drawTrough(Canvas& c);
 
     // ---- drawing
     Rgb sh(Rgb c) const;  // shade a scenery colour for the time of day

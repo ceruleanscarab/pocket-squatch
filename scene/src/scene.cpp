@@ -33,6 +33,7 @@ constexpr uint32_t kToastMs = 2600;
 constexpr Rgb kNight = 0x0A1030;
 constexpr Rgb kGrass = 0x5E9E4A, kClearing = 0x86B85A, kBackTrees = 0x2F5D50;
 constexpr Rgb kTrunk = 0x6B4A2F, kLeaves1 = 0x2E6B3F, kLeaves2 = 0x3A7F4A;
+constexpr Rgb kPaddock = 0xC4B47E;  // the horse's paddock: trampled earth and sand
 constexpr Rgb kEye = 0x1A120C;  // fur and face colours come from the DNA (furColours)
 constexpr Rgb kUiDark = 0x1B2416, kUiLight = 0xF3EBD9, kGold = 0xF2C14E;
 constexpr Rgb kTray = 0x2B2118, kButton = 0x4A3A2C;
@@ -1020,7 +1021,7 @@ void Scene::shakeTree(int i) {
         coneVy_ = 20;
         coneVz_ = 0;
         coneSince_ = now_;
-        if (canPlay()) speak("OOH! A PINECONE!");
+        if (canPlay()) speak(species_ == Species::Horse ? "OOH! AN APPLE!" : "OOH! A PINECONE!");
     } else if (canPlay() && rand01() < 0.5f) {
         speak("RUSTLE RUSTLE");
     }
@@ -1138,6 +1139,7 @@ void Scene::lightFire() {
 }
 
 bool Scene::fireLit() const {
+    if (species_ == Species::Horse) return false;  // a water trough there instead
     const float h = hourOfDay();
     return (h >= 17 && h < 23) || now_ < fireUntil_;
 }
@@ -1163,13 +1165,24 @@ Scene::Rect Scene::coneArea() const {
 
 void Scene::drawCone(Canvas& c) {
     float x = coneX_, y = coneY_ - coneZ_ - 8;
-    if (fetch_ == Fetch::Carry) {  // in its paw
+    if (fetch_ == Fetch::Carry) {  // in its paw, or a horse's mouth
         const float k = squatchScale();
         x = fetchX_ + 60 * k;
         y = squatchFoot() - 64 * k;
+        if (species_ == Species::Horse) {
+            x = fetchX_ + faceDir_ * 84 * k;
+            y = squatchFoot() - 100 * k;
+        }
     } else {
         const float lift = std::min(1.0f, coneZ_ / 200);
         c.fillEllipse(coneX_, coneY_, 11 * (1 - lift * 0.5f), 3.5f, 0x000000, 0.2f * (1 - lift * 0.6f));
+    }
+    if (species_ == Species::Horse) {  // an apple
+        c.fillCircle(x, y, 9, 0xC8323A);
+        c.fillCircle(x - 3, y - 3, 3, 0xFFFFFF, 0.45f);
+        c.line(x, y - 8, x + 1, y - 13, 2, 0x5A3A22);
+        c.fillEllipse(x + 4, y - 12, 4, 2, 0x5C8F3E);
+        return;
     }
     drawItem(c, Item::Pinecone, x, y, 0.85f);
 }
@@ -1861,15 +1874,18 @@ void Scene::drawScenery(Canvas& c) {
     drawSky(c);
     drawClouds(c);
     drawGround(c);
+    if (species_ == Species::Horse) drawFence(c);
     if (weather_.sky == Sky::Snow) drawSnowCover(c);
     else if (autumn()) drawFallenLeaves(c);
     drawCampfire(c, false);
     const float h = hourOfDay();
-    if (h >= 17 && h < 23) c.glow(kFireX, kFireY - 20, 90, 0xFFB347, 0.15f + 0.35f * dark_);  // the fire's light
-    drawStump(c);
+    if (h >= 17 && h < 23 && species_ != Species::Horse)
+        c.glow(kFireX, kFireY - 20, 90, 0xFFB347, 0.15f + 0.35f * dark_);  // the fire's light
+    if (species_ != Species::Horse) drawStump(c);
     drawTree(c, kLeftTreeX, kLeftTreeBase, 1.0f);
     drawTree(c, kRightTreeX, kRightTreeBase, 0.95f);
     drawLantern(c);
+    if (species_ == Species::Horse) drawStump(c);  // the hay bale stands in front of the barn
     if (halloween()) drawPumpkin(c, dark_ > 0.25f);
     if (weather_.sky == Sky::Fog) drawFog(c);
 }
@@ -2050,7 +2066,7 @@ void Scene::drawGround(Canvas& c) {
         c.fillTriangle(x - 18, kHorizon + 12, x + 18, kHorizon + 12, x, kHorizon + 12 - hgt, sh(kBackTrees));
     }
     c.fillRect(0, kHorizon, S, S - kHorizon, sh(kGrass));
-    c.fillEllipse(240, 372, 252, 122, sh(kClearing));
+    c.fillEllipse(240, 372, 252, 122, sh(species_ == Species::Horse ? kPaddock : kClearing));
     for (int i = 0; i < 18; i++) {  // grass tufts
         float x = static_cast<float>((i * 131 + 40) % S), y = kHorizon + 30 + static_cast<float>((i * 71) % 240);
         c.line(x - 4, y, x - 6, y - 9, 2, sh(0x4C8A3A));
@@ -2060,6 +2076,11 @@ void Scene::drawGround(Canvas& c) {
 }
 
 void Scene::drawTree(Canvas& c, float x, float base, float size) {
+    if (species_ == Species::Horse) {  // the paddock: an apple tree on the left, the barn on the right
+        if (x < 240) drawAppleTree(c, x, base);
+        else drawBarn(c);
+        return;
+    }
     if (detail_) {
         drawTreeDetail(c, x, base, size);
         return;
@@ -2077,6 +2098,10 @@ void Scene::drawTree(Canvas& c, float x, float base, float size) {
 }
 
 void Scene::drawStump(Canvas& c) {
+    if (species_ == Species::Horse) {
+        drawHayBale(c);
+        return;
+    }
     float x = kStumpX, y = kStumpY;
     if (detail_) {
         const Rgb bark = sh(kTrunk), deep = sh(mix(kTrunk, 0x000000, 0.35f));
@@ -2108,6 +2133,10 @@ void Scene::drawStump(Canvas& c) {
 }
 
 void Scene::drawCampfire(Canvas& c, bool flames) {
+    if (species_ == Species::Horse) {
+        drawTrough(c);
+        return;
+    }
     float x = kFireX, y = kFireY;
     if (!flames) {
         for (int i = 0; i < 7; i++) {
@@ -2124,10 +2153,115 @@ void Scene::drawCampfire(Canvas& c, bool flames) {
     c.fillTriangle(x - 8, y, x + 9, y, x - fl * 2, y - 26 + fl * 4, 0xFFD25E);
 }
 
+// ================================================================ the paddock (horse edition)
+
+void Scene::drawFence(Canvas& c) {
+    // A post-and-rail fence across the back of the paddock.
+    const Rgb wood = sh(0xC9A27A), dark = sh(0x8C6A48);
+    const float base = kHorizon + 34;
+    for (int r = 0; r < 2; r++) {
+        const float y = base - 22 + r * 11;
+        c.fillRect(0, y, S, 5, wood);
+        c.fillRect(0, y + 4, S, 1.5f, dark, 0.7f);
+    }
+    for (int i = 0; i < 9; i++) {
+        const float x = 10 + i * 58.0f;
+        c.fillRoundRect(x - 4, base - 30, 8, 32, 2, wood);
+        c.fillRect(x + 1, base - 30, 3, 32, dark, 0.5f);
+    }
+}
+
+void Scene::drawAppleTree(Canvas& c, float x, float base) {
+    const float sway = treeSway(x);
+    const Rgb trunk = sh(kTrunk), trunkDark = sh(mix(kTrunk, 0x000000, 0.35f));
+    c.fillEllipse(x + 24, base + 2, 60, 10, 0x000000, 0.14f);
+    c.fillRoundRect(x - 13, base - 150, 26, 150, 6, trunk);
+    c.line(x + 7, base - 146, x + 7, base - 3, 8, trunkDark, 0.7f);
+    c.line(x, base - 120, x + 34 + sway * 0.5f, base - 170, 9, trunk);  // a branch
+    // A round crown of leaves in clumps, darker underneath.
+    const float cx = x + 10 + sway, cy = base - 196;
+    const Rgb leaf = sh(0x3F8A3E), deep = sh(0x2C6A30), light = sh(0x6BB04E);
+    const float clumps[][3] = {{-40, 22, 44}, {36, 26, 42}, {0, 34, 46}, {-24, -16, 46}, {28, -14, 44}, {2, -40, 40}};
+    for (const auto& k : clumps) c.fillCircle(cx + k[0], cy + k[1] + 4, k[2], deep);
+    for (const auto& k : clumps) c.fillCircle(cx + k[0] - 3, cy + k[1] - 2, k[2] * 0.9f, leaf);
+    c.fillCircle(cx - 24, cy - 30, 22, light, 0.5f);
+    // Apples.
+    for (int i = 0; i < 9; i++) {
+        const float ax = cx + (noise01(i * 2 + 300) - 0.5f) * 120, ay = cy + (noise01(i * 2 + 301) - 0.4f) * 90;
+        c.fillCircle(ax, ay, 5.5f, sh(0xC8323A));
+        c.fillCircle(ax - 1.8f, ay - 1.8f, 1.8f, 0xFFFFFF, 0.4f);
+    }
+    if (weather_.sky == Sky::Snow)  // snow settled on the top of each clump
+        for (const auto& k : clumps)
+            if (k[1] < 0) c.fillEllipse(cx + k[0] - 3, cy + k[1] - k[2] * 0.7f, k[2] * 0.6f, k[2] * 0.22f, sh(0xEEF3F8));
+}
+
+void Scene::drawBarn(Canvas& c) {
+    // A red barn on the right, cut off by the edge of the screen.
+    const float l = 364, r = 500, top = 244, base = kRightTreeBase, peak = 186, mid = (l + r) / 2;
+    const Rgb red = sh(0xB2392E), redDark = sh(0x86281F), trim = sh(0xF4EFE6), roof = sh(0x5A4A44);
+    c.fillEllipse(mid - 10, base + 2, 90, 10, 0x000000, 0.14f);
+    c.fillRect(l, top, r - l, base - top, red);
+    for (int i = 1; i < 9; i++) c.fillRect(l, top + i * 11.0f, r - l, 1.2f, redDark, 0.6f);  // boards
+    c.fillTriangle(l, top, r, top, mid, peak + 8, red);
+    c.fillTriangle(l - 10, top + 2, mid, peak, mid, peak + 12, roof);  // the roof
+    c.fillTriangle(r + 10, top + 2, mid, peak, mid, peak + 12, roof);
+    c.line(l - 10, top + 2, mid, peak, 7, roof);
+    c.line(mid, peak, r + 10, top + 2, 7, roof);
+    c.fillRect(l, top, r - l, 3, trim);
+    // The hayloft door and the big doors with their white X braces.
+    c.fillRect(mid - 11, top - 30, 22, 24, trim);
+    c.fillRect(mid - 8, top - 27, 16, 18, sh(0x3A2A20));
+    const float dl = mid - 26, dr = mid + 26, dt = base - 62;
+    c.fillRect(dl - 3, dt - 3, dr - dl + 6, base - dt + 3, trim);
+    c.fillRect(dl, dt, dr - dl, base - dt, redDark);
+    c.line(mid, dt, mid, base, 3, trim);
+    for (float side : {-1.0f, 1.0f}) {
+        const float a = side < 0 ? dl : mid, b = side < 0 ? mid : dr;
+        c.line(a, dt, b, base, 3, trim);
+        c.line(b, dt, a, base, 3, trim);
+    }
+    if (weather_.sky == Sky::Snow) {
+        c.line(l - 10, top, mid, peak - 2, 5, sh(0xEEF3F8));
+        c.line(mid, peak - 2, r + 10, top, 5, sh(0xEEF3F8));
+    }
+}
+
+void Scene::drawHayBale(Canvas& c) {
+    const float x = kStumpX, y = kStumpY;
+    const Rgb hay = sh(0xE2C267), hayDark = sh(0xB8973F), twine = sh(0x8C5A3A);
+    c.fillEllipse(x + 10, y + 3, 42, 7, 0x000000, 0.16f);
+    c.fillRoundRect(x - 34, y - 28, 68, 32, 6, hay);
+    c.fillRect(x - 34, y - 28, 68, 8, sh(0xEFD486));  // the sunny top
+    for (int i = 0; i < 9; i++) {  // straw
+        const float sx = x - 30 + i * 7.5f;
+        c.line(sx, y - 18 + (i % 3) * 3.0f, sx + 4, y - 6 + (i % 2) * 4.0f, 1.3f, hayDark, 0.7f);
+    }
+    c.fillRect(x - 18, y - 28, 3, 32, twine);
+    c.fillRect(x + 15, y - 28, 3, 32, twine);
+    for (int i = 0; i < 5; i++)  // a few stray wisps
+        c.line(x - 34 + i * 17.0f, y + 3, x - 30 + i * 17.0f, y + 6, 1.2f, hay, 0.8f);
+}
+
+void Scene::drawTrough(Canvas& c) {
+    const float x = kFireX, y = kFireY;
+    const Rgb wood = sh(0x8C6A48), woodDark = sh(0x5E452E);
+    c.fillEllipse(x + 6, y + 10, 46, 6, 0x000000, 0.16f);
+    c.fillRect(x - 34, y, 6, 12, woodDark);  // legs
+    c.fillRect(x + 28, y, 6, 12, woodDark);
+    c.fillRoundRect(x - 38, y - 22, 76, 26, 4, wood);
+    c.fillRect(x - 38, y - 12, 76, 2, woodDark, 0.7f);
+    c.fillRoundRect(x - 33, y - 21, 66, 8, 3, sh(0x5FA8CF));  // the water
+    const float ripple = static_cast<float>(std::sin(t_ * 2)) * 6;
+    c.fillEllipse(x - 8 + ripple, y - 18, 10, 1.6f, 0xFFFFFF, 0.5f);
+}
+
 void Scene::drawLantern(Canvas& c) {
-    float x = 402, y = 238;
+    const bool horse = species_ == Species::Horse;
+    float x = horse ? 384 : 402, y = horse ? 262 : 238;  // on the barn wall, or a branch
     bool lit = sim_.state().lightsOn;
-    c.line(kRightTreeX - 14, y - 16, x, y - 16, 4, sh(kTrunk));  // a branch stub
+    if (horse) c.line(x - 8, y - 16, x, y - 16, 3, sh(0x2A2A2A));  // an iron bracket
+    else c.line(kRightTreeX - 14, y - 16, x, y - 16, 4, sh(kTrunk));  // a branch stub
     c.line(x, y - 16, x, y - 6, 2, sh(0x2A2A2A));
     if (lit) c.glow(x, y + 8, 50, 0xFFC857, 0.5f * dark_);
     c.fillRoundRect(x - 9, y - 6, 18, 26, 4, sh(0x3B2A1E));
@@ -2749,8 +2883,8 @@ void Scene::drawGroundDetail(Canvas& c) {
 
     // The clearing, with a soft edge, a sunny middle and patches of bare earth.
     for (int r = 0; r < 4; r++)
-        c.fillEllipse(240, 372, 252 + (4 - r) * 4.0f, 122 + (4 - r) * 2.0f, sh(kClearing), 0.25f);
-    c.fillEllipse(240, 372, 252, 122, sh(kClearing));
+        c.fillEllipse(240, 372, 252 + (4 - r) * 4.0f, 122 + (4 - r) * 2.0f, sh(species_ == Species::Horse ? kPaddock : kClearing), 0.25f);
+    c.fillEllipse(240, 372, 252, 122, sh(species_ == Species::Horse ? kPaddock : kClearing));
     for (int r = 0; r < 6; r++)  // a sunny middle, fading out
         c.fillEllipse(234, 356, 200 - r * 24.0f, 84 - r * 10.0f, sh(0xC4D88A), 0.09f);
     const float dirt[][4] = {{150, 398, 44, 11}, {300, 422, 36, 9}, {262, 334, 28, 6}};

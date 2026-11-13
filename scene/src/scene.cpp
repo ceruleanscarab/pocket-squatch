@@ -321,6 +321,8 @@ void Scene::setWifiStatus(WifiStatus st, const char* ssid) {
     wifiSsid_[n] = '\0';
 }
 
+void Scene::setWifiTown(const char* name) { std::snprintf(wifiTown_, sizeof wifiTown_, "%s", name ? name : ""); }
+
 int Scene::takeWifiRequest() {
     const int r = wifiRequest_;
     wifiRequest_ = 0;
@@ -4112,6 +4114,11 @@ void Scene::drawWifi(Canvas& c) {
             line(wifiSsid_, 2, ink);
             y += 6;
             line(wifiStatus_ == WifiStatus::Joined ? "CONNECTED" : "SAVED", 2, good);
+            if (wifiTown_[0]) {
+                y += 12;
+                line("TOWN:", 2, faint);
+                line(wifiTown_, 2, std::strcmp(wifiTown_, "TOWN NOT FOUND") == 0 ? bad : ink);
+            }
             break;
         case WifiStatus::SetupRunning:
             line("1. ON A PHONE, JOIN THE WI-FI", 2, ink);
@@ -4121,8 +4128,8 @@ void Scene::drawWifi(Canvas& c) {
             line("2. A PAGE OPENS. IF NOT, GO TO", 2, ink);
             line("192.168.4.1 IN THE BROWSER", 2, ink);
             y += 4;
-            line("3. PICK YOUR NETWORK AND", 2, ink);
-            line("TYPE ITS PASSWORD", 2, ink);
+            line("3. PICK YOUR NETWORK, TYPE", 2, ink);
+            line("ITS PASSWORD AND YOUR TOWN", 2, ink);
             break;
         case WifiStatus::Checking:
             line("CHECKING...", 2, ink);

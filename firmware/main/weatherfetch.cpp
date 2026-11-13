@@ -11,6 +11,7 @@
 #include "netjoin.hpp"
 #include "storage.hpp"
 #include "radio.hpp"
+#include "walltime.hpp"
 #include "sdkconfig.h"
 
 namespace weatherfetch {
@@ -27,11 +28,19 @@ char gBody[2048];
 
 #if CONFIG_SQUATCH_WEATHER
 bool fetch(squatch::Weather& out) {
-    char url[200];
+    char url[240], lat[16], lon[16];
+    storage::Location here;
+    if (storage::loadLocation(here)) {  // the town from the setup page
+        std::snprintf(lat, sizeof lat, "%.4f", here.lat);
+        std::snprintf(lon, sizeof lon, "%.4f", here.lon);
+    } else {
+        std::snprintf(lat, sizeof lat, "%s", CONFIG_SQUATCH_WEATHER_LAT);
+        std::snprintf(lon, sizeof lon, "%s", CONFIG_SQUATCH_WEATHER_LON);
+    }
     std::snprintf(url, sizeof url,
                   "https://api.open-meteo.com/v1/forecast?latitude=%s&longitude=%s"
-                  "&current=temperature_2m,weather_code,wind_speed_10m",
-                  CONFIG_SQUATCH_WEATHER_LAT, CONFIG_SQUATCH_WEATHER_LON);
+                  "&current=temperature_2m,weather_code,wind_speed_10m&timezone=auto",
+                  lat, lon);
     esp_http_client_config_t cfg{};
     cfg.url = url;
     cfg.crt_bundle_attach = esp_crt_bundle_attach;
@@ -68,6 +77,14 @@ void weatherTask(void*) {
         if (ok) {
             gLatest = w;
             gReady = true;
+            // A town in a time zone the board has no rules for: keep its clock to the
+            // offset the weather reports, which follows its daylight saving within the hour.
+            storage::Location here;
+            if (storage::loadLocation(here) && !here.zone[0] && w.utcOffsetSecs != squatch::Weather::kNoOffset) {
+                char tz[16];
+                squatch::fixedZone(w.utcOffsetSecs, tz, sizeof tz);
+                walltime::setZone(tz);
+            }
             ESP_LOGI(TAG, "%s, %.1f C, wind %.0f km/h", squatch::toString(w.sky), w.tempC, w.windKmh);
         }
         vTaskDelay(pdMS_TO_TICKS((ok ? kEveryMin : 15) * 60 * 1000));  // a failure tries again sooner
@@ -82,8 +99,9 @@ void start() {
     static bool started = false;  // once: it runs for good, and picks up a newly saved network itself
     if (started) return;
     char ssid[33], pass[65];
-    if (!storage::wifiCredentials(ssid, sizeof ssid, pass, sizeof pass) || !CONFIG_SQUATCH_WEATHER_LAT[0] ||
-        !CONFIG_SQUATCH_WEATHER_LON[0]) {
+    storage::Location here;
+    const bool somewhere = storage::loadLocation(here) || (CONFIG_SQUATCH_WEATHER_LAT[0] && CONFIG_SQUATCH_WEATHER_LON[0]);
+    if (!storage::wifiCredentials(ssid, sizeof ssid, pass, sizeof pass) || !somewhere) {
         ESP_LOGI(TAG, "no location or Wi-Fi set yet: no weather");
         return;
     }

@@ -18,6 +18,8 @@ const char* kKey = "pet";
 const char* kSettingsKey = "settings";
 const char* kWifiSsidKey = "wifi_ssid";
 const char* kWifiPassKey = "wifi_pass";
+const char* kLocationKey = "location";
+constexpr uint8_t kLocationVersion = 1;
 constexpr uint8_t kSettingsVersion = 2;  // 1 had no volume
 }  // namespace
 
@@ -92,6 +94,29 @@ void saveWifi(const char* ssid, const char* password) {
     if (nvs_set_str(h, kWifiSsidKey, ssid) != ESP_OK || nvs_set_str(h, kWifiPassKey, password) != ESP_OK ||
         nvs_commit(h) != ESP_OK)
         ESP_LOGW(TAG, "Wi-Fi not saved");
+    nvs_close(h);
+}
+
+bool loadLocation(Location& out) {
+    nvs_handle_t h;
+    if (nvs_open(kNamespace, NVS_READONLY, &h) != ESP_OK) return false;
+    uint8_t b[1 + sizeof(Location)] = {};
+    size_t len = sizeof b;
+    const esp_err_t err = nvs_get_blob(h, kLocationKey, b, &len);
+    nvs_close(h);
+    if (err != ESP_OK || len != sizeof b || b[0] != kLocationVersion) return false;
+    std::memcpy(&out, b + 1, sizeof out);
+    out.zone[sizeof out.zone - 1] = out.name[sizeof out.name - 1] = '\0';
+    return true;
+}
+
+void saveLocation(const Location& l) {
+    uint8_t b[1 + sizeof(Location)];
+    b[0] = kLocationVersion;
+    std::memcpy(b + 1, &l, sizeof l);
+    nvs_handle_t h;
+    if (nvs_open(kNamespace, NVS_READWRITE, &h) != ESP_OK) return;
+    if (nvs_set_blob(h, kLocationKey, b, sizeof b) != ESP_OK || nvs_commit(h) != ESP_OK) ESP_LOGW(TAG, "town not saved");
     nvs_close(h);
 }
 

@@ -24,6 +24,9 @@ void syncFromNetwork(const char* ssid, const char* password);
 // Sets the system clock without touching the RTC, for when no real time is available.
 void assume(int64_t epoch);
 
+// A new time zone (a POSIX TZ string), e.g. once the town is known.
+void setZone(const char* posixTz);
+
 // Seconds east of UTC right now, daylight saving included.
 int32_t tzOffset();
 

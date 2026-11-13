@@ -5,6 +5,8 @@
 #include <cstdio>
 #include <cstring>
 
+#include "esp_crt_bundle.h"
+#include "esp_http_client.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "esp_netif.h"
@@ -14,7 +16,9 @@
 #include "lwip/sockets.h"
 #include "netjoin.hpp"
 #include "radio.hpp"
+#include "squatch/weather.hpp"
 #include "storage.hpp"
+#include "walltime.hpp"
 
 namespace wifisetup {
 
@@ -28,6 +32,7 @@ std::atomic<State> gState{State::Idle};
 std::atomic<bool> gCancel{false}, gGotIt{false};
 char gHotspot[32];
 char gSsid[33], gPass[65];
+char gTown[64], gTownFound[40];
 char gNetworks[kMaxNetworks][33];
 int gNetworkCount = 0;
 TaskHandle_t gDnsTask = nullptr;
@@ -82,7 +87,10 @@ esp_err_t pageGet(httpd_req_t* req) {
                  "autocapitalize=off autocorrect=off><label>Password</label>"
                  "<input name=pass type=password id=p autocapitalize=off autocorrect=off>"
                  "<small><input type=checkbox style='width:auto' onclick=\"p.type=this.checked?'text':'password'\"> "
-                 "show the password</small><button>Save</button></form></body></html>",
+                 "show the password</small>"
+                 "<label>Your town</label><input name=town placeholder='e.g. Colorado Springs' autocorrect=off>"
+                 "<small>For the weather and the clock. Leave it empty to keep what's set.</small>"
+                 "<button>Save</button></form></body></html>",
                  sizeof html - std::strlen(html) - 1);
     httpd_resp_set_type(req, "text/html");
     return httpd_resp_send(req, html, HTTPD_RESP_USE_STRLEN);
@@ -109,7 +117,10 @@ esp_err_t saveposted(httpd_req_t* req) {
     const int len = httpd_req_recv(req, body, std::min<size_t>(req->content_len, sizeof body - 1));
     if (len <= 0) return httpd_resp_send_500(req);
     body[len] = '\0';
-    char ssid[64] = {}, other[64] = {}, pass[128] = {};
+    char ssid[64] = {}, other[64] = {}, pass[128] = {}, town[96] = {};
+    httpd_query_key_value(body, "town", town, sizeof town);
+    urlDecode(town);
+    std::snprintf(gTown, sizeof gTown, "%s", town);
     httpd_query_key_value(body, "ssid", ssid, sizeof ssid);
     httpd_query_key_value(body, "other", other, sizeof other);
     httpd_query_key_value(body, "pass", pass, sizeof pass);
@@ -175,6 +186,53 @@ void dnsTask(void*) {
     }
     gDnsTask = nullptr;
     vTaskDelete(nullptr);
+}
+
+// ---- the town: looked up while joined, saved with its time zone
+
+void findTown() {
+    char q[200] = {}, url[300];
+    size_t n = 0;
+    for (const char* p = gTown; *p && n + 4 < sizeof q; p++) {  // URL-encode it
+        const unsigned char ch = static_cast<unsigned char>(*p);
+        if ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '-' || ch == '.') {
+            q[n++] = static_cast<char>(ch);
+        } else {
+            n += static_cast<size_t>(std::snprintf(q + n, sizeof q - n, "%%%02X", ch));
+        }
+    }
+    std::snprintf(url, sizeof url, "https://geocoding-api.open-meteo.com/v1/search?name=%s&count=1&language=en&format=json", q);
+    static char body[2048];
+    body[0] = '\0';
+    esp_http_client_config_t cfg{};
+    cfg.url = url;
+    cfg.crt_bundle_attach = esp_crt_bundle_attach;
+    cfg.timeout_ms = 10000;
+    esp_http_client_handle_t client = esp_http_client_init(&cfg);
+    if (client && esp_http_client_open(client, 0) == ESP_OK) {
+        esp_http_client_fetch_headers(client);
+        int got, len = 0;
+        while (len < static_cast<int>(sizeof body) - 1 && (got = esp_http_client_read(client, body + len, sizeof body - 1 - len)) > 0)
+            len += got;
+        body[len] = '\0';
+    }
+    if (client) esp_http_client_cleanup(client);
+    squatch::Place place;
+    if (!squatch::parseGeocode(body, place)) {
+        std::snprintf(gTownFound, sizeof gTownFound, "TOWN NOT FOUND");
+        ESP_LOGW(TAG, "no town called \"%s\"", gTown);
+        return;
+    }
+    storage::Location here;
+    here.lat = place.lat;
+    here.lon = place.lon;
+    const char* posix = squatch::posixZone(place.zone);
+    std::snprintf(here.zone, sizeof here.zone, "%s", posix ? posix : "");  // empty: the weather's offset decides
+    std::snprintf(here.name, sizeof here.name, "%s", place.name);
+    storage::saveLocation(here);
+    if (posix) walltime::setZone(posix);
+    std::snprintf(gTownFound, sizeof gTownFound, "%s", place.name);
+    ESP_LOGI(TAG, "town: %s (%.3f, %.3f), %s", place.name, place.lat, place.lon, place.zone);
 }
 
 // ---- the whole visit
@@ -246,6 +304,7 @@ void setupTask(void*) {
         storage::saveWifi(gSsid, gPass);
         gState = State::Checking;
         const bool ok = netjoin::join(gSsid, gPass);
+        if (ok && gTown[0]) findTown();  // while it's on the network
         netjoin::leave();
         gState = ok ? State::Joined : State::Failed;
         ESP_LOGI(TAG, "\"%s\": %s", gSsid, ok ? "joined" : "couldn't join");
@@ -262,6 +321,7 @@ void start(const char* hotspotName) {
     if (gState == State::Running || gState == State::Checking) return;
     std::snprintf(gHotspot, sizeof gHotspot, "%s", hotspotName);
     gCancel = gGotIt = false;
+    gTown[0] = gTownFound[0] = '\0';
     gState = State::Running;
     if (xTaskCreatePinnedToCore(setupTask, "wifisetup", 6144, nullptr, 3, nullptr, 0) != pdPASS) gState = State::Idle;
 }
@@ -271,5 +331,7 @@ void cancel() { gCancel = true; }
 State state() { return gState; }
 
 void network(char* out, size_t n) { std::snprintf(out, n, "%s", gSsid); }
+
+void town(char* out, size_t n) { std::snprintf(out, n, "%s", gTownFound); }
 
 }  // namespace wifisetup

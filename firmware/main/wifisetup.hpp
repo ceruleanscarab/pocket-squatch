@@ -2,6 +2,8 @@
 // gets a page (the "sign in to network" page pops up by itself, like hotel Wi-Fi) listing
 // the networks the board can hear. Pick one, type its password, and the board saves it,
 // takes its hotspot down and tries joining, so the page on the board can say if it worked.
+// An optional town is looked up while it's joined (Open-Meteo's geocoding): the weather's
+// location and the clock's time zone come from it.
 #pragma once
 
 #include <cstddef>
@@ -17,5 +19,8 @@ void cancel();
 State state();
 // The network last saved here (or being checked).
 void network(char* out, size_t n);
+// The town found from the page's "Your town" box, in capitals ("" if none was asked for,
+// "TOWN NOT FOUND" if the lookup found nothing).
+void town(char* out, size_t n);
 
 }  // namespace wifisetup

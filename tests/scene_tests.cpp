@@ -1,6 +1,7 @@
 // Scene and gesture tests: drive the clearing with touch events, no window needed.
 #include <algorithm>
 #include <cstdlib>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -1352,6 +1353,33 @@ static void testWifiPage() {
     CHECK(d.scene.overlay() == Scene::Overlay::Settings);
 }
 
+static void testTownLookup() {
+    std::printf("your town: the geocoding reply, time zone rules, and the weather's offset\n");
+    const char* reply =
+        "{\"results\":[{\"id\":5417598,\"name\":\"Colorado Springs\",\"latitude\":38.83388,\"longitude\":-104.82136,"
+        "\"elevation\":1839.0,\"feature_code\":\"PPLA2\",\"country_code\":\"US\",\"admin1_id\":5417618,"
+        "\"timezone\":\"America/Denver\",\"population\":456568,\"postcodes\":[\"80901\",\"80902\"],"
+        "\"country_id\":6252001,\"country\":\"United States\",\"admin1\":\"Colorado\",\"admin2\":\"El Paso\"}],"
+        "\"generationtime_ms\":0.6}";
+    Place p;
+    CHECK(parseGeocode(reply, p));
+    CHECK(std::strcmp(p.name, "COLORADO SPRINGS, COLORADO") == 0);
+    CHECK(std::fabs(p.lat - 38.83388f) < 0.001f && std::fabs(p.lon + 104.82136f) < 0.001f);
+    CHECK(std::strcmp(p.zone, "America/Denver") == 0);
+    CHECK(std::strcmp(posixZone(p.zone), "MST7MDT,M3.2.0,M11.1.0") == 0);
+    CHECK(!parseGeocode("{\"generationtime_ms\":0.3}", p));  // nothing found
+    CHECK(posixZone("Asia/Kathmandu") == nullptr);           // not in the list: the weather's offset instead
+    char tz[16];
+    fixedZone(20700, tz, sizeof tz);
+    CHECK(std::strcmp(tz, "UTC-5:45") == 0);
+    fixedZone(-25200, tz, sizeof tz);
+    CHECK(std::strcmp(tz, "UTC7") == 0);
+    Weather w;
+    CHECK(parseOpenMeteo("{\"utc_offset_seconds\":-25200,\"current\":{\"temperature_2m\":5.1,\"weather_code\":3}}", w));
+    CHECK(w.utcOffsetSecs == -25200);
+    CHECK(parseOpenMeteo("{\"current\":{\"weather_code\":0}}", w) && w.utcOffsetSecs == Weather::kNoOffset);
+}
+
 int main() {
     testTap();
     testLongPressThenDrag();
@@ -1389,6 +1417,7 @@ int main() {
     testFoalBirth();
     testHorseGames();
     testWifiPage();
+    testTownLookup();
 
     std::printf("\n%d checks, %d failed\n", gChecks, gFailures);
     return gFailures ? 1 : 0;

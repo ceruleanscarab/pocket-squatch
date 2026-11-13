@@ -19,6 +19,16 @@ void saveSettings(const squatch::Scene::Settings& s);
 bool loadWifi(char* ssid, size_t ssidLen, char* password, size_t passwordLen);
 void saveWifi(const char* ssid, const char* password);
 
+// The town chosen on the setup page: where the weather is for, and its time zone. zone is
+// a POSIX TZ string, or empty when the board follows the weather's UTC offset instead.
+struct Location {
+    float lat = 0, lon = 0;
+    char zone[48] = {};
+    char name[40] = {};
+};
+bool loadLocation(Location& out);
+void saveLocation(const Location& l);
+
 // The network to use: the one saved on the board, or else menuconfig's. False if neither.
 bool wifiCredentials(char* ssid, size_t ssidLen, char* password, size_t passwordLen);
 

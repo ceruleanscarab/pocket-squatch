@@ -129,6 +129,12 @@ void init(i2c_master_bus_handle_t bus, const char* posixTz) {
 
 bool known() { return time(nullptr) >= kEarliest; }
 
+void setZone(const char* posixTz) {
+    if (!posixTz || !posixTz[0]) return;
+    setenv("TZ", posixTz, 1);
+    tzset();
+}
+
 void syncFromNetwork(const char* ssid, const char* password) {
     if (!ssid || !ssid[0]) return;
     std::strncpy(gSsid, ssid, sizeof gSsid - 1);

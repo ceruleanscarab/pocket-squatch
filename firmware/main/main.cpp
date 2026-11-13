@@ -300,6 +300,10 @@ void gameLoop(void*) {
                 case wifisetup::State::Failed: gScene.setWifiStatus(Scene::WifiStatus::Failed, net); break;
                 case wifisetup::State::Joined: {
                     gScene.setWifiStatus(Scene::WifiStatus::Joined, net);
+                    char town[40];
+                    wifisetup::town(town, sizeof town);
+                    if (town[0]) gScene.setWifiTown(town);
+                    gSim.mutableState().tzOffset = walltime::tzOffset();  // a new town may be a new zone
                     char ssid[33], pass[65];
                     if (storage::wifiCredentials(ssid, sizeof ssid, pass, sizeof pass)) walltime::syncFromNetwork(ssid, pass);
                     weatherfetch::start();  // if it wasn't running for want of a network
@@ -384,13 +388,16 @@ extern "C" void app_main(void) {
     if (gHavePower) power::keyInit();
     audio::init(board_i2c(), kAudioRail && gHavePower);
     radio::begin();
-    walltime::init(board_i2c(), CONFIG_SQUATCH_TZ);
+    storage::Location here;
+    const bool haveTown = storage::loadLocation(here);
+    walltime::init(board_i2c(), haveTown && here.zone[0] ? here.zone : CONFIG_SQUATCH_TZ);
     {
         char ssid[33], pass[65];
         const bool have = storage::wifiCredentials(ssid, sizeof ssid, pass, sizeof pass);
         if (have) walltime::syncFromNetwork(ssid, pass);
         gScene.setWifiAvailable(kHotspotName);
         gScene.setWifiStatus(have ? Scene::WifiStatus::Saved : Scene::WifiStatus::NotSet, ssid);
+        if (haveTown) gScene.setWifiTown(here.name);
     }
     weatherfetch::start();
 

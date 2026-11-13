@@ -196,6 +196,7 @@ public:
     enum class WifiStatus : uint8_t { NotSet, Saved, Joined, SetupRunning, Checking, Failed };
     void setWifiAvailable(const char* hotspotName);  // the board can do it; its setup hotspot's name
     void setWifiStatus(WifiStatus st, const char* ssid);
+    void setWifiTown(const char* name);  // shown under the network: where the weather and clock are for
     // 1: start the setup hotspot, 2: stop it; 0 nothing. Once per press.
     int takeWifiRequest();
     Rect wifiButtonArea() const;  // on the settings page
@@ -477,7 +478,7 @@ private:
     uint32_t drinkAt_ = 0, nextSlurp_ = 0, barnPeekUntil_ = 0;
     bool wifiAvailable_ = false;
     WifiStatus wifiStatus_ = WifiStatus::NotSet;
-    char wifiSsid_[33] = {}, wifiHotspot_[24] = {};
+    char wifiSsid_[33] = {}, wifiHotspot_[24] = {}, wifiTown_[40] = {};
     int wifiRequest_ = 0;
     void drawWifi(Canvas& c);
     // Fence Jump: the next fence's x, when the current jump began (0: on the ground), and

@@ -314,6 +314,7 @@ private:
     // A horse's coat, mane and tail, and its markings; unicorn says whether it has a horn.
     void horseColours(Rgb& coat, Rgb& mane, Rgb& muzzle, bool& unicorn, bool& golden) const;
     void drawHorse(Canvas& c, const Look& look, bool mother = false);
+    void drawHidingHorse(Canvas& c);
     void drawMare(Canvas& c);
     bool newborn() const;
     bool drinking() const;

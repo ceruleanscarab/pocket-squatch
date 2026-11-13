@@ -20,6 +20,7 @@ constexpr float kStumpX = 388, kStumpY = 362;
 constexpr float kFireX = 96, kFireY = 392;
 constexpr float kPumpkinX = 448, kPumpkinY = 392;
 constexpr float kHideX = 74, kHideY = 290;   // peeking out from behind the left tree
+constexpr float kHideHorseX = 40;             // the hiding foal's middle, just behind the apple tree's trunk
 constexpr float kEggX = 240, kEggY = 288;
 constexpr float kFriendlyFoot = 345, kWanderFoot = 302;
 constexpr float kMessSpots[3][2] = {{168, 350}, {312, 352}, {132, 326}};
@@ -1927,7 +1928,10 @@ Scene::Rect Scene::squatchArea() const {
     Stage st = sim_.state().stage;
     if (st == Stage::Away || sim_.state().foraging || sim_.state().boarding) return {0, 0, 0, 0};
     if (st == Stage::Egg) return species_ == Species::Horse ? Rect{150, 196, 200, 150} : Rect{184, 222, 112, 128};
-    if (hiding()) return {static_cast<int>(kHideX) - 40, static_cast<int>(kHideY) - 40, 80, 80};
+    if (hiding()) {
+        if (species_ == Species::Horse) return {10, 200, 150, 150};  // all of it, trunk and all
+        return {static_cast<int>(kHideX) - 40, static_cast<int>(kHideY) - 40, 80, 80};
+    }
     float k = squatchScale(), hr = headRatio(st);
     int h = std::max(72, static_cast<int>((190 + (hr - 1) * 40) * k));
     int w = std::max(72, static_cast<int>(132 * k));
@@ -3510,8 +3514,8 @@ void Scene::drawTreeDetail(Canvas& c, float x, float base, float size) {
 
 void Scene::drawHidingHead(Canvas& c) {
     if (react_ == React::Flinch) return;  // ducked out of sight
-    if (species_ == Species::Horse) {  // a shy foal's head round the trunk, looking at you
-        drawHorsePeek(c, kHideX - 2, kHideY, true);
+    if (species_ == Species::Horse) {  // a shy foal standing behind the trunk, looking out at you
+        drawHidingHorse(c);
         return;
     }
     Rgb fur, face, mark;
@@ -3519,6 +3523,30 @@ void Scene::drawHidingHead(Canvas& c) {
     Rgb shadow = sh(mix(fur, 0x000000, 0.45f));  // in the tree's shade
     c.fillCircle(kHideX, kHideY, 24, shadow);
     c.fillEllipse(kHideX, kHideY - 22, 10, 7, shadow);
+}
+
+// The whole foal, half hidden: it stands just behind the apple tree (which is drawn over it),
+// rump out one side and head out the other, in the tree's shade.
+void Scene::drawHidingHorse(Canvas& c) {
+    const State& s = sim_.state();
+    Look L{};
+    L.x = kHideHorseX + (squatchScale() - 0.55f) * 60;  // bigger ones stand further over, rump still on screen
+    L.foot = L.ground = kLeftTreeBase - 8;  // a step behind the trunk
+    L.s = squatchScale();
+    L.head = headRatio(s.stage);
+    L.wide = sim_.traits().build;
+    L.blink = (s.asleep || now_ < blinkUntil_) ? 1.0f : 0.0f;
+    L.lookX = 0.5f + lookX_ * 0.5f;  // peering out toward you
+    L.lookY = lookY_;
+    L.breath = 1 + 0.018f * static_cast<float>(std::sin(t_ * (s.asleep ? 1.6 : 2.6)));
+    L.mouth = 0;
+    const float saved = faceDir_;
+    faceDir_ = 1;  // head out on the open side
+    const float base = s.lightsOn ? 0.0f : 0.5f;
+    c.setShade(0x02040C, base + (1 - base) * 0.25f);  // in the tree's shade
+    drawHorse(c, L);
+    c.setShade(0x02040C, base);
+    faceDir_ = saved;
 }
 
 // A horse's head looking round something, at (x, y). Shaded: in the tree's shadow, with its
@@ -3552,18 +3580,7 @@ void Scene::drawHidingEyes(Canvas& c) {
     if (react_ == React::Flinch) return;
     const State& s = sim_.state();
     bool closed = s.asleep || now_ < blinkUntil_;
-    if (species_ == Species::Horse) {  // one big shy eye, with lashes
-        const float ex = kHideX + 2, ey = kHideY - 3;
-        if (closed) {
-            c.line(ex - 6, ey, ex, ey + 3, 2, 0x1A120C);
-            c.line(ex, ey + 3, ex + 6, ey, 2, 0x1A120C);
-        } else {
-            c.fillEllipse(ex, ey, 6.5f, 7, 0x1E120E);
-            c.fillCircle(ex + 2 + lookX_, ey - 2.5f, 2.3f, 0xF3EED2);  // catches the light even at night
-            for (int k = 0; k < 3; k++) c.line(ex + 1 + k * 2.5f, ey - 6.5f, ex + 3 + k * 3.0f, ey - 9.5f, 1.4f, 0x1E120E);
-        }
-        return;
-    }
+    if (species_ == Species::Horse) return;  // the hiding foal is drawn whole, eyes and all
     for (float dx : {-4.0f, 10.0f}) {
         float ex = kHideX + dx, ey = kHideY - 4;
         if (closed) {

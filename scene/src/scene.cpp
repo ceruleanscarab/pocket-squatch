@@ -2590,6 +2590,16 @@ void Scene::drawPet(Canvas& c) {
     }
     if (sim_.trustLevel() == TrustLevel::Wandering && !s.asleep && std::fabs(wanderTarget_ - wanderX_) > 1)
         L.gait = t * 8;
+    if (species_ == Species::Horse && overlay_ == Overlay::Game && petOverride_ &&
+        (game_ == Game::Jump || (game_ == Game::Photo && running_))) {  // galloping
+        faceDir_ = game_ == Game::Photo && !runRight_ ? -1.0f : 1.0f;
+        L.gait = t * 16;
+        L.foot -= jumpHeight() * L.s;
+        L.ground = squatchFoot();
+        L.mouth = 1;
+        drawHorse(c, L);
+        return;
+    }
     if (species_ == Species::Horse && drinking()) {
         const float since = static_cast<float>(now_ - drinkAt_) / 1000.0f;
         const bool there = since >= 1.4f && since < 3.8f;
@@ -3185,22 +3195,7 @@ void Scene::drawTreeDetail(Canvas& c, float x, float base, float size) {
 void Scene::drawHidingHead(Canvas& c) {
     if (react_ == React::Flinch) return;  // ducked out of sight
     if (species_ == Species::Horse) {  // a shy foal's head round the trunk, looking at you
-        Rgb coat, mane, muzzle;
-        bool unicorn, golden;
-        horseColours(coat, mane, muzzle, unicorn, golden);
-        const Rgb shade = sh(mix(coat, 0x000000, 0.3f)), mshade = sh(mix(muzzle, 0x000000, 0.3f));
-        const float x = kHideX - 2, y = kHideY;
-        c.fillTriangle(x - 10, y - 12, x + 2, y - 17, x - 7, y - 34, shade);  // ears
-        c.fillTriangle(x - 2, y - 15, x + 9, y - 17, x + 3, y - 35, shade);
-        c.line(x, y, x + 18, y + 11, 22, shade);
-        c.fillCircle(x, y, 19, shade);
-        c.fillEllipse(x + 19, y + 11, 15, 11, mshade);
-        c.fillEllipse(x + 27, y + 9, 2.2f, 1.6f, sh(0x2A1A14));  // nostril
-        c.fillCircle(x - 2, y - 16, 6, sh(mix(mane, 0x000000, 0.3f)));  // forelock
-        if (unicorn) {
-            const Rgb horn = golden ? 0xF2C14E : 0xF7EEDC;
-            c.fillTriangle(x + 1, y - 18, x + 9, y - 20, x + 11, y - 46, sh(horn));
-        }
+        drawHorsePeek(c, kHideX - 2, kHideY, true);
         return;
     }
     Rgb fur, face, mark;
@@ -3208,6 +3203,33 @@ void Scene::drawHidingHead(Canvas& c) {
     Rgb shadow = sh(mix(fur, 0x000000, 0.45f));  // in the tree's shade
     c.fillCircle(kHideX, kHideY, 24, shadow);
     c.fillEllipse(kHideX, kHideY - 22, 10, 7, shadow);
+}
+
+// A horse's head looking round something, at (x, y). Shaded: in the tree's shadow, with its
+// eye drawn separately (drawHidingEyes); otherwise with the eye, for the Hide and Seek reveal.
+void Scene::drawHorsePeek(Canvas& c, float x, float y, bool shaded) {
+    Rgb coat, mane, muzzle;
+    bool unicorn, golden;
+    horseColours(coat, mane, muzzle, unicorn, golden);
+    const float dim = shaded ? 0.3f : 0.0f;
+    const Rgb shade = sh(mix(coat, 0x000000, dim)), mshade = sh(mix(muzzle, 0x000000, dim));
+    c.fillTriangle(x - 10, y - 12, x + 2, y - 17, x - 7, y - 34, shade);  // ears
+    c.fillTriangle(x - 2, y - 15, x + 9, y - 17, x + 3, y - 35, shade);
+    c.line(x, y, x + 18, y + 11, 22, shade);
+    c.fillCircle(x, y, 19, shade);
+    c.fillEllipse(x + 19, y + 11, 15, 11, mshade);
+    c.fillEllipse(x + 27, y + 9, 2.2f, 1.6f, sh(0x2A1A14));  // nostril
+    c.fillCircle(x - 2, y - 16, 6, sh(mix(mane, 0x000000, dim)));  // forelock
+    if (unicorn) {
+        const Rgb horn = golden ? 0xF2C14E : 0xF7EEDC;
+        c.fillTriangle(x + 1, y - 18, x + 9, y - 20, x + 11, y - 46, sh(horn));
+    }
+    if (!shaded) {  // found: a happy eye, lashes and all
+        const float ex = x + 4, ey = y - 3;
+        c.fillEllipse(ex, ey, 6.5f, 7, 0x1E120E);
+        c.fillCircle(ex + 2, ey - 2.5f, 2.3f, 0xF3EED2);
+        for (int k = 0; k < 3; k++) c.line(ex + 1 + k * 2.5f, ey - 6.5f, ex + 3 + k * 3.0f, ey - 9.5f, 1.4f, 0x1E120E);
+    }
 }
 
 void Scene::drawHidingEyes(Canvas& c) {
@@ -3497,10 +3519,24 @@ constexpr const char* kGameNames[Scene::kGameChoices] = {"HIDE AND SEEK", "BERRY
 constexpr const char* kGameHints[Scene::kGameChoices] = {"FIND WHERE IT HID: THREE GUESSES", "CATCH 10 FALLING BERRIES",
                                                          "SNAP IT AS IT RUNS PAST", "NO RUSHING: A GAME OF CATCH"};
 constexpr uint32_t kBerryRoundMs = 25000, kBerryEveryMs = 900, kRunMs = 2000;
+// Fence Jump: the horse gallops on the spot at x 150 while fences come in from the right.
+// A fence that reaches the waiting line stops there until you tap, so no timing is needed;
+// a jump started while it's still coming, close enough, is a perfect one (a star).
+constexpr int kFences = 8;
+constexpr float kJumpHorseX = 150, kFenceWait = kJumpHorseX + 120, kFenceSpeed = 230, kJumpMs = 800;
+constexpr float kPerfectFrom = kJumpHorseX + 125, kPerfectTo = kJumpHorseX + 210;
+// The horse edition's picker: which game each row starts.
+constexpr const char* kHorseGameNames[5] = {"HIDE AND SEEK", "APPLE CATCH", "FENCE JUMP", "BLURRY PHOTO", "QUICK CATCH"};
+constexpr const char* kHorseGameHints[5] = {"FIND WHERE IT HID: THREE GUESSES", "CATCH 10 FALLING APPLES",
+                                            "TAP TO JUMP. IT WAITS FOR YOU", "SNAP IT AS IT GALLOPS PAST",
+                                            "NO RUSHING: A GAME OF CATCH"};
 constexpr float kBasketY = 420, kFrameX0 = 130, kFrameX1 = 350;
 }  // namespace
 
-Scene::Rect Scene::gameChoiceArea(int i) const { return {56, 112 + i * 74, 368, 68}; }
+Scene::Rect Scene::gameChoiceArea(int i) const {
+    if (species_ == Species::Horse) return {56, 100 + i * 64, 368, 64};  // five rows
+    return {56, 112 + i * 74, 368, 68};
+}
 Scene::Rect Scene::gameQuitArea() const { return {S - 112, 0, 112, 64}; }
 Scene::Rect Scene::seekSpotArea(int i) const {
     return {static_cast<int>(kSeekSpotXY[i][0]) - 36, static_cast<int>(kSeekSpotXY[i][1]) - 36, 72, 72};
@@ -3555,8 +3591,22 @@ void Scene::startGame(Game g) {
             petOverride_ = true;
             gameX_ = -100;
             break;
+        case Game::Jump:
+            petOverride_ = true;
+            gameX_ = kJumpHorseX;
+            fenceX_ = S + 80;
+            jumpAt_ = 0;
+            stars_ = 0;
+            running_ = true;
+            break;
         default: break;
     }
+}
+
+float Scene::jumpHeight() const {
+    if (game_ != Game::Jump || !jumpAt_) return 0;
+    const float p = static_cast<float>(now_ - jumpAt_) / kJumpMs;
+    return p >= 1 ? 0 : 92 * std::sin(p * kPi);
 }
 
 void Scene::finishGame(bool won, const char* msg) {
@@ -3579,10 +3629,14 @@ void Scene::endGame(bool reward) {
 
 void Scene::gameTap(int x, int y) {
     if (game_ == Game::Pick) {
-        for (int i = 0; i < kGameChoices; i++) {
+        for (int i = 0; i < gameChoiceCount(); i++) {
             if (!gameChoiceArea(i).contains(x, y)) continue;
             cue(Cue::Tick);
-            if (i == 3) {  // quick catch: the old, relaxed game
+            if (species_ == Species::Horse && i < 4) {  // its own order, with Fence Jump in it
+                startGame(i == 0 ? Game::Seek : i == 1 ? Game::Berry : i == 2 ? Game::Jump : Game::Photo);
+                return;
+            }
+            if (i == gameChoiceCount() - 1) {  // quick catch: the old, relaxed game
                 overlay_ = Overlay::None;
                 game_ = Game::None;
                 doPlay();
@@ -3619,6 +3673,14 @@ void Scene::gameTap(int x, int y) {
                 else std::snprintf(gameMsg_, sizeof gameMsg_, "NOT THERE...");
             }
             return;
+        }
+    } else if (game_ == Game::Jump) {  // a tap anywhere jumps (once it's on the ground)
+        if (!jumpAt_) {
+            jumpAt_ = now_ ? now_ : 1;
+            perfect_ = fenceX_ >= kPerfectFrom && fenceX_ <= kPerfectTo && running_;
+            running_ = true;  // a waiting fence comes on again
+            gameMsg_[0] = '\0';
+            cue(Cue::Neigh);
         }
     } else if (game_ == Game::Photo && snapArea().contains(x, y) && running_ && !snapped_) {
         snapped_ = true;
@@ -3672,6 +3734,44 @@ void Scene::updateGame() {
             }
             break;
         }
+        case Game::Jump: {
+            const float dt = 0.016f;
+            if (jumpAt_ && now_ - jumpAt_ >= kJumpMs) jumpAt_ = 0;  // landed
+            if (running_) fenceX_ -= kFenceSpeed * dt;
+            // A fence that gets to the line waits there for a tap, unless it's mid-jump.
+            if (!jumpAt_ && fenceX_ <= kFenceWait && fenceX_ > kJumpHorseX) {
+                fenceX_ = kFenceWait;
+                running_ = false;
+            }
+            if (fenceX_ < kJumpHorseX - 10 && fenceX_ > kJumpHorseX - 30 && !jumpAt_) {
+                fenceX_ = kFenceWait;  // somehow on the ground as it got here: back to the line
+                running_ = false;
+            }
+            if (fenceX_ < -60) {  // cleared one
+                score_++;
+                if (perfect_) {
+                    stars_++;
+                    std::snprintf(gameMsg_, sizeof gameMsg_, "PERFECT JUMP!");
+                    spawn(ParticleKind::Sparkle, kJumpHorseX, kFriendlyFoot - 120, 0, -40, 900);
+                } else {
+                    std::snprintf(gameMsg_, sizeof gameMsg_, "OVER IT!");
+                }
+                cue(Cue::Pickup);
+                perfect_ = false;
+                if (score_ >= kFences) {
+                    char msg[32];
+                    std::snprintf(msg, sizeof msg, stars_ ? "CLEAR ROUND! %d STARS" : "CLEAR ROUND!", stars_);
+                    finishGame(true, msg);
+                } else {
+                    fenceX_ = S + 60 + rand01() * 160;  // the next one, not always the same gap
+                    running_ = true;
+                }
+            }
+            if (!running_ && !jumpAt_) std::snprintf(gameMsg_, sizeof gameMsg_, "TAP TO JUMP!");
+            if (running_ && now_ % 120 < 17)  // dust from its hooves
+                spawn(ParticleKind::Crumb, kJumpHorseX - 30, kFriendlyFoot - 4, -120, -30, 500);
+            break;
+        }
         case Game::Photo:
             if (!running_ && now_ >= nextEvent_) {
                 running_ = true;
@@ -3703,6 +3803,10 @@ void Scene::drawBush(Canvas& c, float x, float y) {
 }
 
 void Scene::drawPeek(Canvas& c, float x, float y) {
+    if (species_ == Species::Horse) {
+        drawHorsePeek(c, x, y - 30, false);
+        return;
+    }
     Rgb fur, face, mark;
     furColours(fur, face, mark);
     c.fillCircle(x, y - 34, 22, sh(fur));
@@ -3716,14 +3820,14 @@ void Scene::drawGamePicker(Canvas& c) {
     c.tint(0x000000, 0.55f);
     c.fillRoundRect(40, 56, 400, 380, 20, kUiLight);
     c.text(240, 76, "LET'S PLAY!", 3, ink, Align::Center);
-    for (int i = 0; i < kGameChoices; i++) {
+    const bool horse = species_ == Species::Horse;
+    for (int i = 0; i < gameChoiceCount(); i++) {
         Rect r = gameChoiceArea(i);
-        c.fillRoundRect(r.x, r.y + 3, r.w, r.h - 6, 14, i == 3 ? 0xD9CFBC : 0xE6DCC6);
-        const bool apples = species_ == Species::Horse && i == 1;
-        c.text(r.cx(), r.y + 14.0f, apples ? "APPLE CATCH" : kGameNames[i], 2, ink, Align::Center);
-        c.text(r.cx(), r.y + 40.0f, apples ? "CATCH 10 FALLING APPLES" : kGameHints[i], 1, faint, Align::Center);
+        c.fillRoundRect(r.x, r.y + 3, r.w, r.h - 6, 14, i == gameChoiceCount() - 1 ? 0xD9CFBC : 0xE6DCC6);
+        c.text(r.cx(), r.y + (horse ? 12.0f : 14.0f), horse ? kHorseGameNames[i] : kGameNames[i], 2, ink, Align::Center);
+        c.text(r.cx(), r.y + (horse ? 37.0f : 40.0f), horse ? kHorseGameHints[i] : kGameHints[i], 1, faint, Align::Center);
     }
-    c.text(240, 412, "TAP OUTSIDE TO CLOSE", 1, faint, Align::Center);
+    c.text(240, horse ? 424.0f : 412.0f, "TAP OUTSIDE TO CLOSE", 1, faint, Align::Center);
 }
 
 void Scene::drawGame(Canvas& c) {
@@ -3750,6 +3854,18 @@ void Scene::drawGame(Canvas& c) {
         c.fillRoundRect(x - 50, y, 100, 30, 10, 0x9C6B3A);
         for (int i = -2; i <= 2; i++) c.line(x + i * 18, y + 3, x + i * 18, y + 27, 2, 0x7A5028);
         c.fillRoundRect(x - 54, y - 4, 108, 9, 4, 0xB8844A);
+    } else if (game_ == Game::Jump) {  // a show-jumping fence: two wings and striped poles
+        const float x = fenceX_, base = kFriendlyFoot + 6;
+        c.fillEllipse(x, base + 2, 40, 6, 0x000000, 0.18f);
+        for (float side : {-26.0f, 26.0f}) {
+            c.fillRoundRect(x + side - 4, base - 62, 8, 62, 3, 0xF4EFE6);
+            c.fillRect(x + side - 4, base - 62, 8, 4, 0xC0392B);
+        }
+        for (int r = 0; r < 3; r++) {
+            const float y = base - 18 - r * 16;
+            c.fillRoundRect(x - 30, y, 60, 6, 3, 0xF4EFE6);
+            for (int k = 0; k < 3; k++) c.fillRect(x - 24 + k * 18, y, 9, 6, r % 2 ? 0x2E6FB0 : 0xC0392B);
+        }
     } else if (game_ == Game::Photo) {
         const Rgb corner = 0xF3EBD9;
         const float x0 = kFrameX0, x1 = kFrameX1, y0 = 190, y1 = 372;
@@ -3775,9 +3891,13 @@ void Scene::drawGame(Canvas& c) {
             break;
         }
         case Game::Photo: std::snprintf(status, sizeof status, "CHANCES LEFT: %d", runsLeft_); break;
+        case Game::Jump: std::snprintf(status, sizeof status, "FENCES %d/%d  STARS %d", score_, kFences, stars_); break;
         default: status[0] = '\0'; break;
     }
-    c.text(16, 12, species_ == Species::Horse && game_ == Game::Berry ? "APPLE CATCH" : kGameNames[game_ == Game::Seek ? 0 : game_ == Game::Berry ? 1 : 2], 2, kGold);
+    const char* title = game_ == Game::Jump ? "FENCE JUMP"
+                      : species_ == Species::Horse && game_ == Game::Berry ? "APPLE CATCH"
+                      : kGameNames[game_ == Game::Seek ? 0 : game_ == Game::Berry ? 1 : 2];
+    c.text(16, 12, title, 2, kGold);
     c.text(16, 38, status, 2, kUiLight);
     Rect q = gameQuitArea();
     c.fillRoundRect(q.x + 8, q.y + 10, q.w - 16, q.h - 20, 12, kButton);

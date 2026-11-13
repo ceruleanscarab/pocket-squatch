@@ -81,8 +81,10 @@ public:
 
     // ---- the games, from the tray's Play button: a picker, then one of three games, or a
     // quick game of catch with no timing at all. Each ends in Sim::finishedGame().
-    enum class Game : uint8_t { None, Pick, Seek, Berry, Photo };
+    enum class Game : uint8_t { None, Pick, Seek, Berry, Photo, Jump };
     static constexpr int kGameChoices = 4;  // Hide and Seek, Berry Catch, Blurry Photo, Quick Catch
+    // The horse edition has five: Hide and Seek, Apple Catch, Fence Jump, Blurry Photo, Quick Catch.
+    int gameChoiceCount() const { return species_ == Species::Horse ? 5 : kGameChoices; }
     static constexpr int kSeekSpots = 5;
     static constexpr int kBerriesToWin = 10;
     Game game() const { return game_; }
@@ -461,6 +463,14 @@ private:
     uint32_t fireUntil_ = 0, nextEmber_ = 0;
     uint32_t nextClop_ = 0;
     uint32_t drinkAt_ = 0, nextSlurp_ = 0, barnPeekUntil_ = 0;
+    // Fence Jump: the next fence's x, when the current jump began (0: on the ground), and
+    // how many were cleared with a well-timed jump.
+    float fenceX_ = 0;
+    uint32_t jumpAt_ = 0;
+    int stars_ = 0;
+    bool perfect_ = false;
+    float jumpHeight() const;
+    void drawHorsePeek(Canvas& c, float x, float y, bool shaded);
     uint32_t bornAt_ = 0;  // when the foal arrived: its mother walks back to the barn after
 
     // talking

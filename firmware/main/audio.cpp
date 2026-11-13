@@ -183,10 +183,10 @@ bool init(i2c_master_bus_handle_t bus, bool switchRail) {
     return true;
 }
 
-void play(squatch::Cue c, int volume) {
+void play(squatch::Cue c, int volume, float pitch) {
     if (!gTask) return;
     xSemaphoreTake(gLock, portMAX_DELAY);
-    gSynth.play(c, volume);
+    gSynth.play(c, volume, pitch);
     xSemaphoreGive(gLock);
     xTaskNotifyGive(gTask);
 }

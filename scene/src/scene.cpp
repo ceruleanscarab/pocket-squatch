@@ -202,6 +202,22 @@ void Scene::cue(Cue c) {
     cues_[cueCount_++] = c;
 }
 
+float Scene::voicePitch(Cue c) const {
+    switch (c) {  // the pet's voice and body; not the world's sounds or the buttons
+        case Cue::Happy: case Cue::Eat: case Cue::Sneeze: case Cue::Sulk: case Cue::Knock:
+        case Cue::Giggle: case Cue::Babble: case Cue::Neigh: case Cue::Nicker: case Cue::Snort:
+        case Cue::Munch: case Cue::Clop: break;
+        default: return 1;
+    }
+    switch (sim_.state().stage) {
+        case Stage::Baby: return 1.38f;   // a foal's squeaky little whinny
+        case Stage::Child: return 1.24f;
+        case Stage::Teen: return 1.1f;
+        case Stage::Elder: return 0.92f;  // a little lower and slower with age
+        default: return 1;
+    }
+}
+
 bool Scene::takeCue(Cue& out) {
     if (cueCount_ == 0) return false;
     out = cues_[0];

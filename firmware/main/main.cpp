@@ -277,7 +277,7 @@ void gameLoop(void*) {
         }
 
         gScene.update(ms);
-        for (Cue c; gScene.takeCue(c);) audio::play(c, gScene.volume());
+        for (Cue c; gScene.takeCue(c);) audio::play(c, gScene.volume(), gScene.voicePitch(c));
         if (gScene.takeSaveRequest() || wall - lastSave >= kAutosaveSecs) {
             storage::savePet(gSim.state());
             lastSave = wall;

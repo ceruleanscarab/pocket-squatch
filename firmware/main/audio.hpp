@@ -13,6 +13,6 @@ namespace audio {
 
 // False (and silent from then on) if no ES8311 answers on the bus.
 bool init(i2c_master_bus_handle_t bus, bool switchRail);
-void play(squatch::Cue c, int volume);
+void play(squatch::Cue c, int volume, float pitch = 1.0f);
 
 }  // namespace audio

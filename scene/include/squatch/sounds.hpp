@@ -57,7 +57,8 @@ public:
     static constexpr int kVolumeSteps = 4;   // off, quiet, medium, loud
 
     // Start a cue. With all voices busy the oldest gives way. Volume 0 plays nothing.
-    void play(Cue c, int volume);
+    // Pitch above 1 plays it higher (a recording also quicker): a young pet's voice.
+    void play(Cue c, int volume, float pitch = 1.0f);
     // Mixes the next n samples into out (overwriting it). Returns true while anything
     // is still playing, false once it's all silence.
     bool render(int16_t* out, int n);
@@ -79,6 +80,8 @@ private:
         uint32_t age = 0;   // when it started, to pick the oldest
         const uint8_t* clip = nullptr;  // a recording to play instead of notes (mu-law)
         int clipLength = 0;
+        float clipPos = 0;  // where in the recording; moves by pitch each sample
+        float pitch = 1;
     };
     static constexpr int kVoices = 3;
     Voice voices_[kVoices];

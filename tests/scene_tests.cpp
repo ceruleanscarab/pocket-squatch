@@ -1231,6 +1231,29 @@ static void testPlayAndTalk() {
     }
 }
 
+static void testVoicePitch() {
+    std::printf("a young pet's voice is higher; buttons and weather aren't\n");
+    Driver d;
+    d.sim.mutableState().stage = Stage::Baby;
+    const float baby = d.scene.voicePitch(Cue::Neigh);
+    d.sim.mutableState().stage = Stage::Adult;
+    const float adult = d.scene.voicePitch(Cue::Neigh);
+    d.sim.mutableState().stage = Stage::Elder;
+    const float elder = d.scene.voicePitch(Cue::Neigh);
+    CHECK(baby > adult && adult > elder);
+    CHECK(d.scene.voicePitch(Cue::Tick) == 1 && d.scene.voicePitch(Cue::Thunder) == 1);
+    // Played higher, a recording also finishes sooner.
+    auto samplesOf = [](float pitch) {
+        Synth s;
+        s.play(Cue::Neigh, 3, pitch);
+        int16_t buf[256];
+        int n = 0;
+        while (s.render(buf, 256)) n += 256;
+        return n;
+    };
+    CHECK(samplesOf(1.38f) < samplesOf(1.0f) * 0.8f);
+}
+
 int main() {
     testTap();
     testLongPressThenDrag();
@@ -1264,6 +1287,7 @@ int main() {
     testStartOver();
     testDetail();
     testPlayAndTalk();
+    testVoicePitch();
 
     std::printf("\n%d checks, %d failed\n", gChecks, gFailures);
     return gFailures ? 1 : 0;

@@ -148,7 +148,7 @@ int Synth::lengthMs(Cue c) {
     return ms;
 }
 
-void Synth::play(Cue c, int volume) {
+void Synth::play(Cue c, int volume, float pitch) {
     if (c >= Cue::Count || volume <= 0) return;
     volume = std::min(volume, kVolumeSteps - 1);
     Voice* v = &voices_[0];
@@ -164,6 +164,7 @@ void Synth::play(Cue c, int volume) {
     v->cue = c;
     v->gain = kGain[volume];
     v->age = ++started_;
+    v->pitch = std::max(0.5f, std::min(2.0f, pitch));
     if (const HorseClip* clip = clipFor(c)) {
         v->clip = clip->data;
         v->clipLength = clip->length;
@@ -186,8 +187,12 @@ bool Synth::render(int16_t* out, int n) {
         for (Voice& v : voices_) {
             if (!v.on) continue;
             if (v.clip) {  // a recording, already levelled: just a little louder than the tones
-                mix += fromMulaw(v.clip[v.pos]) * v.gain * 1.4f;
-                if (++v.pos >= v.clipLength) v.on = false;
+                const int i0 = static_cast<int>(v.clipPos);
+                const float fr = v.clipPos - static_cast<float>(i0);
+                const float a = fromMulaw(v.clip[i0]), b = i0 + 1 < v.clipLength ? fromMulaw(v.clip[i0 + 1]) : 0.0f;
+                mix += (a + (b - a) * fr) * v.gain * 1.4f;
+                v.clipPos += v.pitch;
+                if (v.clipPos >= static_cast<float>(v.clipLength)) v.on = false;
                 continue;
             }
             const Shape& sh = kShapes[static_cast<int>(v.cue)];
@@ -195,7 +200,7 @@ bool Synth::render(int16_t* out, int n) {
             const int len = samples(note.ms), total = len + samples(note.gapMs);
             if (v.pos < len) {
                 const float t = static_cast<float>(v.pos) / static_cast<float>(len);
-                const float f = note.f0 + (note.f1 - note.f0) * t;
+                const float f = (note.f0 + (note.f1 - note.f0) * t) * v.pitch;
                 float s = 0;
                 switch (note.wave) {
                     case Sine: s = std::sin(v.phase * kTwoPi); break;

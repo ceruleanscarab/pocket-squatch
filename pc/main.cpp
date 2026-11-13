@@ -313,7 +313,7 @@ int main(int argc, char** argv) {
         for (Cue c; scene.takeCue(c);) {
             if (!audio) continue;
             SDL_LockAudioDevice(audio);
-            gSynth.play(c, scene.volume());
+            gSynth.play(c, scene.volume(), scene.voicePitch(c));
             SDL_UnlockAudioDevice(audio);
         }
         if (scene.takeSaveRequest() || ms - lastSave >= 60000) {

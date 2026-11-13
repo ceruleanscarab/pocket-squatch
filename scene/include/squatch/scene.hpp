@@ -123,6 +123,9 @@ public:
     // Sounds to play, oldest first; the front end hands them to a Synth at volume(). Nothing
     // is queued with the volume off, or while the screen is off (except a knock: it wants you).
     bool takeCue(Cue& out);
+    // How high to play a cue: the pet's own voice (its whinny, nicker, munching...) is
+    // higher the younger it is; everything else plays as made. Pass it to Synth::play.
+    float voicePitch(Cue c) const;
 
     // Naming: a big-letter keyboard that opens after hatching (or for any pet without a name),
     // and from the stats page by tapping the name. Keys 0..25 are A..Z, 26 a space, 27 delete.

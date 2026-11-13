@@ -1251,7 +1251,7 @@ static void testVoicePitch() {
         while (s.render(buf, 256)) n += 256;
         return n;
     };
-    CHECK(samplesOf(1.38f) < samplesOf(1.0f) * 0.8f);
+    CHECK(samplesOf(1.8f) < samplesOf(1.0f) * 0.7f);
 }
 
 int main() {

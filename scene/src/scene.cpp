@@ -210,10 +210,10 @@ float Scene::voicePitch(Cue c) const {
         default: return 1;
     }
     switch (sim_.state().stage) {
-        case Stage::Baby: return 1.38f;   // a foal's squeaky little whinny
-        case Stage::Child: return 1.24f;
-        case Stage::Teen: return 1.1f;
-        case Stage::Elder: return 0.92f;  // a little lower and slower with age
+        case Stage::Baby: return 1.8f;    // a foal's squeaky little whinny: nearly an octave up
+        case Stage::Child: return 1.5f;
+        case Stage::Teen: return 1.22f;
+        case Stage::Elder: return 0.84f;  // lower and slower with age
         default: return 1;
     }
 }

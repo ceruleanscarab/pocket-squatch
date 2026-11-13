@@ -1,8 +1,12 @@
 #include "storage.hpp"
 
+#include <cstdio>
+#include <cstring>
+
 #include "esp_log.h"
 #include "nvs.h"
 #include "nvs_flash.h"
+#include "sdkconfig.h"
 #include "squatch/save.hpp"
 
 namespace storage {
@@ -12,6 +16,8 @@ const char* TAG = "storage";
 const char* kNamespace = "squatch";
 const char* kKey = "pet";
 const char* kSettingsKey = "settings";
+const char* kWifiSsidKey = "wifi_ssid";
+const char* kWifiPassKey = "wifi_pass";
 constexpr uint8_t kSettingsVersion = 2;  // 1 had no volume
 }  // namespace
 
@@ -69,6 +75,31 @@ void saveSettings(const squatch::Scene::Settings& s) {
     if (nvs_set_blob(h, kSettingsKey, b, sizeof b) != ESP_OK || nvs_commit(h) != ESP_OK)
         ESP_LOGW(TAG, "settings not saved");
     nvs_close(h);
+}
+
+bool loadWifi(char* ssid, size_t ssidLen, char* password, size_t passwordLen) {
+    nvs_handle_t h;
+    if (nvs_open(kNamespace, NVS_READONLY, &h) != ESP_OK) return false;
+    size_t a = ssidLen, b = passwordLen;
+    const bool ok = nvs_get_str(h, kWifiSsidKey, ssid, &a) == ESP_OK && nvs_get_str(h, kWifiPassKey, password, &b) == ESP_OK;
+    nvs_close(h);
+    return ok && ssid[0];
+}
+
+void saveWifi(const char* ssid, const char* password) {
+    nvs_handle_t h;
+    if (nvs_open(kNamespace, NVS_READWRITE, &h) != ESP_OK) return;
+    if (nvs_set_str(h, kWifiSsidKey, ssid) != ESP_OK || nvs_set_str(h, kWifiPassKey, password) != ESP_OK ||
+        nvs_commit(h) != ESP_OK)
+        ESP_LOGW(TAG, "Wi-Fi not saved");
+    nvs_close(h);
+}
+
+bool wifiCredentials(char* ssid, size_t ssidLen, char* password, size_t passwordLen) {
+    if (loadWifi(ssid, ssidLen, password, passwordLen)) return true;
+    std::snprintf(ssid, ssidLen, "%s", CONFIG_SQUATCH_WIFI_SSID);
+    std::snprintf(password, passwordLen, "%s", CONFIG_SQUATCH_WIFI_PASSWORD);
+    return ssid[0] != '\0';
 }
 
 }  // namespace storage

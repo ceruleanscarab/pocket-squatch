@@ -24,6 +24,7 @@
 #include "storage.hpp"
 #include "walltime.hpp"
 #include "weatherfetch.hpp"
+#include "wifisetup.hpp"
 #include "wifiscan.hpp"
 
 using namespace squatch;
@@ -37,6 +38,12 @@ constexpr uint32_t kBatteryEveryMs = 2000;
 constexpr uint32_t kSettingsSaveAfterMs = 3000;  // after the last change, so each tap isn't a flash write
 constexpr uint32_t kDarkPollMs = 100;            // how often touch is checked while the screen is off
 constexpr uint32_t kKeyEveryMs = 100;            // the PWR key, asked of the power chip
+// The setup hotspot's name, shown on the Wi-Fi page and on the phone.
+#if CONFIG_SQUATCH_PET_HORSE
+constexpr const char* kHotspotName = "POCKET-PONY";
+#else
+constexpr const char* kHotspotName = "POCKET-SQUATCH";
+#endif
 
 // Charge currents for the battery each board is usually fitted with. The AXP2101's own
 // default is over an amp, far too strong for these small cells.
@@ -198,7 +205,8 @@ void startPet() {
     }
 
     // A new egg should hatch on the real date, so give the network a moment to set the clock.
-    if (!walltime::known() && CONFIG_SQUATCH_WIFI_SSID[0]) {
+    char ssid[33], pass[65];
+    if (!walltime::known() && storage::wifiCredentials(ssid, sizeof ssid, pass, sizeof pass)) {
         showMessage("SETTING THE CLOCK");
         for (int i = 0; i < 300 && !walltime::known(); i++) vTaskDelay(pdMS_TO_TICKS(100));
     }
@@ -223,6 +231,7 @@ void gameLoop(void*) {
     int lit = -1;                // the panel's brightness now, in percent
     uint32_t settingsDirty = 0;  // when the settings last changed and weren't saved yet
     uint32_t lastKey = 0;
+    wifisetup::State wifiShown = wifisetup::State::Idle;
 
     for (;;) {
         const uint32_t ms = millis();
@@ -274,6 +283,36 @@ void gameLoop(void*) {
                     break;
                 case power::Key::None: break;
             }
+        }
+
+        // Wi-Fi setup from the settings: start or stop the hotspot, and pass on how it's going.
+        switch (gScene.takeWifiRequest()) {
+            case 1: wifisetup::start(kHotspotName); break;
+            case 2: wifisetup::cancel(); break;
+            default: break;
+        }
+        if (const wifisetup::State ws = wifisetup::state(); ws != wifiShown) {
+            char net[33];
+            wifisetup::network(net, sizeof net);
+            switch (ws) {
+                case wifisetup::State::Running: gScene.setWifiStatus(Scene::WifiStatus::SetupRunning, net); break;
+                case wifisetup::State::Checking: gScene.setWifiStatus(Scene::WifiStatus::Checking, net); break;
+                case wifisetup::State::Failed: gScene.setWifiStatus(Scene::WifiStatus::Failed, net); break;
+                case wifisetup::State::Joined: {
+                    gScene.setWifiStatus(Scene::WifiStatus::Joined, net);
+                    char ssid[33], pass[65];
+                    if (storage::wifiCredentials(ssid, sizeof ssid, pass, sizeof pass)) walltime::syncFromNetwork(ssid, pass);
+                    weatherfetch::start();  // if it wasn't running for want of a network
+                    break;
+                }
+                case wifisetup::State::Idle: {  // cancelled: back to what's saved
+                    char ssid[33], pass[65];
+                    const bool have = storage::wifiCredentials(ssid, sizeof ssid, pass, sizeof pass);
+                    gScene.setWifiStatus(have ? Scene::WifiStatus::Saved : Scene::WifiStatus::NotSet, ssid);
+                    break;
+                }
+            }
+            wifiShown = ws;
         }
 
         gScene.update(ms);
@@ -346,7 +385,13 @@ extern "C" void app_main(void) {
     audio::init(board_i2c(), kAudioRail && gHavePower);
     radio::begin();
     walltime::init(board_i2c(), CONFIG_SQUATCH_TZ);
-    walltime::syncFromNetwork(CONFIG_SQUATCH_WIFI_SSID, CONFIG_SQUATCH_WIFI_PASSWORD);
+    {
+        char ssid[33], pass[65];
+        const bool have = storage::wifiCredentials(ssid, sizeof ssid, pass, sizeof pass);
+        if (have) walltime::syncFromNetwork(ssid, pass);
+        gScene.setWifiAvailable(kHotspotName);
+        gScene.setWifiStatus(have ? Scene::WifiStatus::Saved : Scene::WifiStatus::NotSet, ssid);
+    }
     weatherfetch::start();
 
     startPet();

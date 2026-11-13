@@ -41,6 +41,9 @@ menu "Pocket Squatch"
     config SQUATCH_WIFI_PASSWORD
         string "Wi-Fi password"
         default ""
+        help
+            A starting network. On the board, Settings > Wi-Fi > Set up chooses one from a
+            phone instead, and that one is used from then on.
 
     config SQUATCH_TRAILS
         bool "Trail map: listen for nearby Wi-Fi networks"

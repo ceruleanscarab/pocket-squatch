@@ -1,0 +1,275 @@
+#include "wifisetup.hpp"
+
+#include <algorithm>
+#include <atomic>
+#include <cstdio>
+#include <cstring>
+
+#include "esp_http_server.h"
+#include "esp_log.h"
+#include "esp_netif.h"
+#include "esp_wifi.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "lwip/sockets.h"
+#include "netjoin.hpp"
+#include "radio.hpp"
+#include "storage.hpp"
+
+namespace wifisetup {
+
+namespace {
+
+const char* TAG = "wifisetup";
+constexpr int kMaxNetworks = 15;
+constexpr uint32_t kTimeoutMs = 10 * 60 * 1000;
+
+std::atomic<State> gState{State::Idle};
+std::atomic<bool> gCancel{false}, gGotIt{false};
+char gHotspot[32];
+char gSsid[33], gPass[65];
+char gNetworks[kMaxNetworks][33];
+int gNetworkCount = 0;
+TaskHandle_t gDnsTask = nullptr;
+int gDnsSock = -1;
+
+// ---- the page
+
+void appendEscaped(char* out, size_t n, const char* s) {  // for HTML text and attribute values
+    size_t len = std::strlen(out);
+    for (; *s && len + 7 < n; s++) {
+        const char* rep = nullptr;
+        switch (*s) {
+            case '&': rep = "&amp;"; break;
+            case '<': rep = "&lt;"; break;
+            case '>': rep = "&gt;"; break;
+            case '"': rep = "&quot;"; break;
+            default: break;
+        }
+        if (rep) {
+            std::strcpy(out + len, rep);
+            len += std::strlen(rep);
+        } else {
+            out[len++] = *s;
+            out[len] = '\0';
+        }
+    }
+}
+
+esp_err_t pageGet(httpd_req_t* req) {
+    static char html[6144];
+    std::snprintf(html, sizeof html,
+                  "<!doctype html><html><head><meta charset=utf-8>"
+                  "<meta name=viewport content='width=device-width,initial-scale=1'><title>%s</title>"
+                  "<style>body{font-family:sans-serif;background:#f4ece0;color:#3b2a1e;margin:0;padding:20px}"
+                  "h1{font-size:1.4em}label{display:block;margin:14px 0 6px;font-weight:bold}"
+                  "select,input{width:100%%;box-sizing:border-box;font-size:1.1em;padding:12px;border:2px solid #b8a98f;"
+                  "border-radius:10px;background:#fff}button{margin-top:20px;width:100%%;font-size:1.2em;padding:14px;"
+                  "border:0;border-radius:12px;background:#6e8f5a;color:#fff}small{color:#8a7a66}</style></head><body>"
+                  "<h1>Wi-Fi for %s</h1><p>Pick your home network and type its password. The toy uses it "
+                  "to set its clock and check the weather.</p><form method=post action=/save>"
+                  "<label>Network</label><select name=ssid>",
+                  gHotspot, gHotspot);
+    for (int i = 0; i < gNetworkCount; i++) {
+        std::strncat(html, "<option value=\"", sizeof html - std::strlen(html) - 1);
+        appendEscaped(html, sizeof html, gNetworks[i]);
+        std::strncat(html, "\">", sizeof html - std::strlen(html) - 1);
+        appendEscaped(html, sizeof html, gNetworks[i]);
+        std::strncat(html, "</option>", sizeof html - std::strlen(html) - 1);
+    }
+    std::strncat(html,
+                 "</select><label>Or type its name</label><input name=other placeholder='(only if it isn&#39;t listed)' "
+                 "autocapitalize=off autocorrect=off><label>Password</label>"
+                 "<input name=pass type=password id=p autocapitalize=off autocorrect=off>"
+                 "<small><input type=checkbox style='width:auto' onclick=\"p.type=this.checked?'text':'password'\"> "
+                 "show the password</small><button>Save</button></form></body></html>",
+                 sizeof html - std::strlen(html) - 1);
+    httpd_resp_set_type(req, "text/html");
+    return httpd_resp_send(req, html, HTTPD_RESP_USE_STRLEN);
+}
+
+void urlDecode(char* s) {
+    char* o = s;
+    for (; *s; s++) {
+        if (*s == '+') {
+            *o++ = ' ';
+        } else if (*s == '%' && s[1] && s[2]) {
+            char hex[3] = {s[1], s[2], 0};
+            *o++ = static_cast<char>(std::strtol(hex, nullptr, 16));
+            s += 2;
+        } else {
+            *o++ = *s;
+        }
+    }
+    *o = '\0';
+}
+
+esp_err_t saveposted(httpd_req_t* req) {
+    char body[512] = {};
+    const int len = httpd_req_recv(req, body, std::min<size_t>(req->content_len, sizeof body - 1));
+    if (len <= 0) return httpd_resp_send_500(req);
+    body[len] = '\0';
+    char ssid[64] = {}, other[64] = {}, pass[128] = {};
+    httpd_query_key_value(body, "ssid", ssid, sizeof ssid);
+    httpd_query_key_value(body, "other", other, sizeof other);
+    httpd_query_key_value(body, "pass", pass, sizeof pass);
+    urlDecode(ssid);
+    urlDecode(other);
+    urlDecode(pass);
+    const char* chosen = other[0] ? other : ssid;
+    if (!chosen[0]) return httpd_resp_send(req, "Pick a network first.", HTTPD_RESP_USE_STRLEN);
+    std::snprintf(gSsid, sizeof gSsid, "%s", chosen);
+    std::snprintf(gPass, sizeof gPass, "%s", pass);
+    gGotIt = true;
+    httpd_resp_set_type(req, "text/html");
+    return httpd_resp_send(req,
+                           "<!doctype html><meta name=viewport content='width=device-width,initial-scale=1'>"
+                           "<body style='font-family:sans-serif;background:#f4ece0;color:#3b2a1e;padding:20px'>"
+                           "<h1>Saved!</h1><p>The toy is trying your network now: look at its screen. "
+                           "You can close this page.</p></body>",
+                           HTTPD_RESP_USE_STRLEN);
+}
+
+// Anything else a phone asks for (its captive-portal checks): send it to the page.
+esp_err_t redirect(httpd_req_t* req, httpd_err_code_t) {
+    httpd_resp_set_status(req, "302 Found");
+    httpd_resp_set_hdr(req, "Location", "http://192.168.4.1/");
+    return httpd_resp_send(req, nullptr, 0);
+}
+
+// ---- a DNS server that answers every name with the board's own address
+
+void dnsTask(void*) {
+    gDnsSock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(53);
+    addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    if (gDnsSock < 0 || bind(gDnsSock, reinterpret_cast<sockaddr*>(&addr), sizeof addr) < 0) {
+        ESP_LOGW(TAG, "no DNS: the page has to be opened at 192.168.4.1");
+        if (gDnsSock >= 0) close(gDnsSock);
+        gDnsSock = -1;
+        gDnsTask = nullptr;
+        vTaskDelete(nullptr);
+    }
+    uint8_t buf[512];
+    for (;;) {
+        sockaddr_in from{};
+        socklen_t fl = sizeof from;
+        const int n = recvfrom(gDnsSock, buf, sizeof buf - 16, 0, reinterpret_cast<sockaddr*>(&from), &fl);
+        if (n < 0) break;  // the socket was closed: we're done
+        if (n < 12 || (buf[2] & 0x80)) continue;  // too short, or not a question
+        // Find the end of the question (name, type, class) and add one A record after it.
+        int p = 12;
+        while (p < n && buf[p]) p += buf[p] + 1;
+        p += 5;
+        if (p > n) continue;
+        buf[2] = 0x81;  // a response, recursion desired
+        buf[3] = 0x80;  // recursion available, no error
+        buf[6] = 0;     // one answer
+        buf[7] = 1;
+        buf[8] = buf[9] = buf[10] = buf[11] = 0;
+        const uint8_t answer[] = {0xC0, 0x0C, 0, 1, 0, 1, 0, 0, 0, 60, 0, 4, 192, 168, 4, 1};
+        std::memcpy(buf + p, answer, sizeof answer);
+        sendto(gDnsSock, buf, p + sizeof answer, 0, reinterpret_cast<sockaddr*>(&from), fl);
+    }
+    gDnsTask = nullptr;
+    vTaskDelete(nullptr);
+}
+
+// ---- the whole visit
+
+void setupTask(void*) {
+    radio::take();
+    esp_netif_t* ap = esp_netif_create_default_wifi_ap();
+    esp_netif_t* sta = esp_netif_create_default_wifi_sta();
+    wifi_init_config_t init = WIFI_INIT_CONFIG_DEFAULT();
+    esp_wifi_init(&init);
+    esp_wifi_set_mode(WIFI_MODE_APSTA);
+    wifi_config_t cfg{};
+    std::snprintf(reinterpret_cast<char*>(cfg.ap.ssid), sizeof cfg.ap.ssid, "%s", gHotspot);
+    cfg.ap.ssid_len = static_cast<uint8_t>(std::strlen(gHotspot));
+    cfg.ap.channel = 1;
+    cfg.ap.max_connection = 2;
+    cfg.ap.authmode = WIFI_AUTH_OPEN;
+    esp_wifi_set_config(WIFI_IF_AP, &cfg);
+    esp_wifi_start();
+
+    // The networks it can hear, strongest first, each once.
+    gNetworkCount = 0;
+    wifi_scan_config_t scan{};
+    if (esp_wifi_scan_start(&scan, true) == ESP_OK) {
+        uint16_t found = 30;
+        static wifi_ap_record_t recs[30];
+        esp_wifi_scan_get_ap_records(&found, recs);
+        std::sort(recs, recs + found, [](const wifi_ap_record_t& a, const wifi_ap_record_t& b) { return a.rssi > b.rssi; });
+        for (int i = 0; i < found && gNetworkCount < kMaxNetworks; i++) {
+            const char* name = reinterpret_cast<const char*>(recs[i].ssid);
+            if (!name[0]) continue;
+            bool seen = false;
+            for (int k = 0; k < gNetworkCount; k++) seen |= std::strcmp(gNetworks[k], name) == 0;
+            if (!seen) std::snprintf(gNetworks[gNetworkCount++], 33, "%s", name);
+        }
+    }
+
+    httpd_handle_t server = nullptr;
+    httpd_config_t hc = HTTPD_DEFAULT_CONFIG();
+    hc.lru_purge_enable = true;
+    hc.stack_size = 8192;
+    if (httpd_start(&server, &hc) == ESP_OK) {
+        const httpd_uri_t page{"/", HTTP_GET, pageGet, nullptr};
+        const httpd_uri_t save{"/save", HTTP_POST, saveposted, nullptr};
+        httpd_register_uri_handler(server, &page);
+        httpd_register_uri_handler(server, &save);
+        httpd_register_err_handler(server, HTTPD_404_NOT_FOUND, redirect);
+    }
+    xTaskCreatePinnedToCore(dnsTask, "dns", 3072, nullptr, 3, &gDnsTask, 0);
+    ESP_LOGI(TAG, "hotspot \"%s\" up, %d networks heard", gHotspot, gNetworkCount);
+
+    const TickType_t until = xTaskGetTickCount() + pdMS_TO_TICKS(kTimeoutMs);
+    while (!gGotIt && !gCancel && xTaskGetTickCount() < until) vTaskDelay(pdMS_TO_TICKS(200));
+    vTaskDelay(pdMS_TO_TICKS(gGotIt ? 1500 : 0));  // let the "Saved!" page reach the phone
+
+    if (gDnsSock >= 0) {
+        shutdown(gDnsSock, SHUT_RDWR);
+        close(gDnsSock);
+        gDnsSock = -1;
+    }
+    for (int i = 0; i < 20 && gDnsTask; i++) vTaskDelay(pdMS_TO_TICKS(50));
+    if (server) httpd_stop(server);
+    esp_wifi_stop();
+    esp_wifi_deinit();
+    esp_netif_destroy_default_wifi(ap);
+    esp_netif_destroy_default_wifi(sta);
+
+    if (gGotIt) {  // try it, so the board can say whether it worked
+        storage::saveWifi(gSsid, gPass);
+        gState = State::Checking;
+        const bool ok = netjoin::join(gSsid, gPass);
+        netjoin::leave();
+        gState = ok ? State::Joined : State::Failed;
+        ESP_LOGI(TAG, "\"%s\": %s", gSsid, ok ? "joined" : "couldn't join");
+    } else {
+        gState = State::Idle;
+    }
+    radio::give();
+    vTaskDelete(nullptr);
+}
+
+}  // namespace
+
+void start(const char* hotspotName) {
+    if (gState == State::Running || gState == State::Checking) return;
+    std::snprintf(gHotspot, sizeof gHotspot, "%s", hotspotName);
+    gCancel = gGotIt = false;
+    gState = State::Running;
+    if (xTaskCreatePinnedToCore(setupTask, "wifisetup", 6144, nullptr, 3, nullptr, 0) != pdPASS) gState = State::Idle;
+}
+
+void cancel() { gCancel = true; }
+
+State state() { return gState; }
+
+void network(char* out, size_t n) { std::snprintf(out, n, "%s", gSsid); }
+
+}  // namespace wifisetup

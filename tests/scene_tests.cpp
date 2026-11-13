@@ -1320,6 +1320,38 @@ static void testHorseGames() {
     d.scene.draw(c);
 }
 
+static void testWifiPage() {
+    std::printf("Wi-Fi page: only on boards; Set up asks for the hotspot; the screen stays on meanwhile\n");
+    Driver d;
+    CHECK(d.scene.wifiButtonArea().w == 0);  // the phone app has no Wi-Fi button
+    d.scene.setWifiAvailable("POCKET-SQUATCH");
+    d.scene.setWifiStatus(Scene::WifiStatus::NotSet, "");
+    d.openTray();
+    d.pressSlot(Scene::Slot::More);
+    d.pressSlot(Scene::Slot::Settings);
+    CHECK(d.scene.overlay() == Scene::Overlay::Settings);
+    for (const Scene::Rect& r : {d.scene.wifiButtonArea(), d.scene.startOverArea(), d.scene.settingsDoneArea(),
+                                 d.scene.wifiSetupArea(), d.scene.wifiDoneArea()})
+        CHECK(r.w >= 64 && r.h >= 64);
+    auto apart = [](const Scene::Rect& a, const Scene::Rect& b) {
+        return a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y;
+    };
+    CHECK(apart(d.scene.wifiButtonArea(), d.scene.startOverArea()) &&
+          apart(d.scene.wifiButtonArea(), d.scene.settingsDoneArea()));
+    d.tap(d.scene.wifiButtonArea());
+    CHECK(d.scene.overlay() == Scene::Overlay::Wifi);
+    d.tap(d.scene.wifiSetupArea());
+    CHECK(d.scene.takeWifiRequest() == 1 && d.scene.takeWifiRequest() == 0);
+    d.scene.setWifiStatus(Scene::WifiStatus::SetupRunning, "");
+    for (int i = 0; i < 20000 / 16; i++) d.step();  // longer than the screen timeout
+    CHECK(!d.scene.screenOff());
+    d.tap(d.scene.wifiSetupArea());  // now Cancel
+    CHECK(d.scene.takeWifiRequest() == 2);
+    d.scene.setWifiStatus(Scene::WifiStatus::Joined, "Endor");
+    d.tap(d.scene.wifiDoneArea());
+    CHECK(d.scene.overlay() == Scene::Overlay::Settings);
+}
+
 int main() {
     testTap();
     testLongPressThenDrag();
@@ -1356,6 +1388,7 @@ int main() {
     testVoicePitch();
     testFoalBirth();
     testHorseGames();
+    testWifiPage();
 
     std::printf("\n%d checks, %d failed\n", gChecks, gFailures);
     return gFailures ? 1 : 0;

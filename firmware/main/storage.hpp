@@ -14,4 +14,12 @@ void savePet(const squatch::State& s);
 bool loadSettings(squatch::Scene::Settings& out);
 void saveSettings(const squatch::Scene::Settings& s);
 
+// The Wi-Fi network chosen on the board's setup page (kept like the settings, apart from the
+// pet). Without one, the network from menuconfig is used.
+bool loadWifi(char* ssid, size_t ssidLen, char* password, size_t passwordLen);
+void saveWifi(const char* ssid, const char* password);
+
+// The network to use: the one saved on the board, or else menuconfig's. False if neither.
+bool wifiCredentials(char* ssid, size_t ssidLen, char* password, size_t passwordLen);
+
 }  // namespace storage

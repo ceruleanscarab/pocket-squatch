@@ -288,8 +288,44 @@ Scene::Rect Scene::settingButtonArea(int row, bool plus) const {
     return {plus ? kSetX + kSetW - 24 - 96 : kSetX + 24, kSetRowY[row], 96, 72};
 }
 
-Scene::Rect Scene::settingsDoneArea() const { return {S / 2 + 12, kSetY + kSetH - 84, 196, 72}; }
-Scene::Rect Scene::startOverArea() const { return {S / 2 - 208, kSetY + kSetH - 84, 196, 72}; }
+// With Wi-Fi on the board the bottom row holds three buttons: Start over, Wi-Fi, Done.
+Scene::Rect Scene::settingsDoneArea() const {
+    if (wifiAvailable_) return {S / 2 + 76, kSetY + kSetH - 84, 132, 72};
+    return {S / 2 + 12, kSetY + kSetH - 84, 196, 72};
+}
+Scene::Rect Scene::startOverArea() const {
+    if (wifiAvailable_) return {S / 2 - 208, kSetY + kSetH - 84, 132, 72};
+    return {S / 2 - 208, kSetY + kSetH - 84, 196, 72};
+}
+Scene::Rect Scene::wifiButtonArea() const {
+    if (!wifiAvailable_) return {0, 0, 0, 0};
+    return {S / 2 - 66, kSetY + kSetH - 84, 132, 72};
+}
+Scene::Rect Scene::wifiSetupArea() const { return {S / 2 - 208, kSetY + kSetH - 84, 196, 72}; }
+Scene::Rect Scene::wifiDoneArea() const { return {S / 2 + 12, kSetY + kSetH - 84, 196, 72}; }
+
+void Scene::setWifiAvailable(const char* hotspotName) {
+    wifiAvailable_ = true;
+    std::snprintf(wifiHotspot_, sizeof wifiHotspot_, "%s", hotspotName ? hotspotName : "");
+}
+
+void Scene::setWifiStatus(WifiStatus st, const char* ssid) {
+    wifiStatus_ = st;
+    // The font is capitals, digits and a little punctuation: show the name in those.
+    size_t n = 0;
+    for (const char* p = ssid ? ssid : ""; *p && n < sizeof wifiSsid_ - 1; p++) {
+        char ch = *p;
+        if (ch >= 'a' && ch <= 'z') ch = static_cast<char>(ch - 'a' + 'A');
+        wifiSsid_[n++] = ch;
+    }
+    wifiSsid_[n] = '\0';
+}
+
+int Scene::takeWifiRequest() {
+    const int r = wifiRequest_;
+    wifiRequest_ = 0;
+    return r;
+}
 Scene::Rect Scene::startKeepArea() const { return {48, 196, 384, 68}; }
 Scene::Rect Scene::startWipeArea() const { return {48, 276, 384, 68}; }
 Scene::Rect Scene::startCancelArea() const { return {48, 356, 384, 68}; }
@@ -503,6 +539,23 @@ void Scene::handle(const Gesture& g) {
         }
         return;
     }
+    if (overlay_ == Overlay::Wifi) {
+        if (g.type != GestureType::Tap) return;
+        const bool busy = wifiStatus_ == WifiStatus::SetupRunning || wifiStatus_ == WifiStatus::Checking;
+        if (wifiSetupArea().contains(g.x, g.y)) {
+            cue(Cue::Tick);
+            if (wifiStatus_ == WifiStatus::SetupRunning) wifiRequest_ = 2;  // cancel
+            else if (!busy) {
+                wifiRequest_ = 1;
+                wifiStatus_ = WifiStatus::SetupRunning;  // the board confirms (or not) next frame
+            }
+        } else if (wifiDoneArea().contains(g.x, g.y)) {
+            cue(Cue::Tick);
+            if (wifiStatus_ == WifiStatus::SetupRunning) wifiRequest_ = 2;
+            overlay_ = Overlay::Settings;
+        }
+        return;
+    }
     if (overlay_ == Overlay::Settings) {
         if (g.type != GestureType::Tap) return;
         for (int row = 0; row < kSettingRows; row++) {
@@ -515,6 +568,11 @@ void Scene::handle(const Gesture& g) {
         }
         if (startOverArea().contains(g.x, g.y)) {
             overlay_ = Overlay::StartOver;
+            cue(Cue::Tick);
+            return;
+        }
+        if (wifiButtonArea().contains(g.x, g.y)) {
+            overlay_ = Overlay::Wifi;
             cue(Cue::Tick);
             return;
         }
@@ -1405,7 +1463,9 @@ void Scene::update(uint32_t nowMs) {
     if (now_ >= nextChatter_) chatter();
 
     const uint32_t timeout = screenTimeoutMs();
-    if (!screenOff_ && timeout && fingers_ == 0 && nowMs - lastInputMs_ >= timeout) screenOff_ = true;
+    const bool settingUp = overlay_ == Overlay::Wifi &&
+                           (wifiStatus_ == WifiStatus::SetupRunning || wifiStatus_ == WifiStatus::Checking);
+    if (!screenOff_ && timeout && fingers_ == 0 && nowMs - lastInputMs_ >= timeout && !settingUp) screenOff_ = true;
 }
 
 void Scene::handleEvent(const Event& e) {
@@ -1994,6 +2054,7 @@ void Scene::draw(Canvas& c) {
     if (overlay_ == Overlay::Gallery) drawGallery(c);
     if (overlay_ == Overlay::Trails) drawTrails(c);
     if (overlay_ == Overlay::Settings) drawSettings(c);
+    if (overlay_ == Overlay::Wifi) drawWifi(c);
     if (overlay_ == Overlay::Name) drawNaming(c);
     if (overlay_ == Overlay::StartOver) drawStartOver(c);
     if (overlay_ == Overlay::Game) drawGame(c);
@@ -4016,6 +4077,71 @@ void Scene::drawSettings(Canvas& c) {
     Rect o = startOverArea(), d = settingsDoneArea();
     c.fillRoundRect(o.x, o.y + 4, o.w, o.h - 8, 14, 0xD9CFBC);
     c.text(o.cx(), o.cy() - 7.0f, "START OVER", 2, 0x7A2E1E, Align::Center);
+    if (wifiAvailable_) {
+        Rect w = wifiButtonArea();
+        c.fillRoundRect(w.x, w.y + 4, w.w, w.h - 8, 14, 0x6E8F5A);
+        c.text(w.cx(), w.cy() - 7.0f, "WI-FI", 2, kUiLight, Align::Center);
+    }
+    c.fillRoundRect(d.x, d.y + 4, d.w, d.h - 8, 14, kButton);
+    c.text(d.cx(), d.cy() - 7.0f, "DONE", 2, kUiLight, Align::Center);
+}
+
+// The Wi-Fi page: what's saved, and the steps while the setup hotspot is up.
+void Scene::drawWifi(Canvas& c) {
+    const Rgb ink = 0x3B2A1E, faint = 0x8A7A66, good = 0x3F7A3A, bad = 0x8A3A2A;
+    c.tint(0x000000, 0.55f);
+    c.fillRoundRect(kSetX, kSetY, kSetW, kSetH, 20, kUiLight);
+    c.text(240, kSetY + 12, "WI-FI", 3, ink, Align::Center);
+    c.text(240, kSetY + 46, "FOR THE CLOCK AND THE WEATHER", 2, faint, Align::Center);
+    float y = kSetY + 84;
+    auto line = [&](const char* text, int scale, Rgb col) {
+        c.text(240, y, text, scale, col, Align::Center);
+        y += scale == 1 ? 16.0f : scale == 2 ? 26.0f : 36.0f;
+    };
+    char buf[48];
+    switch (wifiStatus_) {
+        case WifiStatus::NotSet:
+            line("NOT SET UP YET", 2, ink);
+            y += 10;
+            line("TAP SET UP, THEN USE A PHONE", 2, faint);
+            line("TO PICK YOUR NETWORK", 2, faint);
+            break;
+        case WifiStatus::Saved:
+        case WifiStatus::Joined:
+            line("NETWORK:", 2, faint);
+            line(wifiSsid_, 2, ink);
+            y += 6;
+            line(wifiStatus_ == WifiStatus::Joined ? "CONNECTED" : "SAVED", 2, good);
+            break;
+        case WifiStatus::SetupRunning:
+            line("1. ON A PHONE, JOIN THE WI-FI", 2, ink);
+            y += 2;
+            line(wifiHotspot_, 3, 0x7A4E1E);
+            y += 4;
+            line("2. A PAGE OPENS. IF NOT, GO TO", 2, ink);
+            line("192.168.4.1 IN THE BROWSER", 2, ink);
+            y += 4;
+            line("3. PICK YOUR NETWORK AND", 2, ink);
+            line("TYPE ITS PASSWORD", 2, ink);
+            break;
+        case WifiStatus::Checking:
+            line("CHECKING...", 2, ink);
+            line(wifiSsid_, 2, ink);
+            break;
+        case WifiStatus::Failed:
+            std::snprintf(buf, sizeof buf, "COULDN'T JOIN");
+            line(buf, 2, bad);
+            line(wifiSsid_, 2, ink);
+            y += 6;
+            line("CHECK THE PASSWORD", 2, faint);
+            line("AND TAP SET UP TO TRY AGAIN", 2, faint);
+            break;
+    }
+    const bool running = wifiStatus_ == WifiStatus::SetupRunning, checking = wifiStatus_ == WifiStatus::Checking;
+    Rect a = wifiSetupArea(), d = wifiDoneArea();
+    c.fillRoundRect(a.x, a.y + 4, a.w, a.h - 8, 14, checking ? 0xB8AE9A : running ? 0xD9CFBC : 0x6E8F5A);
+    c.text(a.cx(), a.cy() - 7.0f, running ? "CANCEL" : wifiStatus_ == WifiStatus::NotSet ? "SET UP" : "SET UP AGAIN", 2,
+           running ? 0x7A2E1E : kUiLight, Align::Center);
     c.fillRoundRect(d.x, d.y + 4, d.w, d.h - 8, 14, kButton);
     c.text(d.cx(), d.cy() - 7.0f, "DONE", 2, kUiLight, Align::Center);
 }

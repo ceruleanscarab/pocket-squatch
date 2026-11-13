@@ -78,4 +78,10 @@ Wiki: https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-4B
 - Play and talk (`scene/`): boop, tickle and pat the pet (its eyes follow your finger), shake a tree for a pinecone
   and play fetch (tap or flick to toss), light the campfire; speech bubbles (`Scene::speak`) for replies, a hello when
   the screen comes back on, and chatter about needs, weather and seasons. All optional; none of it is timing-critical.
+- Horse edition (menuconfig Pet = Horse; `Scene::setSpecies`): its own drawing, paddock, foods, real sounds
+  (`horse_sounds.cpp`, CC0 from BigSoundBank, prepared by `tools/horse_sounds_*.py`), words, a birth instead of an
+  egg, and five games including Fence Jump. Voices are higher the younger the pet (`Scene::voicePitch`).
+- Wi-Fi setup from a phone (`firmware/main/wifisetup.cpp`: open hotspot, captive page, DNS; saved in NVS by
+  `storage::saveWifi`, used by the clock and weather via `storage::wifiCredentials`; Kconfig is only the default).
+  Settings > Wi-Fi in `scene/`. Not yet run on hardware.
 - Later: Bluetooth visitors between two boards.

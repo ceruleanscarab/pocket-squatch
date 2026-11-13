@@ -33,7 +33,7 @@ public:
         int cy() const { return y + h / 2; }
     };
 
-    enum class Overlay : uint8_t { None, Stats, Gallery, Trails, Settings, Name, Game, StartOver };
+    enum class Overlay : uint8_t { None, Stats, Gallery, Trails, Settings, Name, Game, StartOver, Wifi };
 
     // Things you can pick up from the tray and give to Squatch.
     enum class Item : uint8_t { None, Berries, Fish, Roots, Brush, Poultice, Pinecone };
@@ -189,6 +189,18 @@ public:
         sceneryKey_ = -1;
     }
     bool detail() const { return detail_; }
+
+    // ---- Wi-Fi setup (boards only): Settings gets a Wi-Fi button and page. The board tells
+    // the page what's saved and how setup is going; the page asks the board to start or stop
+    // its setup hotspot. Hardware-free: the board does the radio work.
+    enum class WifiStatus : uint8_t { NotSet, Saved, Joined, SetupRunning, Checking, Failed };
+    void setWifiAvailable(const char* hotspotName);  // the board can do it; its setup hotspot's name
+    void setWifiStatus(WifiStatus st, const char* ssid);
+    // 1: start the setup hotspot, 2: stop it; 0 nothing. Once per press.
+    int takeWifiRequest();
+    Rect wifiButtonArea() const;  // on the settings page
+    Rect wifiSetupArea() const;   // on the Wi-Fi page: Set up / Cancel
+    Rect wifiDoneArea() const;
 
     // Things to do in the clearing, and what it says. All just for fun: none of them is
     // needed to raise it, and none needs quick fingers.
@@ -463,6 +475,11 @@ private:
     uint32_t fireUntil_ = 0, nextEmber_ = 0;
     uint32_t nextClop_ = 0;
     uint32_t drinkAt_ = 0, nextSlurp_ = 0, barnPeekUntil_ = 0;
+    bool wifiAvailable_ = false;
+    WifiStatus wifiStatus_ = WifiStatus::NotSet;
+    char wifiSsid_[33] = {}, wifiHotspot_[24] = {};
+    int wifiRequest_ = 0;
+    void drawWifi(Canvas& c);
     // Fence Jump: the next fence's x, when the current jump began (0: on the ground), and
     // how many were cleared with a well-timed jump.
     float fenceX_ = 0;

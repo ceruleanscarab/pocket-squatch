@@ -9,6 +9,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "netjoin.hpp"
+#include "storage.hpp"
 #include "radio.hpp"
 #include "sdkconfig.h"
 
@@ -60,7 +61,8 @@ void weatherTask(void*) {
     for (;;) {
         radio::take();
         squatch::Weather w;
-        bool ok = netjoin::join(CONFIG_SQUATCH_WIFI_SSID, CONFIG_SQUATCH_WIFI_PASSWORD) && fetch(w);
+        char ssid[33], pass[65];
+        bool ok = storage::wifiCredentials(ssid, sizeof ssid, pass, sizeof pass) && netjoin::join(ssid, pass) && fetch(w);
         netjoin::leave();
         radio::give();
         if (ok) {
@@ -77,10 +79,15 @@ void weatherTask(void*) {
 
 void start() {
 #if CONFIG_SQUATCH_WEATHER
-    if (!CONFIG_SQUATCH_WIFI_SSID[0] || !CONFIG_SQUATCH_WEATHER_LAT[0] || !CONFIG_SQUATCH_WEATHER_LON[0]) {
-        ESP_LOGI(TAG, "no location or Wi-Fi set (menuconfig: Pocket Squatch): no weather");
+    static bool started = false;  // once: it runs for good, and picks up a newly saved network itself
+    if (started) return;
+    char ssid[33], pass[65];
+    if (!storage::wifiCredentials(ssid, sizeof ssid, pass, sizeof pass) || !CONFIG_SQUATCH_WEATHER_LAT[0] ||
+        !CONFIG_SQUATCH_WEATHER_LON[0]) {
+        ESP_LOGI(TAG, "no location or Wi-Fi set yet: no weather");
         return;
     }
+    started = true;
     xTaskCreatePinnedToCore(weatherTask, "weather", 6144, nullptr, 3, nullptr, 0);
 #endif
 }

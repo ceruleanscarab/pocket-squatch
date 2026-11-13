@@ -295,6 +295,7 @@ private:
     void drawHorse(Canvas& c, const Look& look, bool mother = false);
     void drawMare(Canvas& c);
     bool newborn() const;
+    bool drinking() const;
     const char* stageName(Stage st) const;     // the horse edition says FOAL, YEARLING...
     const char* formName(AdultForm f) const;
     void horseCoatName(char* out, size_t n) const;  // the horse edition's 'egg': its mother, waiting for the foal
@@ -459,6 +460,7 @@ private:
     uint32_t coneSince_ = 0;
     uint32_t fireUntil_ = 0, nextEmber_ = 0;
     uint32_t nextClop_ = 0;
+    uint32_t drinkAt_ = 0, nextSlurp_ = 0, barnPeekUntil_ = 0;
     uint32_t bornAt_ = 0;  // when the foal arrived: its mother walks back to the barn after
 
     // talking

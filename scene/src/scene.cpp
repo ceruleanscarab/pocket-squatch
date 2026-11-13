@@ -1041,6 +1041,18 @@ bool Scene::canPlay() const {
 }
 
 void Scene::shakeTree(int i) {
+    if (species_ == Species::Horse && i == 1) {  // the barn: knock, and someone answers
+        cue(Cue::Clop);  // a knock on the barn door (Knock would be a whinny for the horse)
+        barnPeekUntil_ = rand01() < 0.5f ? now_ + 2600 : 0;  // sometimes the barn cat looks out
+        if (canPlay()) {
+            const float h = hourOfDay();
+            static const char* kBarn[] = {"MY BARN!", "HOME SWEET BARN", "IS IT HAY TIME?", "HI, BARN CAT!"};
+            speak(h >= 20 || h < 6 ? "BEDTIME IN THE BARN?" : kBarn[barnPeekUntil_ ? 3 : static_cast<int>(rand01() * 3) % 3]);
+            react(React::Happy, 1000);
+            cue(Cue::Neigh);
+        }
+        return;
+    }
     const float tx = i ? kRightTreeX : kLeftTreeX, base = i ? kRightTreeBase : kLeftTreeBase;
     shakingTree_ = i;
     shakeUntil_ = now_ + 900;
@@ -1160,6 +1172,16 @@ void Scene::updateFetch(float dt) {
 }
 
 void Scene::lightFire() {
+    if (species_ == Species::Horse) {  // the water trough: a splash, and a drink if it's about
+        cue(Cue::Clean);
+        for (int i = 0; i < 6; i++)
+            spawn(ParticleKind::Drop, kFireX + (rand01() - 0.5f) * 50, kFireY - 20, (rand01() - 0.5f) * 60, -120 - rand01() * 60, 700);
+        if (canPlay() && fetch_ == Fetch::None && !drinking()) {
+            drinkAt_ = now_ ? now_ : 1;
+            speak("A DRINK? YES!");
+        }
+        return;
+    }
     const Sky sky = weather_.sky;
     if (sky == Sky::Rain || sky == Sky::Drizzle || sky == Sky::Storm) {
         say("TOO WET FOR A FIRE", true);
@@ -1275,9 +1297,9 @@ void Scene::chatter() {
         return;
     // What's on its mind: a need first, then the weather and the season, then idle chatter.
     if (s.sick) return speak("I FEEL ICKY...");
-    if (s.hunger <= 1.5f) return speak("TUMMY RUMBLES...");
+    if (s.hunger <= 1.5f) return speak(species_ == Species::Horse ? "HUNGRY... CARROTS?" : "TUMMY RUMBLES...");
     if (s.happiness <= 1.5f) return speak("PLAY WITH ME?");
-    if (s.messes >= 2) return speak("STINKY IN HERE...");
+    if (s.messes >= 2) return speak(species_ == Species::Horse ? "MUCK OUT MY PADDOCK?" : "STINKY IN HERE...");
     const float h = hourOfDay();
     if (h >= 21 || h < 5) return speak("YAWN... SLEEPY");
     if (rand01() < 0.5f) {
@@ -1289,17 +1311,21 @@ void Scene::chatter() {
             case Sky::Fog: return speak("SO FOGGY...");
             default: break;
         }
-        if (halloween()) return speak("BOO! HEE HEE");
+        if (halloween()) return speak(species_ == Species::Horse ? "NEIGH-BOO! HEE HEE" : "BOO! HEE HEE");
         if (autumn()) return speak("CRUNCHY LEAVES!");
     }
     static const char* kIdle[] = {"HMM HMM HMM",      "LA LA LA",       "WHAT'S THAT?", "SNIFF SNIFF",
                                   "NICE DAY!",        "I LIKE IT HERE", "BOOP MY NOSE?", "TOSS A PINECONE?",
                                   "SHAKE A TREE?",    "YOU'RE NICE"};
+    static const char* kHorseIdle[] = {"NEIGH!",          "MORE CARROTS?",  "LET'S GALLOP!",  "I LOVE MY BARN",
+                                       "SHAKE THE TREE?", "BRUSH MY MANE?", "CLIP CLOP...",   "WHAT'S THAT?",
+                                       "SNIFF SNIFF",     "YOU'RE MY FAVE"};
+    static_assert(sizeof kHorseIdle == sizeof kIdle, "keep the two lists the same length");
     constexpr int n = static_cast<int>(sizeof kIdle / sizeof kIdle[0]);
     int pick = static_cast<int>(rand01() * n) % n;
     if (pick == lastChatter_) pick = (pick + 1) % n;
     lastChatter_ = static_cast<uint8_t>(pick);
-    speak(kIdle[pick]);
+    speak(species_ == Species::Horse ? kHorseIdle[pick] : kIdle[pick]);
 }
 
 void Scene::drawBubble(Canvas& c) {
@@ -1683,6 +1709,10 @@ bool Scene::hatched() const {  // and here in the clearing
     return st != Stage::Egg && st != Stage::Away && !sim_.state().foraging;
 }
 
+bool Scene::drinking() const {
+    return species_ == Species::Horse && drinkAt_ && now_ - drinkAt_ < 5200 && canPlay();
+}
+
 bool Scene::hiding() const { return hatched() && sim_.trustLevel() == TrustLevel::Hiding && !newborn(); }
 
 // A foal's first few seconds: beside its mother, then off to hide (if it's shy, as they are).
@@ -1703,6 +1733,12 @@ float Scene::squatchScale() const {
 float Scene::squatchX() const {
     if (petOverride_) return gameX_;
     if (fetch_ == Fetch::Chase || fetch_ == Fetch::Carry) return fetchX_;
+    if (drinking()) {  // over to the trough, a drink, and back
+        const float since = static_cast<float>(now_ - drinkAt_) / 1000.0f, at = kFireX + 96;
+        if (since < 1.4f) return 240 + (at - 240) * since / 1.4f;
+        if (since < 3.8f) return at;
+        return at + (240 - at) * std::min(1.0f, (since - 3.8f) / 1.4f);
+    }
     if (newborn()) {
         const float since = static_cast<float>(now_ - bornAt_) / 1000.0f;
         const float to = sim_.trustLevel() == TrustLevel::Hiding ? kHideX : 240.0f;
@@ -1718,6 +1754,11 @@ float Scene::squatchX() const {
 
 float Scene::squatchFoot() const {
     if (petOverride_) return kFriendlyFoot;
+    if (drinking()) {  // standing just behind the trough
+        const float since = static_cast<float>(now_ - drinkAt_) / 1000.0f;
+        const float near = std::max(0.0f, std::min(1.0f, std::min(since / 1.4f, (5.2f - since) / 1.4f)));
+        return kFriendlyFoot + 30 * near;
+    }
     return sim_.trustLevel() == TrustLevel::Wandering ? kWanderFoot : kFriendlyFoot;
 }
 
@@ -1897,6 +1938,17 @@ void Scene::draw(Canvas& c) {
     if (overlay_ == Overlay::Game && game_ == Game::Seek) {
         drawBush(c, 160, 318);
         drawBush(c, 300, 318);
+    }
+    if (species_ == Species::Horse && now_ < barnPeekUntil_) {  // the barn cat in the hayloft
+        const float rise = std::min(1.0f, std::min(static_cast<float>(barnPeekUntil_ - now_), 2600.0f - static_cast<float>(barnPeekUntil_ - now_)) / 300.0f);
+        const float cx = 432, cy = 220 - 4 * rise;
+        c.fillRect(cx - 8, 217, 16, 18, sh(0x3A2A20));  // the dark loft behind
+        c.fillTriangle(cx - 7, cy - 3, cx - 2, cy - 5, cx - 6, cy - 11, sh(0xE0903C));
+        c.fillTriangle(cx + 7, cy - 3, cx + 2, cy - 5, cx + 6, cy - 11, sh(0xE0903C));
+        c.fillCircle(cx, cy, 7, sh(0xE0903C));
+        c.fillCircle(cx - 2.5f, cy - 1, 1.3f, 0x1A1A1A);
+        c.fillCircle(cx + 2.5f, cy - 1, 1.3f, 0x1A1A1A);
+        c.fillCircle(cx, cy + 2, 1, 0xE88A9A);
     }
     const bool coneBehind = fetch_ != Fetch::Carry && coneY_ < squatchFoot();
     if (fetch_ != Fetch::None && coneBehind) drawCone(c);
@@ -2388,6 +2440,7 @@ struct Scene::Look {
     bool angry;
     bool hat;  // a witch's hat, Halloween week
     float gait = -1;  // walking: the legs' phase; below 0 standing still
+    float graze = 0;  // the horse's head lowered (0 up .. 1 at the ground), to drink or graze
 };
 
 // The horse edition's start: the foal's mother, waiting in the paddock. As the time comes
@@ -2537,6 +2590,23 @@ void Scene::drawPet(Canvas& c) {
     }
     if (sim_.trustLevel() == TrustLevel::Wandering && !s.asleep && std::fabs(wanderTarget_ - wanderX_) > 1)
         L.gait = t * 8;
+    if (species_ == Species::Horse && drinking()) {
+        const float since = static_cast<float>(now_ - drinkAt_) / 1000.0f;
+        const bool there = since >= 1.4f && since < 3.8f;
+        faceDir_ = since < 3.8f ? -1.0f : 1.0f;
+        if (!there) L.gait = t * 10;
+        else L.mouth = 2;  // slurping
+        // Head down to the water once it's there, and up again before it goes.
+        L.graze = std::max(0.0f, std::min(1.0f, std::min((since - 1.4f) / 0.4f, (3.8f - since) / 0.4f)));
+        if (there && now_ >= nextSlurp_) {
+            cue(Cue::Munch);
+            spawn(ParticleKind::Drop, kFireX + 20, kFireY - 22, (rand01() - 0.5f) * 30, -60, 500);
+            nextSlurp_ = now_ + 700;
+        }
+        if (since >= 2.0f && since < 2.1f && !bubble()) speak("SLURP SLURP... AHH!");
+        drawHorse(c, L);
+        return;
+    }
     if (species_ == Species::Horse && newborn()) {  // nuzzling its mother, then trotting off
         const bool off = now_ - bornAt_ >= 3000;
         faceDir_ = off ? -1.0f : 1.0f;
@@ -2692,7 +2762,8 @@ void Scene::drawHorse(Canvas& c, const Look& L, bool mother) {
     leg(-30, true, 4.7f, 0);
 
     // The neck, up and forward to the head.
-    const float hx = X(bodyRx * 0.95f + 6), hy = Y(bodyY - 50 - (hd - 1) * 12);
+    const float hx = X(bodyRx * 0.95f + 6 + 16 * L.graze),
+                hy = Y((bodyY - 50 - (hd - 1) * 12) * (1 - L.graze) + (-14 * hd) * L.graze);
     const float nbx = X(bodyRx * 0.6f), nby = Y(bodyY - bodyRy * 0.2f);
     // A broad base in the shoulders, tapering to the throat: two strokes and the wedge between.
     const float topX = nbx - dir * 16 * s, topY = nby - 10 * s, chestX = nbx + dir * 14 * s, chestY = nby + 14 * s;

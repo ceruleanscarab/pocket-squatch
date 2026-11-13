@@ -1254,6 +1254,32 @@ static void testVoicePitch() {
     CHECK(samplesOf(1.8f) < samplesOf(1.0f) * 0.7f);
 }
 
+static void testFoalBirth() {
+    std::printf("horse edition: the foal is born beside its mother, then goes off to hide\n");
+    Sim sim;
+    sim.newGame(1798761600 + 10 * 3600, 0, 7);
+    Scene scene(sim);
+    scene.setSpecies(Scene::Species::Horse);
+    uint32_t ms = 0;
+    auto step = [&](int n) {
+        for (int i = 0; i < n; i++) {
+            ms += 16;
+            scene.update(ms);
+        }
+    };
+    step(100);
+    CHECK(sim.state().stage == Stage::Egg);
+    CHECK(scene.squatchArea().w >= 64 && scene.squatchArea().h >= 64);  // tapping the mother
+    while (sim.state().stage == Stage::Egg) {
+        sim.tick(5);
+        step(1);
+    }
+    step(30);
+    CHECK(scene.squatchArea().cx() > 150);  // at its mother's side first
+    step(400);
+    CHECK(scene.squatchArea().cx() < 120);  // then off behind the tree
+}
+
 int main() {
     testTap();
     testLongPressThenDrag();
@@ -1288,6 +1314,7 @@ int main() {
     testDetail();
     testPlayAndTalk();
     testVoicePitch();
+    testFoalBirth();
 
     std::printf("\n%d checks, %d failed\n", gChecks, gFailures);
     return gFailures ? 1 : 0;

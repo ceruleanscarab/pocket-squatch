@@ -194,6 +194,8 @@ void Scene::cue(Cue c) {
             case Cue::Returned: c = Cue::Neigh; break;
             case Cue::Sneeze:
             case Cue::Sulk: c = Cue::Snort; break;
+            case Cue::Hatch: c = Cue::Neigh; break;   // the mother calls as her foal arrives
+            case Cue::NewEgg: c = Cue::Nicker; break;
             case Cue::Eat: c = Cue::Munch; break;
             default: break;
         }
@@ -762,7 +764,7 @@ void Scene::saved(Result r) {
 void Scene::sayNotNow() {
     const State& s = sim_.state();
     if (s.foraging) say("IT'S OUT ON A TRAIL", true);
-    else if (s.stage == Stage::Egg) say("IT HASN'T HATCHED YET", true);
+    else if (s.stage == Stage::Egg) say(species_ == Species::Horse ? "THE FOAL ISN'T HERE YET" : "IT HASN'T HATCHED YET", true);
     else if (s.stage == Stage::Away) say("IT'S NOT HERE", true);
     else if (s.asleep) say("SHH, IT'S ASLEEP", true);
 }
@@ -935,7 +937,7 @@ void Scene::doForage(int trail) {
         std::snprintf(buf, sizeof buf, "IT'S OUT AT %s", name);
         note(buf);
     } else if (r == Result::NotNow) {
-        if (s.stage == Stage::Egg) note("IT HASN'T HATCHED YET");
+        if (s.stage == Stage::Egg) note(species_ == Species::Horse ? "THE FOAL ISN'T HERE YET" : "IT HASN'T HATCHED YET");
         else if (s.stage == Stage::Away) note("IT'S NOT HERE");
         else if (s.asleep) note("IT'S ASLEEP: TRY IN THE MORNING");
         else note("NOT RIGHT NOW");
@@ -1389,6 +1391,23 @@ void Scene::handleEvent(const Event& e) {
     char buf[40];
     switch (e.type) {
         case EventType::Hatched: {
+            if (species_ == Species::Horse) {  // born at its mother's side
+                bornAt_ = now_ ? now_ : 1;
+                for (int i = 0; i < 6; i++)
+                    spawn(ParticleKind::Heart, 220 + (rand01() - 0.5f) * 80, 260, (rand01() - 0.5f) * 40, -50, 1400);
+                for (int i = 0; i < 8; i++)
+                    spawn(ParticleKind::Sparkle, 220 + (rand01() - 0.5f) * 120, 300 - rand01() * 60, 0, -30, 900);
+                cue(Cue::Hatch);
+                askNameAt_ = now_ + 9500;  // after its mother has gone back to the barn
+                const Traits t = sim_.traits();
+                if (t.rarity == Rarity::Mythic) say("A GOLDEN UNICORN IS BORN!");
+                else if (t.rarity == Rarity::Epic) say("A UNICORN FOAL IS BORN!");
+                else if (t.variant == Variant::Swamp) say("A RARE DAPPLE GREY FOAL!");
+                else if (t.variant != Variant::None) say("A RARE WHITE FOAL!");
+                else if (t.rarity == Rarity::Uncommon) say("A FOAL WITH AN UNUSUAL COAT!");
+                else say("A FOAL IS BORN!");
+                break;
+            }
             for (int i = 0; i < 10; i++)
                 spawn(ParticleKind::Shell, kEggX, kEggY, (rand01() - 0.5f) * 260, -150 - rand01() * 150, 1200);
             react(React::Happy, 1200);
@@ -1455,7 +1474,7 @@ void Scene::handleEvent(const Event& e) {
             cue(Cue::Photo);
             break;
         case EventType::LaidEgg:
-            say("A NEW EGG!");
+            say(species_ == Species::Horse ? "A FOAL IS ON THE WAY!" : "A NEW EGG!");
             cue(Cue::NewEgg);
             break;
         case EventType::TrailsScouted:
@@ -1658,7 +1677,10 @@ bool Scene::hatched() const {  // and here in the clearing
     return st != Stage::Egg && st != Stage::Away && !sim_.state().foraging;
 }
 
-bool Scene::hiding() const { return hatched() && sim_.trustLevel() == TrustLevel::Hiding; }
+bool Scene::hiding() const { return hatched() && sim_.trustLevel() == TrustLevel::Hiding && !newborn(); }
+
+// A foal's first few seconds: beside its mother, then off to hide (if it's shy, as they are).
+bool Scene::newborn() const { return species_ == Species::Horse && bornAt_ && now_ - bornAt_ < 5000 && hatched(); }
 
 float Scene::squatchScale() const {
     float k = 1;
@@ -1675,6 +1697,11 @@ float Scene::squatchScale() const {
 float Scene::squatchX() const {
     if (petOverride_) return gameX_;
     if (fetch_ == Fetch::Chase || fetch_ == Fetch::Carry) return fetchX_;
+    if (newborn()) {
+        const float since = static_cast<float>(now_ - bornAt_) / 1000.0f;
+        const float to = sim_.trustLevel() == TrustLevel::Hiding ? kHideX : 240.0f;
+        return since < 3 ? 214.0f : 214.0f + (to - 214.0f) * std::min(1.0f, (since - 3) / 2);
+    }
     switch (sim_.trustLevel()) {
         case TrustLevel::Hiding: return kHideX;
         case TrustLevel::Wandering: return wanderX_;
@@ -1720,7 +1747,7 @@ bool Scene::foodLeftToday() const {
 Scene::Rect Scene::squatchArea() const {
     Stage st = sim_.state().stage;
     if (st == Stage::Away || sim_.state().foraging) return {0, 0, 0, 0};
-    if (st == Stage::Egg) return {184, 222, 112, 128};
+    if (st == Stage::Egg) return species_ == Species::Horse ? Rect{150, 196, 200, 150} : Rect{184, 222, 112, 128};
     if (hiding()) return {static_cast<int>(kHideX) - 40, static_cast<int>(kHideY) - 40, 80, 80};
     float k = squatchScale(), hr = headRatio(st);
     int h = std::max(72, static_cast<int>((190 + (hr - 1) * 40) * k));
@@ -1867,8 +1894,11 @@ void Scene::draw(Canvas& c) {
     }
     const bool coneBehind = fetch_ != Fetch::Carry && coneY_ < squatchFoot();
     if (fetch_ != Fetch::None && coneBehind) drawCone(c);
-    if (s.stage == Stage::Egg) drawEgg(c);
-    else if (petAway) {}
+    if (species_ == Species::Horse && bornAt_ && now_ - bornAt_ < 9000 && s.stage != Stage::Egg) drawMare(c);
+    if (s.stage == Stage::Egg) {
+        if (species_ == Species::Horse) drawMare(c);
+        else drawEgg(c);
+    } else if (petAway) {}
     else if (hiding()) drawHidingEyes(c);
     else if (hatched()) drawPet(c);
     if (fetch_ != Fetch::None && !coneBehind) drawCone(c);
@@ -2354,6 +2384,57 @@ struct Scene::Look {
     float gait = -1;  // walking: the legs' phase; below 0 standing still
 };
 
+// The horse edition's start: the foal's mother, waiting in the paddock. As the time comes
+// near she glows a little (more for a rare foal) and looks back at her belly; a tap and she
+// nods. After the birth she stands a moment, then walks back to her barn.
+void Scene::drawMare(Canvas& c) {
+    const State& s = sim_.state();
+    Look L{};
+    L.s = 1;
+    L.head = 1;
+    L.wide = 1.06f;  // expecting
+    L.breath = 1 + 0.015f * static_cast<float>(std::sin(t_ * 1.6));
+    L.blink = now_ < blinkUntil_ ? 1.0f : 0.0f;
+    L.mouth = 1;
+    L.ground = L.foot = kFriendlyFoot;
+    const float saved = faceDir_;
+    if (s.stage == Stage::Egg) {
+        const float progress = static_cast<float>(sim_.ageSecs()) / static_cast<float>(sim_.tuning().eggEnd);
+        L.x = 250;
+        faceDir_ = -1;
+        // A bed of straw for the foal to be born on.
+        c.fillEllipse(L.x - 20, kFriendlyFoot + 2, 95, 14, sh(0xD9B655));
+        for (int i = 0; i < 14; i++) {
+            const float sx = L.x - 100 + i * 14.0f, sy = kFriendlyFoot - 4 + (i % 3) * 4.0f;
+            c.line(sx, sy, sx + 12, sy - 4 + (i % 2) * 6.0f, 2, sh(i % 2 ? 0xEBCB6E : 0xC9A245));
+        }
+        if (react_ == React::Wobble && now_ < reactUntil_) L.armR = 0.4f;  // a nod and a hoof
+        if (progress > 0.75f) {  // nearly time: she looks back, and a rare foal shows
+            L.lookX = 0.6f;
+            const Traits t = sim_.traits();
+            if (t.rarity >= Rarity::Rare) {
+                const Rgb tint = t.rarity == Rarity::Mythic ? 0xFFD34D : (t.rarity == Rarity::Epic ? 0xF2C8FF : 0xBFE3FF);
+                c.glow(L.x, kFriendlyFoot - 80, 130, tint, 0.45f + 0.15f * std::sin(t_ * 2));
+                if (noise01(static_cast<uint32_t>(t_ * 3) + 77) < 0.05f)
+                    spawn(ParticleKind::Sparkle, L.x + (rand01() - 0.5f) * 140, kFriendlyFoot - 40 - rand01() * 100, 0, -25, 900);
+            }
+            if (noise01(static_cast<uint32_t>(t_ * 2)) < 0.02f)
+                spawn(ParticleKind::Heart, L.x - 40, kFriendlyFoot - 140, 0, -30, 1200);
+        }
+    } else {
+        // Born: she stays three seconds, then walks off to the right, into the barn.
+        const float since = static_cast<float>(now_ - bornAt_) / 1000.0f;
+        const float walk = std::max(0.0f, since - 3.0f) / 6.0f;
+        L.x = 300 + walk * 230;
+        L.foot = L.ground = kFriendlyFoot - walk * 30;  // toward the barn, further back
+        L.s = 1 - walk * 0.15f;
+        faceDir_ = walk > 0 ? 1.0f : -1.0f;
+        if (walk > 0) L.gait = t_ * 8;
+    }
+    drawHorse(c, L, true);
+    faceDir_ = saved;
+}
+
 void Scene::drawPet(Canvas& c) {
     const State& s = sim_.state();
     Look L{};
@@ -2450,6 +2531,13 @@ void Scene::drawPet(Canvas& c) {
     }
     if (sim_.trustLevel() == TrustLevel::Wandering && !s.asleep && std::fabs(wanderTarget_ - wanderX_) > 1)
         L.gait = t * 8;
+    if (species_ == Species::Horse && newborn()) {  // nuzzling its mother, then trotting off
+        const bool off = now_ - bornAt_ >= 3000;
+        faceDir_ = off ? -1.0f : 1.0f;
+        if (off) L.gait = t * 10;
+        drawHorse(c, L);
+        return;
+    }
     if (species_ == Species::Horse) {
         // It turns to face where it's looking, but not back and forth on every glance.
         if (L.gait >= 0 && fetch_ != Fetch::None) faceDir_ = (fetch_ == Fetch::Chase ? coneX_ : 240.0f) >= L.x ? 1.0f : -1.0f;
@@ -2514,17 +2602,19 @@ void Scene::horseColours(Rgb& coat, Rgb& mane, Rgb& muzzle, bool& unicorn, bool&
 
 // A cartoon horse side on, with its head turned a little toward you. Same poses as the
 // Squatch: armR lifts a front hoof (a wave), mouth smiles or chews, blink closes the eye.
-void Scene::drawHorse(Canvas& c, const Look& L) {
+void Scene::drawHorse(Canvas& c, const Look& L, bool mother) {
     const State& st = sim_.state();
     const Traits dna = sim_.traits();
     Rgb coat, mane, muzzle;
     bool unicorn, golden;
     horseColours(coat, mane, muzzle, unicorn, golden);
+    if (mother) unicorn = golden = false;  // the foal's mother: a plain horse with the same coat
+    const Stage stage = mother ? Stage::Adult : st.stage;
     const float s = L.s, f = L.foot, dir = faceDir_, b = L.breath, w = L.wide;
     const float hd = L.head;  // foals have bigger heads
     // Foals are mostly legs.
-    const float legLen = (st.stage == Stage::Baby ? 62 : st.stage == Stage::Child ? 56 : st.stage == Stage::Teen ? 52 : 50);
-    const float bodyRx = (st.stage == Stage::Baby ? 46 : 58) * w, bodyRy = (st.stage == Stage::Baby ? 26 : 31) * b;
+    const float legLen = (stage == Stage::Baby ? 62 : stage == Stage::Child ? 56 : stage == Stage::Teen ? 52 : 50);
+    const float bodyRx = (stage == Stage::Baby ? 46 : 58) * w, bodyRy = (stage == Stage::Baby ? 26 : 31) * b;
     const float bodyY = -legLen - bodyRy * 0.55f;
     auto X = [&](float dx) { return L.x + dir * dx * s; };
     auto Y = [&](float dy) { return f + dy * s; };
@@ -2543,7 +2633,7 @@ void Scene::drawHorse(Canvas& c, const Look& L) {
     c.fillEllipse(L.x, L.ground, 72 * s * w, 10 * s, 0x000000, detail_ ? 0.12f : 0.18f);
 
     // Legs: far pair first (darker), then the body, then the near pair.
-    const float legW = (st.stage == Stage::Baby ? 10.5f : 13) * s;
+    const float legW = (stage == Stage::Baby ? 10.5f : 13) * s;
     auto leg = [&](float dx, bool near, float phase, float lift) {
         float swing = L.gait >= 0 ? std::sin(L.gait + phase) * 7 : 0;
         const float topX = X(dx), topY = Y(-legLen - 4);
@@ -2589,7 +2679,7 @@ void Scene::drawHorse(Canvas& c, const Look& L) {
                          mix(coat, 0x1A120E, 0.35f));
         }
     }
-    if (st.stage == Stage::Baby)  // a foal's fuzzy little tail-end and belly
+    if (stage == Stage::Baby)  // a foal's fuzzy little tail-end and belly
         c.fillEllipse(bx, by + bodyRy * s * 0.55f, bodyRx * s * 0.6f, bodyRy * s * 0.25f, shade, 0.5f);
 
     leg(40, true, 1.6f, lift);
@@ -2668,7 +2758,7 @@ void Scene::drawHorse(Canvas& c, const Look& L) {
                    ey - er * 1.35f, 1.6f * s, 0x1E120E);
     }
     if (L.angry) c.line(ex - er * 1.1f, ey - er * 1.5f, ex + er * 1.1f, ey - er * 1.0f, 2.4f * s, 0x1E120E);
-    if (detail_ || st.stage == Stage::Baby)  // rosy cheek
+    if (detail_ || stage == Stage::Baby)  // rosy cheek
         c.glow(hx + dir * 8 * s * hd, hy + 8 * s * hd, 7 * s * hd, 0xF07A7A, 0.35f);
 
     // Nostril and mouth.
@@ -3681,14 +3771,14 @@ void Scene::drawStartOver(Canvas& c) {
     char line[48];
     std::snprintf(line, sizeof line, "%.10s WILL BE GONE FOR GOOD,", name);
     c.text(240, 112, line, 2, ink, Align::Center);
-    c.text(240, 136, "AND A NEW EGG WILL BE LAID.", 2, ink, Align::Center);
+    c.text(240, 136, species_ == Species::Horse ? "AND A NEW FOAL WILL COME." : "AND A NEW EGG WILL BE LAID.", 2, ink, Align::Center);
     c.text(240, 166, "SETTINGS AND WI-FI STAY AS THEY ARE.", 1, faint, Align::Center);
     Rect k = startKeepArea(), w = startWipeArea(), x = startCancelArea();
     c.fillRoundRect(k.x, k.y + 3, k.w, k.h - 6, 14, kButton);
-    c.text(k.cx(), k.y + 13.0f, "NEW EGG, KEEP PHOTOS", 2, kUiLight, Align::Center);
+    c.text(k.cx(), k.y + 13.0f, species_ == Species::Horse ? "NEW FOAL, KEEP PHOTOS" : "NEW EGG, KEEP PHOTOS", 2, kUiLight, Align::Center);
     c.text(k.cx(), k.y + 39.0f, "AND FOOTPRINTS AND THE TRAIL MAP", 1, 0xD9CFBC, Align::Center);
     c.fillRoundRect(w.x, w.y + 3, w.w, w.h - 6, 14, 0x8A3A2A);
-    c.text(w.cx(), w.y + 13.0f, "NEW EGG, WIPE EVERYTHING", 2, kUiLight, Align::Center);
+    c.text(w.cx(), w.y + 13.0f, species_ == Species::Horse ? "NEW FOAL, WIPE EVERYTHING" : "NEW EGG, WIPE EVERYTHING", 2, kUiLight, Align::Center);
     c.text(w.cx(), w.y + 39.0f, "A COMPLETELY FRESH START", 1, 0xF2D0C4, Align::Center);
     c.fillRoundRect(x.x, x.y + 3, x.w, x.h - 6, 14, 0xD9CFBC);
     c.text(x.cx(), x.cy() - 7.0f, "CANCEL", 2, ink, Align::Center);

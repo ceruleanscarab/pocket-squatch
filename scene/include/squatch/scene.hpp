@@ -292,7 +292,9 @@ private:
     void furColours(Rgb& fur, Rgb& face, Rgb& mark) const;
     // A horse's coat, mane and tail, and its markings; unicorn says whether it has a horn.
     void horseColours(Rgb& coat, Rgb& mane, Rgb& muzzle, bool& unicorn, bool& golden) const;
-    void drawHorse(Canvas& c, const Look& look);
+    void drawHorse(Canvas& c, const Look& look, bool mother = false);
+    void drawMare(Canvas& c);
+    bool newborn() const;  // the horse edition's 'egg': its mother, waiting for the foal
     void drawFence(Canvas& c);
     void drawAppleTree(Canvas& c, float x, float base);
     void drawBarn(Canvas& c);
@@ -454,6 +456,7 @@ private:
     uint32_t coneSince_ = 0;
     uint32_t fireUntil_ = 0, nextEmber_ = 0;
     uint32_t nextClop_ = 0;
+    uint32_t bornAt_ = 0;  // when the foal arrived: its mother walks back to the barn after
 
     // talking
     char bubble_[28] = {};

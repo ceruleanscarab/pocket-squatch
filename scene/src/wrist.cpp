@@ -114,7 +114,7 @@ Scene::Rect Wrist::buttonArea(int i) const {
 
 const char* Wrist::status() const {
     const State& s = sim_.state();
-    if (s.stage == Stage::Egg) return "AN EGG";
+    if (s.stage == Stage::Egg) return scene_.species() == Scene::Species::Horse ? "A FOAL IS COMING" : "AN EGG";
     if (s.stage == Stage::Away) return "IT RAN OFF";
     if (s.foraging) return "OUT ON A TRAIL";
     if (s.asleep) return "ASLEEP";

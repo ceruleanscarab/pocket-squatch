@@ -744,7 +744,10 @@ void Scene::doFeed(Food f) {
     if (r == Result::Ok) {
         cue(Cue::Eat);
         react(React::Eat, 1400);
-        speak(f == Food::Berries ? "BERRIES!" : (f == Food::Fish ? "FISHY!" : "CRUNCHY!"));
+        if (species_ == Species::Horse)  // apples are a treat, carrots a favourite, hay is just hay
+            speak(f == Food::Berries ? "APPLES! MY FAVE!" : (f == Food::Fish ? "CRUNCHY CARROTS!" : "HAY... OKAY."));
+        else
+            speak(f == Food::Berries ? "BERRIES!" : (f == Food::Fish ? "FISHY!" : "CRUNCHY!"));
         for (int i = 0; i < 5; i++)
             spawn(ParticleKind::Crumb, squatchX() + (rand01() - 0.5f) * 20, headY() + 30 * squatchScale(),
                   (rand01() - 0.5f) * 80, -40 - rand01() * 60, 900);
@@ -3178,7 +3181,12 @@ void Scene::drawTray(Canvas& c) {
         if (selected) c.fillRoundRect(cx - 40, top + 18, 80, 72, 16, kGold);
         c.fillRoundRect(cx - 36, top + 22, 72, 64, 14, kButton);
         if (!(selected && drag_ == DragMode::Item)) drawSlotIcon(c, slot, cx, top + 54 + (selected ? bob : 0));
-        c.text(cx, top + 94, toString(slot), 2, kUiLight, Align::Center);
+        const bool horse = species_ == Species::Horse;
+        const char* label = toString(slot);
+        if (horse && slot == Slot::Berries) label = "APPLE";
+        if (horse && slot == Slot::Fish) label = "CARROT";
+        if (horse && slot == Slot::Roots) label = "HAY";
+        c.text(cx, top + 94, label, 2, kUiLight, Align::Center);
     }
 }
 
@@ -3506,8 +3514,9 @@ void Scene::drawGamePicker(Canvas& c) {
     for (int i = 0; i < kGameChoices; i++) {
         Rect r = gameChoiceArea(i);
         c.fillRoundRect(r.x, r.y + 3, r.w, r.h - 6, 14, i == 3 ? 0xD9CFBC : 0xE6DCC6);
-        c.text(r.cx(), r.y + 14.0f, kGameNames[i], 2, ink, Align::Center);
-        c.text(r.cx(), r.y + 40.0f, kGameHints[i], 1, faint, Align::Center);
+        const bool apples = species_ == Species::Horse && i == 1;
+        c.text(r.cx(), r.y + 14.0f, apples ? "APPLE CATCH" : kGameNames[i], 2, ink, Align::Center);
+        c.text(r.cx(), r.y + 40.0f, apples ? "CATCH 10 FALLING APPLES" : kGameHints[i], 1, faint, Align::Center);
     }
     c.text(240, 412, "TAP OUTSIDE TO CLOSE", 1, faint, Align::Center);
 }
@@ -3557,13 +3566,13 @@ void Scene::drawGame(Canvas& c) {
         case Game::Seek: std::snprintf(status, sizeof status, "GUESSES LEFT: %d", tries_); break;
         case Game::Berry: {
             const int secs = gameUntil_ > now_ ? static_cast<int>((gameUntil_ - now_ + 999) / 1000) : 0;
-            std::snprintf(status, sizeof status, "BERRIES %d/%d  %ds", score_, kBerriesToWin, secs);
+            std::snprintf(status, sizeof status, "%s %d/%d  %ds", species_ == Species::Horse ? "APPLES" : "BERRIES", score_, kBerriesToWin, secs);
             break;
         }
         case Game::Photo: std::snprintf(status, sizeof status, "CHANCES LEFT: %d", runsLeft_); break;
         default: status[0] = '\0'; break;
     }
-    c.text(16, 12, kGameNames[game_ == Game::Seek ? 0 : game_ == Game::Berry ? 1 : 2], 2, kGold);
+    c.text(16, 12, species_ == Species::Horse && game_ == Game::Berry ? "APPLE CATCH" : kGameNames[game_ == Game::Seek ? 0 : game_ == Game::Berry ? 1 : 2], 2, kGold);
     c.text(16, 38, status, 2, kUiLight);
     Rect q = gameQuitArea();
     c.fillRoundRect(q.x + 8, q.y + 10, q.w - 16, q.h - 20, 12, kButton);
@@ -3742,6 +3751,32 @@ void Scene::drawSlotIcon(Canvas& c, Slot s, float x, float y) {
 }
 
 void Scene::drawItem(Canvas& c, Item it, float x, float y, float k) {
+    if (species_ == Species::Horse) {  // the horse's foods take the same places
+        switch (it) {
+            case Item::Berries:  // an apple
+                c.fillCircle(x - 4 * k, y + 2 * k, 11 * k, 0xC8323A);
+                c.fillCircle(x + 4 * k, y + 2 * k, 11 * k, 0xC8323A);
+                c.fillCircle(x - 6 * k, y - 3 * k, 3.5f * k, 0xFFFFFF, 0.45f);
+                c.line(x, y - 8 * k, x + 2 * k, y - 16 * k, 2.5f * k, 0x5A3A22);
+                c.fillEllipse(x + 7 * k, y - 14 * k, 6 * k, 3 * k, 0x5C8F3E);
+                return;
+            case Item::Fish:  // a carrot with its leafy top
+                for (int i = -1; i <= 1; i++)
+                    c.line(x - 9 * k, y - 9 * k, x - 14 * k + i * 6 * k, y - 22 * k - std::abs(i) * -3 * k, 3.5f * k, 0x5C8F3E);
+                c.line(x - 8 * k, y - 7 * k, x + 5 * k, y + 6 * k, 13 * k, 0xE8792B);
+                c.fillTriangle(x - 1 * k, y + 11 * k, x + 10 * k, y, x + 15 * k, y + 15 * k, 0xE8792B);
+                c.line(x - 10 * k, y - 6 * k, x + 2 * k, y + 6 * k, 4 * k, 0xF59A4C, 0.8f);
+                for (int i = 0; i < 3; i++)
+                    c.line(x - 3 * k + i * 5 * k, y - 4 * k + i * 5 * k, x + 2 * k + i * 5 * k, y - 8 * k + i * 5 * k, 1.6f * k, 0xB85A1E);
+                return;
+            case Item::Roots:  // a bundle of hay tied with twine
+                for (int i = -4; i <= 4; i++)
+                    c.line(x + i * 2.5f * k, y + 14 * k, x + i * 3.5f * k, y - 14 * k, 2.6f * k, i % 2 ? 0xD9B655 : 0xEBCB6E);
+                c.fillRect(x - 12 * k, y - 2 * k, 24 * k, 4 * k, 0x8C5A3A);
+                return;
+            default: break;
+        }
+    }
     switch (it) {
         case Item::Berries:
             c.fillEllipse(x + 6 * k, y - 13 * k, 7 * k, 3.5f * k, 0x5C8F3E);

@@ -1374,7 +1374,7 @@ static void testFoalBirth() {
 }
 
 static void testHorseGames() {
-    std::printf("horse games: five big choices; Fence Jump waits for each tap, so anyone can finish it\n");
+    std::printf("horse games: six big choices; Fence Jump waits for each tap, so anyone can finish it\n");
     auto openPicker = [](Driver& d) {
         d.openTray();
         d.pressSlot(Scene::Slot::Play);
@@ -1382,10 +1382,10 @@ static void testHorseGames() {
     Driver d;
     d.scene.setSpecies(Scene::Species::Horse);
     openPicker(d);
-    CHECK(d.scene.game() == Scene::Game::Pick && d.scene.gameChoiceCount() == 5);
-    for (int i = 0; i < 5; i++) {
+    CHECK(d.scene.game() == Scene::Game::Pick && d.scene.gameChoiceCount() == 6);
+    for (int i = 0; i < 6; i++) {
         const Scene::Rect r = d.scene.gameChoiceArea(i);
-        CHECK(r.w >= 64 && r.h >= 64 && r.y + r.h <= 436);
+        CHECK(r.w >= 64 && r.h >= 64 && r.y >= 64 && r.y + r.h <= 456);
     }
     std::vector<uint16_t> fb(Scene::kSize * Scene::kSize);
     Canvas c(fb.data(), Scene::kSize, Scene::kSize);
@@ -1411,6 +1411,65 @@ static void testHorseGames() {
     for (int k = 0; k < 3 && !d.scene.gameOver(); k++) d.tap(d.scene.seekSpotArea((d.scene.seekAnswer() + 1 + k) % Scene::kSeekSpots));
     CHECK(d.scene.gameOver());
     d.scene.draw(c);
+}
+
+static void testGrooming() {
+    std::printf("grooming: brush, hooves, mane, ribbon; taps alone are enough, and there's no clock\n");
+    Driver d;
+    d.scene.setSpecies(Scene::Species::Horse);
+    d.openTray();
+    d.pressSlot(Scene::Slot::Play);
+    d.tap(d.scene.gameChoiceArea(3));
+    CHECK(d.scene.game() == Scene::Game::Groom);
+    CHECK(d.scene.groomStep() == Scene::GroomStep::Brush);
+    std::vector<uint16_t> fb(Scene::kSize * Scene::kSize);
+    Canvas c(fb.data(), Scene::kSize, Scene::kSize);
+    d.scene.draw(c);  // the spots go where the horse is drawn
+    // Wait a long while first: nothing runs out.
+    for (int i = 0; i < 2000; i++) d.step();
+    CHECK(!d.scene.gameOver());
+    // Brush: a stroke across the first spot cleans part of it; taps on each finish the rest.
+    float x, y;
+    CHECK(d.scene.groomSpot(0, x, y));
+    d.drag(static_cast<int>(x) - 30, static_cast<int>(y), static_cast<int>(x) + 30, static_cast<int>(y), 10, 30);
+    for (int round = 0; round < 6 && d.scene.groomStep() == Scene::GroomStep::Brush; round++) {
+        for (int i = 0; i < Scene::kMudSpots; i++) {
+            if (!d.scene.groomSpot(i, x, y)) continue;
+            d.tap(static_cast<int>(x), static_cast<int>(y));
+            d.step(700);
+            d.scene.draw(c);
+        }
+    }
+    CHECK(d.scene.groomStep() == Scene::GroomStep::Hooves);
+    // Hooves: four of them, each with its stones; every stone is a big target.
+    for (int hoof = 0; hoof < 4; hoof++) {
+        for (int i = 0; i < Scene::kPebbles; i++) {
+            const Scene::Rect r = d.scene.pebbleArea(i);
+            CHECK(r.w >= 64 && r.h >= 64);
+            d.tap(r);
+            d.step(700);
+        }
+        d.scene.draw(c);
+    }
+    CHECK(d.scene.groomStep() == Scene::GroomStep::Mane);
+    for (int round = 0; round < 6 && d.scene.groomStep() == Scene::GroomStep::Mane; round++) {
+        d.scene.draw(c);
+        for (int i = 0; i < Scene::kTangles; i++) {
+            if (!d.scene.groomSpot(i, x, y)) continue;
+            d.tap(static_cast<int>(x), static_cast<int>(y));
+            d.step(700);
+        }
+    }
+    CHECK(d.scene.groomStep() == Scene::GroomStep::Ribbon);
+    d.scene.draw(c);
+    for (int i = 0; i < Scene::kRibbons; i++) CHECK(d.scene.ribbonArea(i).w >= 64 && d.scene.ribbonArea(i).h >= 64);
+    const float before = d.sim.state().happiness;
+    d.tap(d.scene.ribbonArea(2));
+    CHECK(d.scene.gameOver() && d.scene.gameWon());
+    for (int i = 0; i < 300; i++) d.step();
+    CHECK(d.scene.game() == Scene::Game::None);
+    CHECK(d.sim.state().happiness > before);
+    d.scene.draw(c);  // wearing its ribbon
 }
 
 static void testWifiPage() {
@@ -1511,6 +1570,7 @@ int main() {
     testVoicePitch();
     testFoalBirth();
     testHorseGames();
+    testGrooming();
     testWifiPage();
     testTownLookup();
 

@@ -23,6 +23,7 @@ constexpr float kHideX = 74, kHideY = 290;   // peeking out from behind the left
 constexpr float kHideHorseX = 40;             // the hiding foal's middle, just behind the apple tree's trunk
 constexpr float kEggX = 240, kEggY = 288;
 constexpr float kFriendlyFoot = 345, kWanderFoot = 302;
+constexpr float kGroomX = 214, kGroomFoot = 428, kGroomZoom = 1.8f;  // Grooming: it stands big in the middle
 constexpr float kMessSpots[3][2] = {{168, 350}, {312, 352}, {132, 326}};
 
 // ---- feel
@@ -550,6 +551,18 @@ void Scene::touch(const TouchEvent& e) {
     if (overlay_ == Overlay::Game && game_ == Game::Berry && !gameOver_ && e.phase != TouchPhase::Up &&
         e.y >= kStripTouchH)
         basketX_ = std::max(60.0f, std::min(420.0f, static_cast<float>(e.x)));
+    // Grooming: brushing is wherever the finger goes, a little for every bit it moves.
+    if (overlay_ == Overlay::Game && game_ == Game::Groom && !gameOver_ &&
+        (groomStep_ == GroomStep::Brush || groomStep_ == GroomStep::Mane)) {
+        const float x = e.x, y = e.y;
+        if (e.phase == TouchPhase::Up) {
+            rubX_ = rubY_ = -1;
+        } else {
+            if (rubX_ >= 0) groomRub(x, y, std::hypot(x - rubX_, y - rubY_) / 110.0f);
+            rubX_ = x;
+            rubY_ = y;
+        }
+    }
     gestures_.touch(e);
     Gesture g;
     while (gestures_.poll(g)) handle(g);
@@ -2973,6 +2986,17 @@ void Scene::drawPet(Canvas& c) {
     }
     if (sim_.trustLevel() == TrustLevel::Wandering && !s.asleep && std::fabs(wanderTarget_ - wanderX_) > 1)
         L.gait = t * 8;
+    if (species_ == Species::Horse && overlay_ == Overlay::Game && game_ == Game::Groom) {  // standing still for it
+        faceDir_ = 1;
+        L.x = kGroomX;
+        L.foot = L.ground = kGroomFoot;
+        L.s *= kGroomZoom;
+        L.gait = -1;
+        L.mouth = 1;
+        if (groomStep_ == GroomStep::Hooves) L.armR = 0.85f;  // a front hoof up for you
+        drawHorse(c, L);
+        return;
+    }
     if (species_ == Species::Horse && overlay_ == Overlay::Game && petOverride_ &&
         (game_ == Game::Jump || (game_ == Game::Photo && running_))) {  // galloping
         faceDir_ = game_ == Game::Photo && !runRight_ ? -1.0f : 1.0f;
@@ -3153,6 +3177,16 @@ void Scene::drawHorse(Canvas& c, const Look& L, bool mother) {
 
     leg(40, true, 1.6f, lift);
     leg(-30, true, 4.7f, 0);
+    const bool grooming = !mother && overlay_ == Overlay::Game && game_ == Game::Groom;
+    if (grooming) {  // where the mud goes
+        gBodyX_ = bx;
+        gBodyY_ = by;
+        gBodyRx_ = bodyRx * s;
+        gBodyRy_ = bodyRy * s;
+        gLegX_ = X(-30);
+        gLegY_ = Y(-legLen * 0.45f);
+        gScale_ = s;
+    }
 
     // The neck, up and forward to the head.
     const float hx = X(bodyRx * 0.95f + 6 + 16 * L.graze),
@@ -3173,6 +3207,19 @@ void Scene::drawHorse(Canvas& c, const Look& L, bool mother) {
         const float my = hy - 10 * s * hd + (topY - (hy - 10 * s * hd)) * u - 4 * s;
         c.fillCircle(mx, my, (8.5f - u * 2) * s, maneCol(i));
         c.fillTriangle(mx - 6 * s, my, mx + 6 * s, my, mx - dir * 9 * s, my + 16 * s, maneCol(i));
+    }
+    auto manePoint = [&](float u, float& px, float& py) {
+        px = hx - dir * 10 * s * hd + (topX - (hx - dir * 10 * s * hd)) * u - dir * 4 * std::sin(u * 3.1f) * s;
+        py = hy - 10 * s * hd + (topY - (hy - 10 * s * hd)) * u - 4 * s + 6 * s;
+    };
+    if (grooming) {
+        for (int i = 0; i < kTangles; i++) manePoint(0.15f + i * 0.25f, gManeX_[i], gManeY_[i]);
+        gDrawn_ = true;
+    }
+    if (!mother && ribbon_ && now_ < ribbonUntil_) {  // a ribbon in its mane, from grooming
+        float px, py;
+        manePoint(0.3f, px, py);
+        drawBow(c, px, py - 4 * s, std::max(0.9f, s * 1.3f), ribbon_);
     }
 
     // The head: a round skull and a long, soft muzzle.
@@ -3978,15 +4025,22 @@ constexpr int kFences = 8;
 constexpr float kJumpHorseX = 150, kFenceWait = kJumpHorseX + 120, kFenceSpeed = 230, kJumpMs = 800;
 constexpr float kPerfectFrom = kJumpHorseX + 125, kPerfectTo = kJumpHorseX + 210;
 // The horse edition's picker: which game each row starts.
-constexpr const char* kHorseGameNames[5] = {"HIDE AND SEEK", "APPLE CATCH", "FENCE JUMP", "BLURRY PHOTO", "QUICK CATCH"};
-constexpr const char* kHorseGameHints[5] = {"FIND WHERE IT HID: THREE GUESSES", "CATCH 10 FALLING APPLES",
-                                            "TAP TO JUMP. IT WAITS FOR YOU", "SNAP IT AS IT GALLOPS PAST",
-                                            "NO RUSHING: A GAME OF CATCH"};
+constexpr const char* kHorseGameNames[6] = {"HIDE AND SEEK", "APPLE CATCH", "FENCE JUMP", "GROOMING", "BLURRY PHOTO",
+                                            "QUICK CATCH"};
+constexpr const char* kHorseGameHints[6] = {"FIND WHERE IT HID: THREE GUESSES", "CATCH 10 FALLING APPLES",
+                                            "TAP TO JUMP. IT WAITS FOR YOU", "BRUSH, HOOVES, MANE AND A RIBBON",
+                                            "SNAP IT AS IT GALLOPS PAST", "NO RUSHING: A GAME OF CATCH"};
+// Grooming: the horse stands big in the middle; the hoof close-up and ribbon box sit on a card.
+constexpr float kHoofX = 240, kHoofY = 268;  // the hoof close-up's centre
+constexpr float kPebbleXY[4][Scene::kPebbles][2] = {{{-34, -18}, {30, 22}}, {{28, -26}, {-30, 20}},
+                                                    {{-30, 24}, {34, -12}}, {{0, -34}, {-36, 4}}};
+constexpr Rgb kRibbonColours[Scene::kRibbons] = {0xD8322A, 0x2E6FB0, 0xE86AA8, 0x8E5CC8};
+constexpr const char* kHoofNames[4] = {"FRONT HOOF", "OTHER FRONT HOOF", "BACK HOOF", "LAST HOOF!"};
 constexpr float kBasketY = 420, kFrameX0 = 130, kFrameX1 = 350;
 }  // namespace
 
 Scene::Rect Scene::gameChoiceArea(int i) const {
-    if (species_ == Species::Horse) return {56, 100 + i * 64, 368, 64};  // five rows
+    if (species_ == Species::Horse) return {56, 66 + i * 64, 368, 64};  // six rows
     return {56, 112 + i * 74, 368, 68};
 }
 Scene::Rect Scene::gameQuitArea() const { return {S - 112, 0, 112, 64}; }
@@ -4043,6 +4097,16 @@ void Scene::startGame(Game g) {
             petOverride_ = true;
             gameX_ = -100;
             break;
+        case Game::Groom:
+            petOverride_ = true;
+            gameX_ = kGroomX;
+            groomStep_ = GroomStep::Brush;
+            for (float& d : groomDirt_) d = 1;
+            hoof_ = 0;
+            pebbles_ = (1u << kPebbles) - 1;
+            rubX_ = rubY_ = -1;
+            gDrawn_ = false;
+            break;
         case Game::Jump:
             petOverride_ = true;
             gameX_ = kJumpHorseX;
@@ -4052,6 +4116,157 @@ void Scene::startGame(Game g) {
             running_ = true;
             break;
         default: break;
+    }
+}
+
+// ---- Grooming
+
+bool Scene::groomSpot(int i, float& x, float& y) const {
+    if (!gDrawn_ || game_ != Game::Groom) return false;
+    if (groomStep_ == GroomStep::Brush) {
+        if (i < 0 || i >= kMudSpots || groomDirt_[i] <= 0) return false;
+        static const float kUV[kMudSpots - 1][2] = {{-0.6f, -0.25f}, {-0.15f, 0.3f}, {0.35f, -0.3f}, {0.6f, 0.2f}, {-0.4f, 0.45f}};
+        if (i == kMudSpots - 1) {  // one on a leg
+            x = gLegX_;
+            y = gLegY_;
+        } else {
+            x = gBodyX_ + kUV[i][0] * gBodyRx_ * 0.8f;
+            y = gBodyY_ + kUV[i][1] * gBodyRy_ * 0.8f;
+        }
+        return true;
+    }
+    if (groomStep_ == GroomStep::Mane) {
+        if (i < 0 || i >= kTangles || groomDirt_[i] <= 0) return false;
+        x = gManeX_[i];
+        y = gManeY_[i];
+        return true;
+    }
+    return false;
+}
+
+Scene::Rect Scene::pebbleArea(int i) const {
+    const int h = hoof_ < 4 ? hoof_ : 0;
+    return {static_cast<int>(kHoofX + kPebbleXY[h][i][0]) - 32, static_cast<int>(kHoofY + kPebbleXY[h][i][1]) - 32, 64, 64};
+}
+
+Scene::Rect Scene::ribbonArea(int i) const { return {64 + i * 92, 240, 84, 84}; }
+
+void Scene::groomRub(float x, float y, float amount) {
+    if (amount <= 0) return;
+    const float reach = std::max(30.0f, 26 * gScale_);
+    const int n = groomStep_ == GroomStep::Brush ? kMudSpots : kTangles;
+    bool any = false;
+    for (int i = 0; i < n; i++) {
+        float sx, sy;
+        if (!groomSpot(i, sx, sy) || std::hypot(x - sx, y - sy) > reach) continue;
+        groomDirt_[i] = std::max(0.0f, groomDirt_[i] - amount);
+        any = true;
+        if (rand01() < 0.5f)
+            spawn(groomStep_ == GroomStep::Brush ? ParticleKind::Crumb : ParticleKind::Sparkle, sx, sy,
+                  (rand01() - 0.5f) * 80, -40 - rand01() * 40, 500);
+        if (groomDirt_[i] <= 0) cue(Cue::Pickup);
+    }
+    if (any && now_ >= nextBrushCue_) {
+        cue(Cue::Brush);
+        nextBrushCue_ = now_ + 450;
+    }
+    for (int i = 0; i < n; i++)
+        if (groomDirt_[i] > 0) return;
+    groomNext();
+}
+
+void Scene::groomNext() {
+    rubX_ = rubY_ = -1;
+    switch (groomStep_) {
+        case GroomStep::Brush:
+            saved(sim_.brush());  // a real brushing, as far as it's concerned
+            groomStep_ = GroomStep::Hooves;
+            hoof_ = 0;
+            pebbles_ = (1u << kPebbles) - 1;
+            speak("AHH, ALL CLEAN!");
+            break;
+        case GroomStep::Hooves:
+            if (++hoof_ < 4) {
+                pebbles_ = (1u << kPebbles) - 1;
+                cue(Cue::Snort);
+                return;
+            }
+            groomStep_ = GroomStep::Mane;
+            for (float& d : groomDirt_) d = 1;
+            speak("MY HOOVES FEEL GREAT!");
+            break;
+        case GroomStep::Mane:
+            groomStep_ = GroomStep::Ribbon;
+            speak("NOW A RIBBON?");
+            break;
+        case GroomStep::Ribbon: break;
+    }
+    cue(Cue::Happy);
+}
+
+void Scene::drawBow(Canvas& c, float x, float y, float s, int colour) {
+    const Rgb col = kRibbonColours[(colour - 1) % kRibbons], dark = mix(col, 0x000000, 0.3f),
+              light = mix(col, 0xFFFFFF, 0.35f);
+    c.line(x - 1 * s, y + 2 * s, x - 6 * s, y + 10 * s, 3.5f * s, dark);  // two short tails
+    c.line(x + 1 * s, y + 2 * s, x + 6 * s, y + 9 * s, 3.5f * s, dark);
+    for (float side : {-1.0f, 1.0f}) {  // two round loops
+        c.fillEllipse(x + side * 7 * s, y - 1 * s, 7.5f * s, 5.5f * s, col);
+        c.fillEllipse(x + side * 8 * s, y - 2.5f * s, 3.5f * s, 2 * s, light);
+    }
+    c.fillCircle(x, y, 3.2f * s, dark);
+}
+
+void Scene::drawGroom(Canvas& c) {
+    // Mud on its coat, or tangles in its mane, fading as they're brushed out.
+    if (groomStep_ == GroomStep::Brush || groomStep_ == GroomStep::Mane) {
+        const int n = groomStep_ == GroomStep::Brush ? kMudSpots : kTangles;
+        for (int i = 0; i < n; i++) {
+            float x, y;
+            if (!groomSpot(i, x, y)) continue;
+            const float a = std::min(1.0f, groomDirt_[i] * 1.3f), k = gScale_;
+            if (groomStep_ == GroomStep::Brush) {
+                // A splat of mud: dark clumps with a lighter, drier crust on top, and a drip.
+                c.fillEllipse(x, y, 12 * k, 8 * k, 0x3E2814, 0.95f * a);
+                c.fillCircle(x - 9 * k, y + 3 * k, 5 * k, 0x3E2814, 0.95f * a);
+                c.fillCircle(x + 9 * k, y - 3 * k, 4.5f * k, 0x3E2814, 0.95f * a);
+                c.line(x + 2 * k, y + 5 * k, x + 3 * k, y + 13 * k, 3.5f * k, 0x3E2814, 0.9f * a);
+                c.fillEllipse(x - 2 * k, y - 2 * k, 7 * k, 4 * k, 0x8A6A40, 0.9f * a);
+                c.fillCircle(x + 8 * k, y - 4 * k, 2 * k, 0x9C7C50, 0.9f * a);
+            } else {  // a scribbly knot
+                for (int j = 0; j < 3; j++)
+                    c.ring(x + (j - 1) * 4 * k, y + (j % 2) * 3 * k, (4 + j) * k, 1.6f * k, 0x3A2A1E, a);
+            }
+            // A soft ring round each, so it's clear where to brush (no hurry).
+            const float pulse = 0.5f + 0.5f * static_cast<float>(std::sin(t_ * 3 + i));
+            c.ring(x, y, 15 * k, 2, kGold, 0.2f + 0.25f * pulse);
+        }
+    } else if (groomStep_ == GroomStep::Hooves) {  // a close-up of the hoof, from underneath
+        c.fillRoundRect(110, 150, 260, 236, 22, kUiLight, 0.96f);
+        c.text(240, 162, kHoofNames[hoof_ < 4 ? hoof_ : 3], 2, 0x3B2A1E, Align::Center);
+        const float x = kHoofX, y = kHoofY;
+        c.fillEllipse(x, y + 4, 70, 76, 0x4A3A30);   // the hoof wall
+        c.fillEllipse(x, y + 4, 60, 66, 0x9C8468);   // the sole
+        c.fillTriangle(x, y - 30, x - 20, y + 54, x + 20, y + 54, 0x7A6450);  // the frog
+        for (int i = 0; i < 14; i++) {  // its shoe, round the rim, open at the heel
+            const float a0 = 3.1415927f * (-0.25f - i / 14.0f * 1.5f), a1 = 3.1415927f * (-0.25f - (i + 1) / 14.0f * 1.5f);
+            c.line(x + std::cos(a0) * 64, y + 4 + std::sin(a0) * 70, x + std::cos(a1) * 64, y + 4 + std::sin(a1) * 70, 9, 0xB8B8C0);
+        }
+        for (int i = 0; i < kPebbles; i++) {
+            if (!(pebbles_ & (1u << i))) continue;
+            const Rect r = pebbleArea(i);
+            c.fillEllipse(r.cx(), r.cy(), 11, 9, 0x8A8A86);
+            c.fillEllipse(r.cx() - 3, r.cy() - 3, 4, 3, 0xC8C8C2);
+            const float pulse = 0.5f + 0.5f * static_cast<float>(std::sin(t_ * 3 + i));
+            c.ring(r.cx(), r.cy(), 22, 2.5f, kGold, 0.35f + 0.3f * pulse);
+        }
+    } else {  // choose a ribbon
+        c.fillRoundRect(48, 196, 384, 150, 22, kUiLight, 0.96f);
+        c.text(240, 210, "PICK A RIBBON", 2, 0x3B2A1E, Align::Center);
+        for (int i = 0; i < kRibbons; i++) {
+            const Rect r = ribbonArea(i);
+            c.fillRoundRect(r.x + 4, r.y + 4, r.w - 8, r.h - 8, 14, 0xE6DCC6);
+            drawBow(c, r.cx(), r.cy() - 2, 2.2f, i + 1);
+        }
     }
 }
 
@@ -4084,8 +4299,9 @@ void Scene::gameTap(int x, int y) {
         for (int i = 0; i < gameChoiceCount(); i++) {
             if (!gameChoiceArea(i).contains(x, y)) continue;
             cue(Cue::Tick);
-            if (species_ == Species::Horse && i < 4) {  // its own order, with Fence Jump in it
-                startGame(i == 0 ? Game::Seek : i == 1 ? Game::Berry : i == 2 ? Game::Jump : Game::Photo);
+            if (species_ == Species::Horse && i < 5) {  // its own order, with Fence Jump and Grooming in it
+                static const Game kOrder[5] = {Game::Seek, Game::Berry, Game::Jump, Game::Groom, Game::Photo};
+                startGame(kOrder[i]);
                 return;
             }
             if (i == gameChoiceCount() - 1) {  // quick catch: the old, relaxed game
@@ -4097,7 +4313,8 @@ void Scene::gameTap(int x, int y) {
             }
             return;
         }
-        if (!Rect{40, 56, 400, 380}.contains(x, y) || y < 100) {  // outside the panel, or its title
+        const bool horse = species_ == Species::Horse;
+        if (!(horse ? Rect{40, 16, 400, 456} : Rect{40, 56, 400, 380}).contains(x, y) || y < (horse ? 66 : 100)) {  // outside, or the title
             overlay_ = Overlay::None;
             game_ = Game::None;
         }
@@ -4125,6 +4342,33 @@ void Scene::gameTap(int x, int y) {
                 else std::snprintf(gameMsg_, sizeof gameMsg_, "NOT THERE...");
             }
             return;
+        }
+    } else if (game_ == Game::Groom) {
+        if (groomStep_ == GroomStep::Hooves) {
+            for (int i = 0; i < kPebbles; i++) {
+                if (!(pebbles_ & (1u << i)) || !pebbleArea(i).contains(x, y)) continue;
+                pebbles_ &= static_cast<uint8_t>(~(1u << i));
+                cue(Cue::Clop);
+                const Rect r = pebbleArea(i);
+                for (int k = 0; k < 4; k++)
+                    spawn(ParticleKind::Crumb, r.cx(), r.cy(), (rand01() - 0.5f) * 160, -120 - rand01() * 60, 600);
+                if (!pebbles_) groomNext();
+                return;
+            }
+        } else if (groomStep_ == GroomStep::Ribbon) {
+            for (int i = 0; i < kRibbons; i++) {
+                if (!ribbonArea(i).contains(x, y)) continue;
+                ribbon_ = static_cast<uint8_t>(i + 1);
+                ribbonUntil_ = now_ + 3u * 3600u * 1000u;  // it wears it for a few hours
+                for (int k = 0; k < 6; k++)
+                    spawn(ParticleKind::Sparkle, gManeX_[0] + (rand01() - 0.5f) * 60, gManeY_[0] + (rand01() - 0.5f) * 40,
+                          (rand01() - 0.5f) * 40, -40, 1000);
+                cue(Cue::Happy);
+                finishGame(true, "SO PRETTY!");
+                return;
+            }
+        } else {
+            groomRub(static_cast<float>(x), static_cast<float>(y), 0.34f);  // a tap does a bit; no need to drag
         }
     } else if (game_ == Game::Jump) {  // a tap anywhere jumps (once it's on the ground)
         if (!jumpAt_) {
@@ -4270,16 +4514,17 @@ void Scene::drawPeek(Canvas& c, float x, float y) {
 void Scene::drawGamePicker(Canvas& c) {
     const Rgb ink = 0x3B2A1E, faint = 0x8A7A66;
     c.tint(0x000000, 0.55f);
-    c.fillRoundRect(40, 56, 400, 380, 20, kUiLight);
-    c.text(240, 76, "LET'S PLAY!", 3, ink, Align::Center);
     const bool horse = species_ == Species::Horse;
+    if (horse) c.fillRoundRect(40, 16, 400, 456, 20, kUiLight);
+    else c.fillRoundRect(40, 56, 400, 380, 20, kUiLight);
+    c.text(240, horse ? 28.0f : 76.0f, "LET'S PLAY!", 3, ink, Align::Center);
     for (int i = 0; i < gameChoiceCount(); i++) {
         Rect r = gameChoiceArea(i);
         c.fillRoundRect(r.x, r.y + 3, r.w, r.h - 6, 14, i == gameChoiceCount() - 1 ? 0xD9CFBC : 0xE6DCC6);
         c.text(r.cx(), r.y + (horse ? 12.0f : 14.0f), horse ? kHorseGameNames[i] : kGameNames[i], 2, ink, Align::Center);
         c.text(r.cx(), r.y + (horse ? 37.0f : 40.0f), horse ? kHorseGameHints[i] : kGameHints[i], 1, faint, Align::Center);
     }
-    c.text(240, horse ? 424.0f : 412.0f, "TAP OUTSIDE TO CLOSE", 1, faint, Align::Center);
+    c.text(240, horse ? 456.0f : 412.0f, "TAP OUTSIDE TO CLOSE", 1, faint, Align::Center);
 }
 
 void Scene::drawGame(Canvas& c) {
@@ -4306,6 +4551,8 @@ void Scene::drawGame(Canvas& c) {
         c.fillRoundRect(x - 50, y, 100, 30, 10, 0x9C6B3A);
         for (int i = -2; i <= 2; i++) c.line(x + i * 18, y + 3, x + i * 18, y + 27, 2, 0x7A5028);
         c.fillRoundRect(x - 54, y - 4, 108, 9, 4, 0xB8844A);
+    } else if (game_ == Game::Groom) {
+        drawGroom(c);
     } else if (game_ == Game::Jump) {  // a show-jumping fence: two wings and striped poles
         const float x = fenceX_, base = kFriendlyFoot + 6;
         c.fillEllipse(x, base + 2, 40, 6, 0x000000, 0.18f);
@@ -4344,9 +4591,16 @@ void Scene::drawGame(Canvas& c) {
         }
         case Game::Photo: std::snprintf(status, sizeof status, "CHANCES LEFT: %d", runsLeft_); break;
         case Game::Jump: std::snprintf(status, sizeof status, "FENCES %d/%d  STARS %d", score_, kFences, stars_); break;
+        case Game::Groom:
+            std::snprintf(status, sizeof status, "%s", groomStep_ == GroomStep::Brush    ? "1 BRUSH  2  3  4"
+                                                       : groomStep_ == GroomStep::Hooves ? "1  2 HOOVES  3  4"
+                                                       : groomStep_ == GroomStep::Mane   ? "1  2  3 MANE  4"
+                                                                                         : "1  2  3  4 RIBBON");
+            break;
         default: status[0] = '\0'; break;
     }
     const char* title = game_ == Game::Jump ? "FENCE JUMP"
+                      : game_ == Game::Groom ? "GROOMING"
                       : species_ == Species::Horse && game_ == Game::Berry ? "APPLE CATCH"
                       : kGameNames[game_ == Game::Seek ? 0 : game_ == Game::Berry ? 1 : 2];
     c.text(16, 12, title, 2, kGold);
@@ -4359,6 +4613,11 @@ void Scene::drawGame(Canvas& c) {
     if (!msg && !gameOver_) {
         if (game_ == Game::Seek) msg = "WHERE DID IT HIDE?";
         if (game_ == Game::Berry) msg = "MOVE THE BASKET";
+        if (game_ == Game::Groom)
+            msg = groomStep_ == GroomStep::Brush    ? "BRUSH OFF THE MUD"
+                : groomStep_ == GroomStep::Hooves ? "TAP THE STONES OUT"
+                : groomStep_ == GroomStep::Mane   ? "COMB OUT THE TANGLES"
+                                                  : nullptr;
         if (game_ == Game::Photo) msg = running_ ? nullptr : "WAIT FOR IT...";
     }
     if (msg) {

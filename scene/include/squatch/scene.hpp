@@ -82,10 +82,17 @@ public:
 
     // ---- the games, from the tray's Play button: a picker, then one of three games, or a
     // quick game of catch with no timing at all. Each ends in Sim::finishedGame().
-    enum class Game : uint8_t { None, Pick, Seek, Berry, Photo, Jump };
+    enum class Game : uint8_t { None, Pick, Seek, Berry, Photo, Jump, Groom };
     static constexpr int kGameChoices = 4;  // Hide and Seek, Berry Catch, Blurry Photo, Quick Catch
-    // The horse edition has five: Hide and Seek, Apple Catch, Fence Jump, Blurry Photo, Quick Catch.
-    int gameChoiceCount() const { return species_ == Species::Horse ? 5 : kGameChoices; }
+    // The horse edition has six: Hide and Seek, Apple Catch, Fence Jump, Grooming, Blurry Photo, Quick Catch.
+    int gameChoiceCount() const { return species_ == Species::Horse ? 6 : kGameChoices; }
+    // Grooming: brush off the mud, pick out the hooves, comb the mane, choose a ribbon. No clock.
+    enum class GroomStep : uint8_t { Brush, Hooves, Mane, Ribbon };
+    static constexpr int kMudSpots = 6, kTangles = 4, kRibbons = 4, kPebbles = 2;
+    GroomStep groomStep() const { return groomStep_; }
+    bool groomSpot(int i, float& x, float& y) const;  // a mud spot (Brush) or tangle (Mane) still there
+    Rect pebbleArea(int i) const;                      // Hooves: the stones in the hoof in the close-up
+    Rect ribbonArea(int i) const;
     static constexpr int kSeekSpots = 5;
     static constexpr int kBerriesToWin = 10;
     Game game() const { return game_; }
@@ -504,6 +511,23 @@ private:
     int stars_ = 0;
     bool perfect_ = false;
     float jumpHeight() const;
+    // Grooming
+    GroomStep groomStep_ = GroomStep::Brush;
+    float groomDirt_[kMudSpots] = {};       // 1 = mucky, 0 = clean: mud for Brush, tangles for Mane
+    int hoof_ = 0;                          // which hoof, 0..3
+    uint8_t pebbles_ = 0;                   // bits: stones still in this hoof
+    float rubX_ = -1, rubY_ = -1;           // the finger's last place, for how far it has brushed
+    uint32_t nextBrushCue_ = 0;
+    // Where the groomed horse was last drawn, so the spots sit on it.
+    float gBodyX_ = 0, gBodyY_ = 0, gBodyRx_ = 0, gBodyRy_ = 0, gLegX_ = 0, gLegY_ = 0;
+    float gManeX_[kTangles] = {}, gManeY_[kTangles] = {}, gScale_ = 1;
+    bool gDrawn_ = false;
+    uint8_t ribbon_ = 0;                    // 1.. a ribbon in its mane, until ribbonUntil_
+    uint32_t ribbonUntil_ = 0;
+    void groomRub(float x, float y, float amount);
+    void groomNext();
+    void drawGroom(Canvas& c);
+    void drawBow(Canvas& c, float x, float y, float s, int colour);
     void drawHorsePeek(Canvas& c, float x, float y, bool shaded);
     uint32_t bornAt_ = 0;  // when the foal arrived: its mother walks back to the barn after
 

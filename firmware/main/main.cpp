@@ -336,6 +336,9 @@ extern "C" void app_main(void) {
 #if CONFIG_SQUATCH_FAHRENHEIT
     gScene.setFahrenheit(true);
 #endif
+#if CONFIG_SQUATCH_PET_HORSE
+    gScene.setSpecies(Scene::Species::Horse);
+#endif
     sleepInit();
     ESP_ERROR_CHECK(board_init());
     gHavePower = power::init(board_i2c(), kChargeMa, kTrickleMa);

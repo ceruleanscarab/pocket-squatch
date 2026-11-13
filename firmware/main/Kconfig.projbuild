@@ -14,6 +14,21 @@ menu "Pocket Squatch"
             bool "ESP32-S3-Touch-AMOLED-1.8 (1.8 inch, 368x448, picture scaled)"
     endchoice
 
+    choice SQUATCH_PET
+        prompt "Pet"
+        default SQUATCH_PET_SQUATCH
+        help
+            Which animal the game is about: the Squatch in its forest clearing, or the
+            horse edition, a foal in a paddock that grows into a horse (a rare one is a
+            unicorn). Switching it doesn't change a saved pet's stats, only how it's drawn.
+
+        config SQUATCH_PET_SQUATCH
+            bool "Squatch (a baby Bigfoot)"
+
+        config SQUATCH_PET_HORSE
+            bool "Horse (the horse and unicorn edition)"
+    endchoice
+
     config SQUATCH_WIFI_SSID
         string "Wi-Fi network name (for the clock and the weather)"
         default ""

@@ -331,6 +331,10 @@ static void present_task(void* arg) {
         xSemaphoreTake(s_frame_ready, portMAX_DELAY);
         send_frame(s_showing);
         xSemaphoreGive(s_frame_done);  // its frame has been read; the last stripes finish on the wire
+        // When the game draws faster than frames can be scaled and sent, this task would go
+        // straight on to the next one and never let core 0's idle task run, and the task
+        // watchdog trips. One tick's pause per frame is enough.
+        vTaskDelay(1);
     }
 }
 

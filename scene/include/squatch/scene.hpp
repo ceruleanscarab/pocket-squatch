@@ -39,9 +39,9 @@ public:
     enum class Item : uint8_t { None, Berries, Fish, Roots, Brush, Poultice, Pinecone };
 
     // Tray buttons. The main page holds six; Feed opens the food page and More opens
-    // Photos, Trails and Settings.
+    // Photos, Trails, the boarding stable and Settings.
     enum class Slot : uint8_t {
-        Feed, Clean, Medicine, Play, Light, More, Back, Berries, Fish, Roots, Photos, Trails, Settings
+        Feed, Clean, Medicine, Play, Light, More, Back, Berries, Fish, Roots, Photos, Trails, Settings, Stable
     };
 
     // The device's settings. They belong to the toy, not the pet, so they aren't in the
@@ -159,6 +159,7 @@ public:
     Rect stumpArea() const;    // where food is left out while it's away
     Rect messArea(int i) const;
     Rect handleArea() const;   // the tray's pull tab
+    Rect homeArea() const;     // BRING HOME, while it's at the boarding stable
     Rect footprintArea() const;
     // The trail map: one row per trail, and the button that scans again.
     Rect trailRowArea(int i) const;
@@ -385,6 +386,8 @@ private:
     void drawStartOver(Canvas& c);
     void startOver(bool keepCollection);
     void drawForagingBanner(Canvas& c);
+    void drawBoarding(Canvas& c);
+    void toggleBoarding();
     void drawLandmarkIcon(Canvas& c, LandmarkKind k, float x, float y, float size);
 
     Sim& sim_;

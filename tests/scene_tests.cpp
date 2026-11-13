@@ -348,6 +348,25 @@ static void testAsleep() {
     CHECK(!d.sim.state().lightsOn);
 }
 
+static void testBoardingStable() {
+    std::printf("More > Stable sends it to the stable; BRING HOME brings it back\n");
+    Driver d;
+    d.scene.setSpecies(Scene::Species::Horse);
+    d.openTray();
+    d.pressSlot(Scene::Slot::More);
+    CHECK(d.slotOf(Scene::Slot::Stable) >= 0);
+    d.pressSlot(Scene::Slot::Stable);
+    CHECK(d.sim.state().boarding);
+    CHECK(d.sim.state().lightsOn);  // one tap, one button (the Light button sat under it)
+    CHECK(d.scene.takeSaveRequest());
+    CHECK(d.scene.squatchArea().w == 0);  // not in the paddock
+    d.settle();
+    d.tap(d.scene.homeArea());
+    CHECK(!d.sim.state().boarding);
+    CHECK(d.scene.squatchArea().w > 0);
+    CHECK(d.sim.state().hunger == 4);
+}
+
 static void testTouchTargets() {
     std::printf("every touch target is at least 64 px\n");
     Driver d;
@@ -366,6 +385,7 @@ static void testTouchTargets() {
     for (int i = 0; i < d.scene.slotCount(); i++) CHECK(big(d.scene.slotArea(i)));
     for (int i = 0; i < State::kMaxTrails; i++) CHECK(big(d.scene.trailRowArea(i)));
     CHECK(big(d.scene.rescanArea()));
+    CHECK(big(d.scene.homeArea()));
     for (int row = 0; row < Scene::kSettingRows; row++) {
         CHECK(big(d.scene.settingButtonArea(row, false)));
         CHECK(big(d.scene.settingButtonArea(row, true)));
@@ -1383,6 +1403,7 @@ static void testTownLookup() {
 }
 
 int main() {
+    testBoardingStable();
     testTap();
     testLongPressThenDrag();
     testDrag();

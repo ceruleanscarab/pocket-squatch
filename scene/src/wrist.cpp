@@ -17,11 +17,11 @@ bool needsYou(const State& s) {
 }
 
 bool present(const State& s) {
-    return s.stage != Stage::Egg && s.stage != Stage::Away && !s.foraging;
+    return s.stage != Stage::Egg && s.stage != Stage::Away && !s.foraging && !s.boarding;
 }
 
 int choose(const State& s, Wrist::Action out[Wrist::kMaxButtons]) {
-    if (s.stage == Stage::Egg || s.foraging) return 0;
+    if (s.stage == Stage::Egg || s.foraging || s.boarding) return 0;
     if (s.stage == Stage::Away) {
         out[0] = Wrist::Action::LeaveFood;
         return 1;
@@ -117,6 +117,7 @@ const char* Wrist::status() const {
     if (s.stage == Stage::Egg) return scene_.species() == Scene::Species::Horse ? "A FOAL IS COMING" : "AN EGG";
     if (s.stage == Stage::Away) return "IT RAN OFF";
     if (s.foraging) return "OUT ON A TRAIL";
+    if (s.boarding) return scene_.species() == Scene::Species::Horse ? "AT THE STABLE" : "WITH THE SITTER";
     if (s.asleep) return "ASLEEP";
     if (s.calling) return "CALLING YOU!";
     if (s.sick) return "SICK";

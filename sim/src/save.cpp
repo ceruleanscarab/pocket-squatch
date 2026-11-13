@@ -34,8 +34,11 @@ LoadResult load(const uint8_t* data, size_t len, State& s) {
     if (h.version == 0 || h.version > kSaveVersion) return LoadResult::UnknownVersion;
 
     // Fields are only ever added at the end of State, so an older save is a prefix of
-    // today's State: version 1 ended with rng, just before the genome.
-    const size_t expected = h.version == 1 ? offsetof(State, genome) : sizeof(State);
+    // today's State: version 1 ended with rng, just before the genome; version 2 with the
+    // forage trip, just before boarding.
+    const size_t expected = h.version == 1 ? offsetof(State, genome)
+                            : h.version == 2 ? offsetof(State, boarding)
+                                             : sizeof(State);
     if (h.size != expected || len < sizeof(SaveHeader) + h.size) return LoadResult::BadSize;
     if (crc32(data + sizeof(SaveHeader), h.size) != h.crc) return LoadResult::BadChecksum;
 

@@ -43,7 +43,7 @@ constexpr Scene::Slot kMainSlots[] = {Scene::Slot::Feed, Scene::Slot::Clean, Sce
 constexpr Scene::Slot kFoodSlots[] = {Scene::Slot::Back, Scene::Slot::Berries, Scene::Slot::Fish,
                                       Scene::Slot::Roots};
 constexpr Scene::Slot kMoreSlots[] = {Scene::Slot::Back, Scene::Slot::Photos, Scene::Slot::Trails,
-                                      Scene::Slot::Settings};
+                                      Scene::Slot::Stable, Scene::Slot::Settings};
 
 // ---- the naming page
 constexpr int kKeyCols = 7, kKeyW = 64, kKeyH = 64;
@@ -663,6 +663,10 @@ void Scene::onTap(int x, int y) {
         overlay_ = Overlay::Stats;
         return;
     }
+    if (sim_.state().boarding && !trayOpen() && homeArea().contains(x, y)) {
+        toggleBoarding();
+        return;
+    }
     if (handleArea().contains(x, y)) {
         trayTarget_ = trayOpen() ? 0.0f : 1.0f;
         if (!trayOpen()) {
@@ -672,8 +676,12 @@ void Scene::onTap(int x, int y) {
         return;
     }
     if (trayOpen() && y >= trayTop()) {
-        for (int i = 0; i < slotCount(); i++)
-            if (slotArea(i).contains(x, y)) pressSlot(slotAt(i));
+        for (int i = 0; i < slotCount(); i++) {
+            if (slotArea(i).contains(x, y)) {
+                pressSlot(slotAt(i));  // once: a press can change the page, and with it the slots
+                break;
+            }
+        }
         return;
     }
     if (held_ != Item::None) {
@@ -737,6 +745,7 @@ void Scene::pressSlot(Slot s) {
             break;
         case Slot::Photos: overlay_ = Overlay::Gallery; break;
         case Slot::Settings: overlay_ = Overlay::Settings; break;
+        case Slot::Stable: toggleBoarding(); break;
         case Slot::Play: openGames(); break;
         default: {
             Item it = itemFor(s);
@@ -881,6 +890,7 @@ void Scene::saved(Result r) {
 void Scene::sayNotNow() {
     const State& s = sim_.state();
     if (s.foraging) say("IT'S OUT ON A TRAIL", true);
+    else if (s.boarding) say(species_ == Species::Horse ? "IT'S AT THE STABLE" : "IT'S WITH THE SITTER", true);
     else if (s.stage == Stage::Egg) say(species_ == Species::Horse ? "THE FOAL ISN'T HERE YET" : "IT HASN'T HATCHED YET", true);
     else if (s.stage == Stage::Away) say("IT'S NOT HERE", true);
     else if (s.asleep) say("SHH, IT'S ASLEEP", true);
@@ -1373,7 +1383,7 @@ void Scene::speak(const char* text, uint32_t ms) {
 const char* Scene::bubble() const {
     if (!bubble_[0] || now_ >= bubbleUntil_) return nullptr;
     const State& s = sim_.state();
-    if (s.stage == Stage::Egg || s.stage == Stage::Away || s.foraging) return nullptr;
+    if (s.stage == Stage::Egg || s.stage == Stage::Away || s.foraging || s.boarding) return nullptr;
     return bubble_;
 }
 
@@ -1828,7 +1838,7 @@ void Scene::animate(float dt) {
 
 bool Scene::hatched() const {  // and here in the clearing
     Stage st = sim_.state().stage;
-    return st != Stage::Egg && st != Stage::Away && !sim_.state().foraging;
+    return st != Stage::Egg && st != Stage::Away && !sim_.state().foraging && !sim_.state().boarding;
 }
 
 bool Scene::drinking() const {
@@ -1915,7 +1925,7 @@ bool Scene::foodLeftToday() const {
 
 Scene::Rect Scene::squatchArea() const {
     Stage st = sim_.state().stage;
-    if (st == Stage::Away || sim_.state().foraging) return {0, 0, 0, 0};
+    if (st == Stage::Away || sim_.state().foraging || sim_.state().boarding) return {0, 0, 0, 0};
     if (st == Stage::Egg) return species_ == Species::Horse ? Rect{150, 196, 200, 150} : Rect{184, 222, 112, 128};
     if (hiding()) return {static_cast<int>(kHideX) - 40, static_cast<int>(kHideY) - 40, 80, 80};
     float k = squatchScale(), hr = headRatio(st);
@@ -1939,7 +1949,7 @@ Scene::Rect Scene::footprintArea() const { return {S - 96, 0, 96, kStripTouchH};
 int Scene::slotCount() const {
     switch (page_) {
         case Page::Food: return 4;
-        case Page::More: return 4;
+        case Page::More: return 5;
         case Page::Main: break;
     }
     return 6;
@@ -2105,6 +2115,7 @@ void Scene::draw(Canvas& c) {
     if (!compact_ && overlay_ == Overlay::None) drawBubble(c);
     if (!compact_) drawStrip(c);
     if (s.foraging) drawForagingBanner(c);
+    if (s.boarding && overlay_ == Overlay::None) drawBoarding(c);
     const bool playing = overlay_ == Overlay::Game && game_ != Game::Pick;  // the game has the screen to itself
     if (!playing && !compact_) {
         drawToast(c);
@@ -3716,10 +3727,57 @@ void Scene::drawTray(Canvas& c) {
         const bool horse = species_ == Species::Horse;
         const char* label = toString(slot);
         if (horse && slot == Slot::Berries) label = "APPLE";
+        if (slot == Slot::Stable) label = sim_.state().boarding ? "HOME" : horse ? "STABLE" : "SITTER";
         if (horse && slot == Slot::Fish) label = "CARROT";
         if (horse && slot == Slot::Roots) label = "HAY";
         c.text(cx, top + 94, label, 2, kUiLight, Align::Center);
     }
+}
+
+// ---- the boarding stable
+
+Scene::Rect Scene::homeArea() const { return {S / 2 - 110, 262, 220, 64}; }
+
+void Scene::toggleBoarding() {
+    const State& s = sim_.state();
+    const bool horse = species_ == Species::Horse;
+    if (s.boarding) {
+        if (sim_.board(false) != Result::Ok) return;
+        saveRequested_ = true;
+        trayTarget_ = 0;
+        page_ = Page::Main;
+        held_ = Item::None;
+        cue(Cue::Happy);
+        say("HOME AGAIN!", true);
+        speak("I MISSED YOU!");
+        return;
+    }
+    if (sim_.board(true) != Result::Ok) {
+        sayNotNow();
+        return;
+    }
+    saveRequested_ = true;
+    trayTarget_ = 0;
+    page_ = Page::Main;
+    held_ = Item::None;
+    fetch_ = Fetch::None;
+    cue(Cue::Tick);
+    say(horse ? "OFF TO THE STABLE. SEE YOU SOON!" : "THE SITTER'S HERE. SEE YOU SOON!", true);
+}
+
+void Scene::drawBoarding(Canvas& c) {
+    const bool horse = species_ == Species::Horse;
+    const char* name = sim_.state().name[0] ? sim_.state().name : (horse ? "YOUR PONY" : "YOUR BIGFOOT");
+    char line[48];
+    std::snprintf(line, sizeof line, horse ? "%s IS AT THE STABLE" : "%s IS WITH THE SITTER", name);
+    int scale = Canvas::textWidth(line, 2) <= 380 ? 2 : 1;
+    c.fillRoundRect(40, 150, 400, 190, 18, kUiDark, 0.82f);
+    c.text(240, 172, line, scale, kUiLight, Align::Center);
+    c.text(240, 202, "ALL LOOKED AFTER.", 2, 0xCFC7B5, Align::Center);
+    c.text(240, 228, "IT WILL WAIT FOR YOU.", 2, 0xCFC7B5, Align::Center);
+    Rect b = homeArea();
+    c.fillRoundRect(b.x, b.y, b.w, b.h, 14, kGold);
+    c.text(240, b.y + b.h / 2.0f - Canvas::textHeight(2) / 2.0f, "BRING HOME", 2, kUiDark, Align::Center);
 }
 
 void Scene::drawForagingBanner(Canvas& c) {
@@ -4433,6 +4491,13 @@ void Scene::drawSlotIcon(Canvas& c, Slot s, float x, float y) {
         case Slot::Play:
             drawItem(c, Item::Pinecone, x, y, 1);
             break;
+        case Slot::Stable: {  // a little barn with a door (a cabin for the Bigfoot's sitter)
+            const Rgb wall = species_ == Species::Horse ? 0xB8332A : 0x8A5A2B;
+            c.fillRect(x - 17, y - 6, 34, 26, wall);
+            c.fillTriangle(x - 22, y - 5, x + 22, y - 5, x, y - 22, 0xCFC7B5);
+            c.fillRect(x - 7, y + 4, 14, 16, sim_.state().boarding ? 0x2A1E14 : kUiLight);
+            break;
+        }
         case Slot::Settings:  // a gear
             for (int i = 0; i < 8; i++) {
                 float a = i * 0.785398f;
@@ -4654,6 +4719,7 @@ const char* toString(Scene::Slot s) {
         case Scene::Slot::More: return "MORE";
         case Scene::Slot::Trails: return "TRAILS";
         case Scene::Slot::Settings: return "SETTINGS";
+        case Scene::Slot::Stable: return "SITTER";
         case Scene::Slot::Back: return "BACK";
         case Scene::Slot::Berries: return "BERRIES";
         case Scene::Slot::Fish: return "FISH";

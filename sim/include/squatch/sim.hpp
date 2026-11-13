@@ -205,6 +205,11 @@ struct State {
     int8_t forageRssi = 0;
     uint32_t forageHash = 0;  // also the last trip's place, once it is back
     int64_t forageUntil = 0;
+
+    // ---- added in save version 3: the boarding stable (a pet-sitter for the Bigfoot).
+    // While it's boarded nothing happens to it: no needs, no growing up.
+    bool boarding = false;
+    int64_t boardedSince = 0;
 };
 
 // ---------------------------------------------------------------- sim
@@ -246,6 +251,10 @@ public:
     void scoutTrails(const Sighting* seen, size_t n);
     // Send it off to trail i on the map. Refused while it's too shy, too young or unwell.
     Result sendForaging(int trail);
+    // Send it to the boarding stable (on = true) or bring it home. While it's boarded its
+    // needs and its growing up are paused; it comes home fed, clean and well. Refused for
+    // an egg, a runaway or while it's out on a trail.
+    Result board(bool on);
 
     // ---- queries
     const State& state() const { return s_; }

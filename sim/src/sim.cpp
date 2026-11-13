@@ -69,11 +69,12 @@ int Sim::localHour() const {
 }
 
 bool Sim::active() const {
-    return s_.stage != Stage::Egg && s_.stage != Stage::Away && !s_.foraging;
+    return s_.stage != Stage::Egg && s_.stage != Stage::Away && !s_.foraging && !s_.boarding;
 }
 
 void Sim::step() {
     const float dt = static_cast<float>(kStepSecs);
+    if (s_.boarding) return;  // at the stable: everything waits for it to come home
 
     if (s_.stage == Stage::Away) {
         updateStage();  // it keeps growing up out in the woods
@@ -430,6 +431,36 @@ Result Sim::leaveFoodOut() {
     s_.lastCallEnd = s_.now;
     emit(EventType::Returned);
     updateStage();
+    return Result::Ok;
+}
+
+Result Sim::board(bool on) {
+    if (on == s_.boarding) return Result::NotNow;
+    if (on) {
+        if (s_.stage == Stage::Egg || s_.stage == Stage::Away || s_.foraging) return Result::NotNow;
+        s_.boarding = true;
+        s_.boardedSince = s_.now;
+        s_.calling = false;
+        s_.misbehaving = false;
+        return Result::Ok;
+    }
+    // Home again. Shift every clock that counts toward something by the time it was away,
+    // so the pause really was a pause: it's no older, and nothing it was due is overdue.
+    const int64_t gone = std::max<int64_t>(0, s_.now - s_.boardedSince);
+    s_.born += gone;
+    s_.lastCallEnd += gone;
+    s_.lastScold += gone;
+    s_.lastPet += gone;
+    s_.lastBrush += gone;
+    s_.boarding = false;
+    s_.boardedSince = 0;
+    // The stable looked after it.
+    s_.hunger = 4;
+    s_.happiness = std::max(s_.happiness, 3.0f);
+    s_.messes = 0;
+    s_.sick = false;
+    s_.starvingAndDistrustSince = 0;
+    s_.asleep = false;
     return Result::Ok;
 }
 

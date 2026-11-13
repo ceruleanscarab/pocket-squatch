@@ -84,4 +84,6 @@ Wiki: https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-4B
 - Wi-Fi setup from a phone (`firmware/main/wifisetup.cpp`: open hotspot, captive page, DNS; saved in NVS by
   `storage::saveWifi`, used by the clock and weather via `storage::wifiCredentials`; Kconfig is only the default).
   Settings > Wi-Fi in `scene/`. Not yet run on hardware.
+- Boarding stable (More > Stable; "Sitter" for the Bigfoot): `Sim::board`, save version 3. While boarded nothing
+  happens and it doesn't age (`born` and the rate-limit clocks shift by the time away); it comes home fed and clean.
 - Later: Bluetooth visitors between two boards.

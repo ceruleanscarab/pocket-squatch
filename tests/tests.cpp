@@ -279,6 +279,23 @@ static void testOldSaveMigrates() {
     CHECK(loaded.trailCount == 0 && !loaded.foraging);
 }
 
+static void testVersion2SaveMigrates() {
+    std::printf("a version 2 save (from before the stable) still loads, not boarded\n");
+    Sim sim = fresh(9);
+    sim.setName("Clover");
+    sim.tick(kDay);
+    const size_t v2Size = offsetof(State, boarding);
+    std::vector<uint8_t> buf(sizeof(SaveHeader) + v2Size);
+    std::memcpy(buf.data() + sizeof(SaveHeader), &sim.state(), v2Size);
+    SaveHeader h{kSaveMagic, 2, 0, static_cast<uint32_t>(v2Size), crc32(buf.data() + sizeof(SaveHeader), v2Size)};
+    std::memcpy(buf.data(), &h, sizeof h);
+    State loaded{};
+    CHECK(load(buf.data(), buf.size(), loaded) == LoadResult::Ok);
+    CHECK(std::strcmp(loaded.name, "Clover") == 0);
+    CHECK(sharedGenes(loaded.genome, sim.state().genome) == kGeneCount);
+    CHECK(!loaded.boarding);
+}
+
 // ---------------------------------------------------------------- trails
 
 static void testTrailNames() {
@@ -397,6 +414,44 @@ static void testForageRefusals() {
     CHECK(baby.sendForaging(0) == Result::Refused);
 }
 
+// ---------------------------------------------------------------- the boarding stable
+
+static void testBoardingPauses() {
+    std::printf("at the stable for a week, it comes home no older and well looked after\n");
+    Sim sim = fresh(10);
+    sim.tick(2 * kDay);
+    keepComfortable(sim);
+    const Stage stage = sim.state().stage;
+    const int64_t age = sim.ageSecs();
+    const float trust = sim.state().trust;
+    CHECK(sim.board(true) == Result::Ok);
+    CHECK(sim.state().boarding);
+    CHECK(sim.board(true) == Result::NotNow);
+    CHECK(sim.feed(Food::Fish) == Result::NotNow);  // it isn't here
+    sim.tick(7 * kDay);
+    CHECK(sim.state().stage == stage);
+    CHECK(sim.state().trust == trust);
+    CHECK(!sim.state().calling && !sim.state().sick);
+    CHECK(sim.board(false) == Result::Ok);
+    CHECK(!sim.state().boarding);
+    CHECK(sim.ageSecs() == age);
+    CHECK(sim.state().hunger == 4 && sim.state().messes == 0 && sim.state().happiness >= 3);
+    sim.tick(kDay);  // and life carries on from where it was
+    CHECK(sim.ageSecs() == age + kDay);
+
+    std::printf("an egg, a runaway or a pet out on a trail can't be boarded\n");
+    Sim egg = fresh(11);
+    CHECK(egg.board(true) == Result::NotNow);
+    CHECK(egg.board(false) == Result::NotNow);
+    Sim gone = fresh(12);
+    gone.tick(kDay);
+    gone.mutableState().stage = Stage::Away;
+    CHECK(gone.board(true) == Result::NotNow);
+    Sim out = readyToExplore();
+    CHECK(out.sendForaging(0) == Result::Ok);
+    CHECK(out.board(true) == Result::NotNow);
+}
+
 int main() {
     testEggHatches();
     testCatchUpMatchesRealTime();
@@ -415,6 +470,8 @@ int main() {
     testScoutKeepsStrongest();
     testForageTrip();
     testForageRefusals();
+    testVersion2SaveMigrates();
+    testBoardingPauses();
     std::printf("\n%d checks, %d failed\n", gChecks, gFailures);
     return gFailures == 0 ? 0 : 1;
 }

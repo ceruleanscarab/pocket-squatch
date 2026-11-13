@@ -11,5 +11,7 @@ namespace weatherfetch {
 void start();
 // The newest report, once; false if none has arrived since the last take().
 bool take(squatch::Weather& out);
+// True once after menuconfig's town has been looked up (so the Wi-Fi page can show it).
+bool takeTownChanged();
 
 }  // namespace weatherfetch

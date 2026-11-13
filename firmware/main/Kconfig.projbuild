@@ -62,6 +62,17 @@ menu "Pocket Squatch"
             weather at the place below. Rain, snow, fog, clouds and storms then show in
             the clearing. Needs the Wi-Fi network and a location.
 
+    config SQUATCH_TOWN
+        string "Town (for the weather and the clock)"
+        depends on SQUATCH_WEATHER
+        default ""
+        help
+            A town name, e.g. "Colorado Springs" or "Leeds, England". The first time the board
+            is online it looks the town up (Open-Meteo's free geocoding), and from then on the
+            weather is for there and the clock keeps its time zone. The setup page (Settings >
+            Wi-Fi) can change it later. Leave it empty to use the latitude, longitude and time
+            zone below.
+
     config SQUATCH_WEATHER_LAT
         string "Weather location: latitude"
         depends on SQUATCH_WEATHER

@@ -255,6 +255,11 @@ void gameLoop(void*) {
         if (wifiscan::take(heard, 20, heardCount)) gSim.scoutTrails(heard, heardCount);
         squatch::Weather weather;
         if (weatherfetch::take(weather)) gScene.setWeather(weather);
+        if (weatherfetch::takeTownChanged()) {
+            storage::Location here;
+            if (storage::loadLocation(here)) gScene.setWifiTown(here.name);
+            gSim.mutableState().tzOffset = walltime::tzOffset();
+        }
 
         if (gHavePower && (lastBattery == 0 || ms - lastBattery >= kBatteryEveryMs)) {
             lastBattery = ms ? ms : 1;

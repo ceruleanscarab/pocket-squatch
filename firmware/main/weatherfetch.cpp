@@ -10,6 +10,7 @@
 #include "freertos/task.h"
 #include "netjoin.hpp"
 #include "storage.hpp"
+#include "townlookup.hpp"
 #include "radio.hpp"
 #include "walltime.hpp"
 #include "sdkconfig.h"
@@ -22,7 +23,7 @@ const char* TAG = "weather";
 constexpr int kEveryMin = 60;
 constexpr int kFirstAfterS = 45;  // after the clock sync at start-up has had the radio
 
-std::atomic<bool> gReady{false};
+std::atomic<bool> gReady{false}, gTownChanged{false};
 squatch::Weather gLatest;
 char gBody[2048];
 
@@ -71,7 +72,12 @@ void weatherTask(void*) {
         radio::take();
         squatch::Weather w;
         char ssid[33], pass[65];
-        bool ok = storage::wifiCredentials(ssid, sizeof ssid, pass, sizeof pass) && netjoin::join(ssid, pass) && fetch(w);
+        bool ok = storage::wifiCredentials(ssid, sizeof ssid, pass, sizeof pass) && netjoin::join(ssid, pass);
+        storage::Location here;
+        if (ok && CONFIG_SQUATCH_TOWN[0] && !storage::loadLocation(here)) {
+            if (townlookup::find(CONFIG_SQUATCH_TOWN, here)) gTownChanged = true;  // from menuconfig, the first time
+        }
+        ok = ok && fetch(w);
         netjoin::leave();
         radio::give();
         if (ok) {
@@ -100,7 +106,8 @@ void start() {
     if (started) return;
     char ssid[33], pass[65];
     storage::Location here;
-    const bool somewhere = storage::loadLocation(here) || (CONFIG_SQUATCH_WEATHER_LAT[0] && CONFIG_SQUATCH_WEATHER_LON[0]);
+    const bool somewhere = storage::loadLocation(here) || CONFIG_SQUATCH_TOWN[0] ||
+                           (CONFIG_SQUATCH_WEATHER_LAT[0] && CONFIG_SQUATCH_WEATHER_LON[0]);
     if (!storage::wifiCredentials(ssid, sizeof ssid, pass, sizeof pass) || !somewhere) {
         ESP_LOGI(TAG, "no location or Wi-Fi set yet: no weather");
         return;
@@ -109,6 +116,8 @@ void start() {
     xTaskCreatePinnedToCore(weatherTask, "weather", 6144, nullptr, 3, nullptr, 0);
 #endif
 }
+
+bool takeTownChanged() { return gTownChanged.exchange(false); }
 
 bool take(squatch::Weather& out) {
     if (!gReady) return false;

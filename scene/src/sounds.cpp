@@ -86,6 +86,9 @@ constexpr Note kClop[] = {{Tri, 420, 150, 22, 75, 0.55f}, {Tri, 360, 140, 22, 0,
 constexpr Note kMunch[] = {{Noise, 1900, 900, 40, 80, 0.55f}, {Noise, 1700, 800, 40, 80, 0.5f},
                            {Noise, 2000, 900, 40, 90, 0.5f}, {Noise, 1600, 800, 45, 0, 0.45f}};
 constexpr Note kBrush[] = {{Noise, 3000, 5000, 120, 40, 0.35f}, {Noise, 3000, 5000, 120, 0, 0.35f}};
+constexpr Note kGobble[] = {{Square, 520, 430, 40, 0, 0.28f}, {Square, 430, 560, 40, 0, 0.28f}, {Square, 560, 420, 40, 0, 0.28f},
+                            {Square, 420, 540, 40, 0, 0.28f}, {Square, 540, 410, 40, 0, 0.26f}, {Square, 410, 500, 40, 0, 0.24f},
+                            {Square, 500, 380, 70, 0, 0.22f}};
 constexpr Note kWarning[] = {{Square, A5, A5, 130, 90, 0.3f}, {Square, E5, E5, 220, 0, 0.3f}};
 
 #define SHAPE(a) {a, static_cast<int>(sizeof a / sizeof a[0])}
@@ -95,7 +98,7 @@ constexpr Shape kShapes[static_cast<int>(Cue::Count)] = {
     SHAPE(kHatch),   SHAPE(kGrowUp),   SHAPE(kNewEgg), SHAPE(kSick),      SHAPE(kRanAway), SHAPE(kReturned),
     SHAPE(kForageBack), SHAPE(kPhoto), SHAPE(kWarning), SHAPE(kThunder), SHAPE(kBoo),
     SHAPE(kBoop), SHAPE(kGiggle), SHAPE(kRustle), SHAPE(kCrackle), SHAPE(kBabble),
-    SHAPE(kNeigh), SHAPE(kNicker), SHAPE(kSnort), SHAPE(kClop), SHAPE(kMunch), SHAPE(kBrush),
+    SHAPE(kNeigh), SHAPE(kNicker), SHAPE(kSnort), SHAPE(kClop), SHAPE(kMunch), SHAPE(kBrush), SHAPE(kGobble),
 };
 #undef SHAPE
 
@@ -135,7 +138,7 @@ const char* toString(Cue c) {
                                    "hatch",    "grow up",  "new egg",   "sick",   "ran away", "returned",
                                    "forage back", "photo", "warning", "thunder", "boo",
                                    "boop", "giggle", "rustle", "crackle", "babble",
-                                   "neigh", "nicker", "snort", "clop", "munch", "brush"};
+                                   "neigh", "nicker", "snort", "clop", "munch", "brush", "gobble"};
     int i = static_cast<int>(c);
     return i < static_cast<int>(Cue::Count) ? kNames[i] : "?";
 }

@@ -104,6 +104,11 @@ public:
     // and a witch's hat for the last week.
     bool autumn() const;
     bool halloween() const;
+    // Holiday decorations, by the local date: each stands where the jack-o'-lantern does, and
+    // a tap on it does something. Halloween is the pumpkin; the rest are drawn each frame.
+    enum class Holiday : uint8_t { None, Halloween, Thanksgiving, Christmas, Valentine, StPatrick, Easter, July4 };
+    Holiday holiday() const;
+    bool fireworksNight() const;  // New Year's Eve and Day, and the 4th of July, after dark
     bool hatWeek() const;
     Rect pumpkinArea() const;
     void previewDate(int month, int day);  // for trying the seasons out; 0 goes back to the real date
@@ -331,7 +336,11 @@ private:
     void drawFallenLeaves(Canvas& c);
     void drawFallingLeaves(Canvas& c);
     void localDate(int& month, int& day) const;
+    int localYear() const;
     void tapPumpkin();
+    void tapDecoration();
+    void drawDecoration(Canvas& c);  // the holidays other than Halloween
+    void drawFireworks(Canvas& c);
     void openGames();
     void startGame(Game g);
     void gameTap(int x, int y);
@@ -438,6 +447,7 @@ private:
     char gameMsg_[32] = {};
     int64_t greetedDay_ = -1;
     uint32_t giggleAt_ = 0;
+    uint32_t fanUntil_ = 0;  // the turkey's tail, shown off
     bool fahrenheit_ = false;
     uint32_t nextLightning_ = 0, lightningUntil_ = 0;
     bool settingsChanged_ = false;

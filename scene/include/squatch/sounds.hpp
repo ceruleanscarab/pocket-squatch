@@ -46,6 +46,7 @@ enum class Cue : uint8_t {
     Clop,        // hooves, while it trots
     Munch,
     Brush,       // being groomed (the horse edition)
+    Gobble,      // the Thanksgiving turkey
     Count
 };
 

@@ -389,6 +389,54 @@ void Scene::localDate(int& month, int& day) const {
     month = static_cast<int>(mp < 10 ? mp + 3 : mp - 9);
 }
 
+int Scene::localYear() const {
+    const State& s = sim_.state();
+    const int64_t z = (s.now + s.tzOffset) / 86400 + 719468;
+    const int64_t era = (z >= 0 ? z : z - 146096) / 146097;
+    const int64_t doe = z - era * 146097;
+    const int64_t yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    const int64_t doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    const int64_t mp = (5 * doy + 2) / 153;
+    return static_cast<int>(yoe + era * 400 + (mp >= 10 ? 1 : 0));
+}
+
+namespace {
+int dayOfYear(int m, int d) {
+    static const int kBefore[] = {0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334};
+    return kBefore[(m - 1) % 12] + d;
+}
+// Easter Sunday (the anonymous Gregorian computus).
+void easter(int y, int& month, int& day) {
+    const int a = y % 19, b = y / 100, c = y % 100, d = b / 4, e = b % 4, f = (b + 8) / 25, g = (b - f + 1) / 3;
+    const int h = (19 * a + b - d - g + 15) % 30, i = c / 4, k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7;
+    const int m = (a + 11 * h + 22 * l) / 451;
+    month = (h + l - 7 * m + 114) / 31;
+    day = (h + l - 7 * m + 114) % 31 + 1;
+}
+}  // namespace
+
+Scene::Holiday Scene::holiday() const {
+    int m, d;
+    localDate(m, d);
+    if (m == 10 && d >= 15) return Holiday::Halloween;
+    if (m == 11) return Holiday::Thanksgiving;
+    if (m == 12 || (m == 1 && d == 1)) return Holiday::Christmas;
+    if (m == 2 && d >= 7 && d <= 14) return Holiday::Valentine;
+    if (m == 3 && d >= 14 && d <= 17) return Holiday::StPatrick;
+    if (m == 7 && d <= 4) return Holiday::July4;
+    int em, ed;
+    easter(localYear(), em, ed);
+    const int today = dayOfYear(m, d), sunday = dayOfYear(em, ed);
+    if (today >= sunday - 7 && today <= sunday) return Holiday::Easter;
+    return Holiday::None;
+}
+
+bool Scene::fireworksNight() const {
+    int m, d;
+    localDate(m, d);
+    return dark_ > 0.35f && ((m == 12 && d == 31) || (m == 1 && d == 1) || (m == 7 && d == 4));
+}
+
 bool Scene::autumn() const {
     int m, d;
     localDate(m, d);
@@ -413,7 +461,9 @@ void Scene::previewDate(int month, int day) {
     sceneryKey_ = -1;
 }
 
+// Where a holiday's decoration stands (the pumpkin's spot): tap it.
 Scene::Rect Scene::pumpkinArea() const {
+    if (holiday() == Holiday::Christmas) return {static_cast<int>(kPumpkinX) - 36, static_cast<int>(kPumpkinY) - 96, 72, 104};
     return {static_cast<int>(kPumpkinX) - 32, static_cast<int>(kPumpkinY) - 38, 64, 64};
 }
 
@@ -636,8 +686,9 @@ void Scene::onTap(int x, int y) {
             return;
         }
     }
-    if (halloween() && pumpkinArea().contains(x, y)) {
-        tapPumpkin();
+    if (holiday() != Holiday::None && pumpkinArea().contains(x, y)) {
+        if (halloween()) tapPumpkin();
+        else tapDecoration();
         return;
     }
     if (coneArea().contains(x, y)) {  // toss it somewhere else (the no-flick way)
@@ -1372,6 +1423,15 @@ void Scene::chatter() {
             default: break;
         }
         if (halloween()) return speak(species_ == Species::Horse ? "NEIGH-BOO! HEE HEE" : "BOO! HEE HEE");
+        switch (holiday()) {
+            case Holiday::Thanksgiving: return speak(rand01() < 0.5f ? "GOBBLE GOBBLE!" : "I'M THANKFUL FOR YOU");
+            case Holiday::Christmas: return speak(rand01() < 0.5f ? "MERRY CHRISTMAS!" : "IS SANTA COMING?");
+            case Holiday::Valentine: return speak("BE MY VALENTINE?");
+            case Holiday::StPatrick: return speak("I FEEL LUCKY!");
+            case Holiday::Easter: return speak("EGG HUNT?");
+            case Holiday::July4: return speak("FIREWORKS TONIGHT!");
+            default: break;
+        }
         if (autumn()) return speak("CRUNCHY LEAVES!");
     }
     static const char* kIdle[] = {"HMM HMM HMM",      "LA LA LA",       "WHAT'S THAT?", "SNIFF SNIFF",
@@ -1977,7 +2037,9 @@ void Scene::draw(Canvas& c) {
         drawScenery(c);
     }
     drawStars(c);
+    if (fireworksNight()) drawFireworks(c);
     if (halloween()) drawBats(c);
+    if (holiday() != Holiday::None && !halloween()) drawDecoration(c);
     for (int i = 0; i < visibleMesses(); i++) {
         float x = kMessSpots[i][0], y = kMessSpots[i][1];
         c.fillEllipse(x, y, 17, 8, sh(0x4E3219));
@@ -2080,6 +2142,186 @@ void Scene::drawScenery(Canvas& c) {
     if (species_ == Species::Horse) drawStump(c);  // the hay bale stands in front of the barn
     if (halloween()) drawPumpkin(c, dark_ > 0.25f);
     if (weather_.sky == Sky::Fog) drawFog(c);
+}
+
+// ---- the other holidays' decorations (Halloween's pumpkin is part of the scenery)
+
+void Scene::tapDecoration() {
+    const bool chatty = hatched() && !hiding() && !sim_.state().asleep;
+    const float x = kPumpkinX, y = kPumpkinY;
+    switch (holiday()) {
+        case Holiday::Thanksgiving:
+            say("GOBBLE GOBBLE!", true);
+            cue(Cue::Gobble);
+            fanUntil_ = now_ + 1600;
+            if (chatty) speak(species_ == Species::Horse ? "A TURKEY! HI, TURKEY!" : "GOBBLE? GOBBLE!");
+            break;
+        case Holiday::Christmas:
+            say("MERRY CHRISTMAS!", true);
+            cue(Cue::Heal);
+            for (int i = 0; i < 10; i++)
+                spawn(ParticleKind::Sparkle, x + (rand01() - 0.5f) * 60, y - 20 - rand01() * 80, 0, -30, 900);
+            if (chatty) speak("IS SANTA COMING?");
+            break;
+        case Holiday::Valentine:
+            say("HAPPY VALENTINE'S DAY!", true);
+            cue(Cue::Happy);
+            for (int i = 0; i < 6; i++)
+                spawn(ParticleKind::Heart, x + (rand01() - 0.5f) * 40, y - 90, (rand01() - 0.5f) * 40, -50, 1300);
+            if (chatty) speak("BE MY VALENTINE?");
+            break;
+        case Holiday::StPatrick:
+            say("LUCKY YOU!", true);
+            cue(Cue::Pickup);
+            for (int i = 0; i < 8; i++)
+                spawn(ParticleKind::Sparkle, x + (rand01() - 0.5f) * 40, y - 14, (rand01() - 0.5f) * 80, -90, 800);
+            if (chatty) speak("I FEEL LUCKY!");
+            break;
+        case Holiday::Easter:
+            say("HAPPY EASTER!", true);
+            cue(Cue::NewEgg);
+            if (chatty) speak(species_ == Species::Horse ? "EGG HUNT? FUN!" : "I CAME FROM AN EGG!");
+            break;
+        case Holiday::July4:
+            say("HAPPY 4TH OF JULY!", true);
+            cue(Cue::Crackle);
+            for (int i = 0; i < 8; i++)
+                spawn(ParticleKind::Sparkle, x + (rand01() - 0.5f) * 30, y - 70 - rand01() * 30, (rand01() - 0.5f) * 80, -60, 900);
+            if (chatty) speak("OOH, FIREWORKS SOON!");
+            break;
+        default: break;
+    }
+}
+
+void Scene::drawDecoration(Canvas& c) {
+    const float x = kPumpkinX, y = kPumpkinY, t = static_cast<float>(t_);
+    switch (holiday()) {
+        case Holiday::Thanksgiving: {  // a turkey, strutting to and fro; tapped, it fans its tail
+            const float tx = x - 22 + 20 * std::sin(t * 0.4f), step = std::fabs(std::sin(t * 3)) * 2;
+            const bool left = std::cos(t * 0.4f) < 0, fan = now_ < fanUntil_;
+            const float dir = left ? -1.0f : 1.0f, ty = y + 2 - step;
+            c.fillEllipse(tx, y + 16, 22, 5, 0x000000, 0.2f);
+            // The tail: a fan of feathers behind, wider when shown off.
+            const Rgb feathers[] = {sh(0x8C4A22), sh(0xC8742E), sh(0xE0A33A), sh(0x6B3A1E)};
+            const int n = fan ? 9 : 6;
+            const float spread = fan ? 1.5f : 1.0f, len = fan ? 34 : 26;
+            for (int i = 0; i < n; i++) {
+                const float a = (-0.5f + i / static_cast<float>(n - 1)) * spread - dir * 0.35f;
+                c.line(tx - dir * 6, ty - 6, tx - dir * 6 + std::sin(a) * len, ty - 6 - std::cos(a) * len, 8, feathers[i % 4]);
+            }
+            c.line(tx - 3, ty + 8, tx - 4, y + 16, 2, sh(0xC8962E));  // legs
+            c.line(tx + 3, ty + 8, tx + 4, y + 16, 2, sh(0xC8962E));
+            c.fillEllipse(tx, ty, 13, 11, sh(0x5A3420));  // body
+            c.fillEllipse(tx - dir * 2, ty - 2, 8, 6, sh(0x7A4A2A));
+            c.line(tx + dir * 7, ty - 4, tx + dir * 10, ty - 16, 6, sh(0x5A3420));  // neck
+            c.fillCircle(tx + dir * 11, ty - 19, 5.5f, sh(0x9A7A6A));  // head
+            c.fillTriangle(tx + dir * 15, ty - 20, tx + dir * 15, ty - 17, tx + dir * 20, ty - 18.5f, sh(0xE8A23A));  // beak
+            c.line(tx + dir * 15, ty - 16, tx + dir * 14, ty - 10, 2.5f, sh(0xC0392B));  // wattle
+            c.fillCircle(tx + dir * 12, ty - 20.5f, 1.4f, 0x1A1A1A);
+            break;
+        }
+        case Holiday::Christmas: {  // a little decorated fir, lights twinkling, presents from the 20th
+            int m, d;
+            localDate(m, d);
+            c.fillEllipse(x, y + 12, 34, 6, 0x000000, 0.2f);
+            c.fillRect(x - 4, y - 2, 8, 14, sh(kTrunk));
+            const Rgb green = sh(0x2E6B3F), dark = sh(0x24563A);
+            for (int i = 0; i < 3; i++) {
+                const float ty = y - 2 - i * 24, hw = 30 - i * 7;
+                c.fillTriangle(x - hw, ty, x + hw, ty, x, ty - 34, green);
+                c.fillTriangle(x, ty, x + hw, ty, x, ty - 34, dark);
+            }
+            const Rgb bulbs[] = {0xE84A4A, 0xF2C14E, 0x4AA8E8, 0xE87AD0, 0x7AE87A};
+            for (int i = 0; i < 12; i++) {
+                const float bx = x + (noise01(i + 900) - 0.5f) * (44 - i * 2.5f), by = y - 8 - i * 6.0f;
+                const float tw = 0.5f + 0.5f * std::sin(t * 3 + i * 1.7f);
+                if (dark_ > 0.25f) c.glow(bx, by, 6, bulbs[i % 5], 0.35f * tw * dark_);
+                c.fillCircle(bx, by, 2.2f, mix(sh(bulbs[i % 5]), bulbs[i % 5], dark_ * tw));
+            }
+            const float sy = y - 76;  // the star
+            c.glow(x, sy, 12, 0xFFE08A, 0.3f + 0.2f * std::sin(t * 2));
+            c.fillTriangle(x - 7, sy + 2, x + 7, sy + 2, x, sy - 9, 0xF2C14E);
+            c.fillTriangle(x - 7, sy - 4, x + 7, sy - 4, x, sy + 7, 0xF2C14E);
+            if (m == 12 && d >= 20) {  // presents
+                c.fillRect(x - 30, y + 2, 16, 12, sh(0xC0392B));
+                c.fillRect(x - 23, y + 2, 2, 12, sh(0xF2C14E));
+                c.fillRect(x + 10, y + 4, 14, 10, sh(0x2E6FB0));
+                c.fillRect(x + 16, y + 4, 2, 10, sh(0xF4EFE6));
+            }
+            break;
+        }
+        case Holiday::Valentine: {  // a heart balloon, bobbing on its string
+            const float by = y - 84 + 4 * std::sin(t * 1.5f), bx = x - 4 + 3 * std::sin(t * 0.9f);
+            c.line(x, y + 12, bx, by + 18, 1.5f, sh(0xF4EFE6));
+            c.fillCircle(bx - 9, by - 4, 11, 0xE84A6A);
+            c.fillCircle(bx + 9, by - 4, 11, 0xE84A6A);
+            c.fillTriangle(bx - 19, by, bx + 19, by, bx, by + 20, 0xE84A6A);
+            c.fillCircle(bx - 11, by - 8, 3.5f, 0xFFFFFF, 0.5f);
+            c.fillCircle(x, y + 12, 3, sh(0x6B4A2F));  // a little peg in the ground
+            break;
+        }
+        case Holiday::StPatrick: {  // a pot of gold among shamrocks
+            for (int i = 0; i < 5; i++) {
+                const float sx = x - 30 + i * 15.0f, sy = y + 14 - (i % 2) * 5.0f;
+                for (int k = 0; k < 3; k++) c.fillCircle(sx + std::cos(k * 2.1f) * 3.5f, sy - 6 + std::sin(k * 2.1f) * 3.5f, 3.4f, sh(0x3E9A4A));
+                c.line(sx, sy - 4, sx + 1, sy + 2, 1.5f, sh(0x2E7A3A));
+            }
+            c.fillEllipse(x, y + 10, 20, 5, 0x000000, 0.25f);
+            c.fillEllipse(x, y, 18, 14, sh(0x2A2A2A));
+            c.fillEllipse(x, y - 10, 18, 5, sh(0x3A3A3A));
+            for (int i = 0; i < 6; i++) c.fillCircle(x - 12 + i * 5.0f, y - 12 - (i % 2) * 3.0f, 4, sh(0xF2C14E));
+            c.fillCircle(x - 4, y - 16, 1.5f, 0xFFFFFF, 0.7f);
+            break;
+        }
+        case Holiday::Easter: {  // a basket of painted eggs, and a few more hidden in the grass
+            const Rgb eggs[] = {0xF7A8C8, 0xA8D8F2, 0xF6D65A, 0xB8F0C8, 0xC9A8F2};
+            const float hidden[][2] = {{60, 440}, {205, 455}, {330, 300}};
+            for (int i = 0; i < 3; i++) {
+                c.fillEllipse(hidden[i][0], hidden[i][1], 6, 8, sh(eggs[i + 1]));
+                c.line(hidden[i][0] - 5, hidden[i][1], hidden[i][0] + 5, hidden[i][1], 1.5f, sh(0xFFFFFF), 0.7f);
+            }
+            c.fillEllipse(x, y + 14, 26, 5, 0x000000, 0.2f);
+            for (int i = 0; i < 4; i++) c.fillEllipse(x - 12 + i * 8.0f, y - 6 - (i % 2) * 3.0f, 6, 8, sh(eggs[i]));
+            c.fillRoundRect(x - 22, y - 4, 44, 18, 6, sh(0xB8844A));
+            for (int i = 0; i < 4; i++) c.line(x - 22, y + i * 4.0f, x + 22, y + i * 4.0f, 1.2f, sh(0x8C5A2A), 0.7f);
+            c.ring(x, y - 4, 20, 2.5f, sh(0x8C5A2A));
+            break;
+        }
+        case Holiday::July4: {  // a flag on a pole
+            c.line(x - 14, y + 12, x - 14, y - 70, 2.5f, sh(0xC9C2B4));
+            const float wave = std::sin(t * 2.2f) * 2;
+            for (int r = 0; r < 7; r++)
+                c.fillRect(x - 13, y - 70 + r * 4.0f + (r % 2 ? wave * 0.3f : 0), 34, 4, sh(r % 2 ? 0xF4EFE6 : 0xC0392B));
+            c.fillRect(x - 13, y - 70, 15, 16, sh(0x2E4A8A));
+            for (int i = 0; i < 6; i++) c.fillCircle(x - 9 + (i % 3) * 4.5f, y - 66 + (i / 3) * 6.0f, 0.9f, 0xFFFFFF);
+            break;
+        }
+        default: break;
+    }
+}
+
+// Bursts high over the trees on fireworks nights: each blooms, drifts down and fades.
+void Scene::drawFireworks(Canvas& c) {
+    const Rgb cols[] = {0xFF5A5A, 0xFFD24A, 0x6AC8FF, 0xFF7AE0, 0x8AFF8A, 0xFFFFFF};
+    for (int k = 0; k < 4; k++) {
+        const double period = 2.2 + k * 0.45;
+        const double phase = std::fmod(t_ + k * 0.9, period) / period;  // 0..1 through one burst
+        const int burst = static_cast<int>((t_ + k * 0.9) / period);
+        const float bx = 70 + noise01(static_cast<uint32_t>(burst * 7 + k * 101)) * 340;
+        const float by = 60 + noise01(static_cast<uint32_t>(burst * 13 + k * 37)) * 90;
+        const Rgb col = cols[(burst + k) % 6];
+        if (phase < 0.2) {  // the rocket going up
+            const float p = static_cast<float>(phase / 0.2);
+            c.fillCircle(bx, kHorizon - (kHorizon - by) * p, 2, 0xFFE8B0, 0.8f);
+        } else {
+            const float p = static_cast<float>((phase - 0.2) / 0.8), r = 8 + p * 46, a = std::sqrt(1 - p) * dark_;
+            if (p < 0.15f) c.glow(bx, by, 40, col, 0.4f * dark_);
+            for (int i = 0; i < 14; i++) {
+                const float ang = i * (kPi * 2 / 14);
+                c.fillCircle(bx + std::cos(ang) * r, by + std::sin(ang) * r + p * p * 18, 2.4f * (1 - p * 0.5f), col, a);
+            }
+        }
+    }
 }
 
 void Scene::drawPumpkin(Canvas& c, bool lit) {

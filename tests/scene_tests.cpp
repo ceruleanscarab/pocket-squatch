@@ -652,14 +652,16 @@ static void testSounds() {
     std::vector<int16_t> buf(Synth::kRate / 100);
     for (int i = 0; i < static_cast<int>(Cue::Count); i++) {
         Cue cue = static_cast<Cue>(i);
-        CHECK(Synth::lengthMs(cue) > 0 && Synth::lengthMs(cue) < 2000);
+        // Short cues, except Santa's "ho ho ho, merry Christmas", which is a few seconds.
+        const int longest = cue == Cue::HoHoHo ? 4000 : 2000;
+        CHECK(Synth::lengthMs(cue) > 0 && Synth::lengthMs(cue) < longest);
         syn.play(cue, 3);
         int peak = 0, blocks = 0;
-        while (syn.render(buf.data(), static_cast<int>(buf.size())) && blocks < 300) {
+        while (syn.render(buf.data(), static_cast<int>(buf.size())) && blocks < 500) {
             for (int16_t v : buf) peak = std::max(peak, std::abs(static_cast<int>(v)));
             blocks++;
         }
-        CHECK(blocks > 0 && blocks < 300);  // it finishes
+        CHECK(blocks > 0 && blocks < longest / 10);  // it finishes
         CHECK(peak > 1000);                 // and it's audible
     }
     syn.play(Cue::Happy, 0);

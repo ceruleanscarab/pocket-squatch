@@ -1,4 +1,4 @@
-// Real horse recordings for the horse edition's sounds (see horse_sounds.cpp for where
+// Real recordings: the horse edition's sounds and the holidays' (the turkey, Santa) (see horse_sounds.cpp for where
 // they're from). 16 kHz, 8-bit mu-law. Generated; the order matches HorseClipId.
 #pragma once
 
@@ -11,7 +11,7 @@ struct HorseClip {
     int length;  // samples
 };
 
-enum HorseClipId { kClipNeigh, kClipNicker, kClipSnort, kClipClop, kClipMunch, kClipBrush, kHorseClipCount };
+enum HorseClipId { kClipNeigh, kClipNicker, kClipSnort, kClipClop, kClipMunch, kClipBrush, kClipGobble, kClipHoHoHo, kHorseClipCount };
 
 extern const HorseClip kHorseClips[kHorseClipCount];
 

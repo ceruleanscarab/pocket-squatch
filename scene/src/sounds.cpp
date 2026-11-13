@@ -98,7 +98,7 @@ constexpr Shape kShapes[static_cast<int>(Cue::Count)] = {
     SHAPE(kHatch),   SHAPE(kGrowUp),   SHAPE(kNewEgg), SHAPE(kSick),      SHAPE(kRanAway), SHAPE(kReturned),
     SHAPE(kForageBack), SHAPE(kPhoto), SHAPE(kWarning), SHAPE(kThunder), SHAPE(kBoo),
     SHAPE(kBoop), SHAPE(kGiggle), SHAPE(kRustle), SHAPE(kCrackle), SHAPE(kBabble),
-    SHAPE(kNeigh), SHAPE(kNicker), SHAPE(kSnort), SHAPE(kClop), SHAPE(kMunch), SHAPE(kBrush), SHAPE(kGobble),
+    SHAPE(kNeigh), SHAPE(kNicker), SHAPE(kSnort), SHAPE(kClop), SHAPE(kMunch), SHAPE(kBrush), SHAPE(kGobble), SHAPE(kGobble),
 };
 #undef SHAPE
 
@@ -118,6 +118,8 @@ const HorseClip* clipFor(Cue c) {
         case Cue::Clop: return &kHorseClips[kClipClop];
         case Cue::Munch: return &kHorseClips[kClipMunch];
         case Cue::Brush: return &kHorseClips[kClipBrush];
+        case Cue::Gobble: return &kHorseClips[kClipGobble];
+        case Cue::HoHoHo: return &kHorseClips[kClipHoHoHo];
         default: return nullptr;
     }
 }
@@ -138,7 +140,7 @@ const char* toString(Cue c) {
                                    "hatch",    "grow up",  "new egg",   "sick",   "ran away", "returned",
                                    "forage back", "photo", "warning", "thunder", "boo",
                                    "boop", "giggle", "rustle", "crackle", "babble",
-                                   "neigh", "nicker", "snort", "clop", "munch", "brush", "gobble"};
+                                   "neigh", "nicker", "snort", "clop", "munch", "brush", "gobble", "ho ho ho"};
     int i = static_cast<int>(c);
     return i < static_cast<int>(Cue::Count) ? kNames[i] : "?";
 }

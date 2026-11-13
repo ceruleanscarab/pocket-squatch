@@ -47,6 +47,7 @@ enum class Cue : uint8_t {
     Munch,
     Brush,       // being groomed (the horse edition)
     Gobble,      // the Thanksgiving turkey
+    HoHoHo,      // Santa, from the Christmas tree
     Count
 };
 

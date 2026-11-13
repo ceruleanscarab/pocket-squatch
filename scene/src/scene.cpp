@@ -2158,7 +2158,7 @@ void Scene::tapDecoration() {
             break;
         case Holiday::Christmas:
             say("MERRY CHRISTMAS!", true);
-            cue(Cue::Heal);
+            cue(Cue::HoHoHo);
             for (int i = 0; i < 10; i++)
                 spawn(ParticleKind::Sparkle, x + (rand01() - 0.5f) * 60, y - 20 - rand01() * 80, 0, -30, 900);
             if (chatty) speak("IS SANTA COMING?");

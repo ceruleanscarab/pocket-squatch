@@ -4578,7 +4578,29 @@ void Scene::drawSlotIcon(Canvas& c, Slot s, float x, float y) {
             c.fillTriangle(x + 2, y - 4, x - 24, y + 3, x + 2, y + 10, 0xCFC7B5);
             break;
         case Slot::Play:
-            drawItem(c, Item::Pinecone, x, y, 1);
+            if (species_ == Species::Horse) {  // a lucky horseshoe, open end up, nail holes and all
+                const float pi = 3.1415927f, cy = y - 2, r = 14;
+                auto at = [&](float u, float& px, float& py) {  // u 0..1 round the shoe; its tips curl in a little
+                    const float a = pi * (-0.22f + u * 1.44f);
+                    const float rr = r * (1 - 0.12f * std::fabs(2 * u - 1) * std::fabs(2 * u - 1));
+                    px = x + std::cos(a) * rr;
+                    py = cy + std::sin(a) * rr * 1.1f;
+                };
+                for (int i = 0; i < 16; i++) {
+                    float x0, y0, x1, y1;
+                    at(i / 16.0f, x0, y0);
+                    at((i + 1) / 16.0f, x1, y1);
+                    c.line(x0, y0, x1, y1, 9, 0xB8B8C0);
+                    c.line(x0, y0 - 1.5f, x1, y1 - 1.5f, 3, 0xE4E4EA);  // a shine along it
+                }
+                for (int i = 0; i < 6; i++) {
+                    float hx, hy;
+                    at(0.12f + i * 0.152f, hx, hy);
+                    c.fillCircle(hx, hy, 1.5f, 0x55555C);
+                }
+            } else {
+                drawItem(c, Item::Pinecone, x, y, 1);
+            }
             break;
         case Slot::Stable: {  // a little barn with a door (a cabin for the Bigfoot's sitter)
             const Rgb wall = species_ == Species::Horse ? 0xB8332A : 0x8A5A2B;
@@ -4627,6 +4649,25 @@ void Scene::drawItem(Canvas& c, Item it, float x, float y, float k) {
                 for (int i = -4; i <= 4; i++)
                     c.line(x + i * 2.5f * k, y + 14 * k, x + i * 3.5f * k, y - 14 * k, 2.6f * k, i % 2 ? 0xD9B655 : 0xEBCB6E);
                 c.fillRect(x - 12 * k, y - 2 * k, 24 * k, 4 * k, 0x8C5A3A);
+                return;
+            case Item::Brush: {  // a grooming brush: a wooden back, a leather strap for your hand, stiff bristles
+                for (int i = -4; i <= 4; i++)
+                    c.line(x + i * 3.2f * k, y + 3 * k, x + i * 3.4f * k, y + 13 * k, 2.2f * k, i % 2 ? 0xD8C49A : 0xE8D8B0);
+                c.fillRoundRect(x - 17 * k, y - 8 * k, 34 * k, 13 * k, 6 * k, 0x9A6436);
+                c.fillRoundRect(x - 15 * k, y - 7 * k, 30 * k, 4 * k, 2 * k, 0xB8834E);  // light on the top edge
+                c.line(x - 13 * k, y - 8 * k, x - 9 * k, y - 18 * k, 4 * k, 0x5A3420);   // the strap
+                c.line(x - 9 * k, y - 18 * k, x + 9 * k, y - 18 * k, 4 * k, 0x5A3420);
+                c.line(x + 9 * k, y - 18 * k, x + 13 * k, y - 8 * k, 4 * k, 0x5A3420);
+                return;
+            }
+            case Item::Poultice:  // a first-aid kit: a white cross on red, with a handle
+                c.line(x - 7 * k, y - 13 * k, x - 7 * k, y - 17 * k, 3 * k, 0x8A1E18);
+                c.line(x - 7 * k, y - 17 * k, x + 7 * k, y - 17 * k, 3 * k, 0x8A1E18);
+                c.line(x + 7 * k, y - 17 * k, x + 7 * k, y - 13 * k, 3 * k, 0x8A1E18);
+                c.fillRoundRect(x - 18 * k, y - 13 * k, 36 * k, 28 * k, 6 * k, 0xD8322A);
+                c.fillRoundRect(x - 18 * k, y - 13 * k, 36 * k, 6 * k, 3 * k, 0xE8584E);  // the lid's lit edge
+                c.fillRect(x - 3.5f * k, y - 8 * k, 7 * k, 20 * k, 0xFFFFFF);
+                c.fillRect(x - 10 * k, y - 1.5f * k, 20 * k, 7 * k, 0xFFFFFF);
                 return;
             default: break;
         }

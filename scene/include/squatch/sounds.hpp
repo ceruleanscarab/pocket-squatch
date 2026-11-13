@@ -51,6 +51,7 @@ enum class Cue : uint8_t {
     Blow,        // the horse edition, touched: a soft snort through the nose (booped)
     Chuckle,     // a quick little nicker (tickled)
     Sigh,        // a low, contented nicker (a pat on the head)
+    Thud,        // an apple or pinecone landing on the grass
     Count
 };
 

@@ -14,5 +14,7 @@ struct HorseClip {
 enum HorseClipId { kClipNeigh, kClipNicker, kClipSnort, kClipClop, kClipMunch, kClipBrush, kClipGobble, kClipHoHoHo, kHorseClipCount };
 
 extern const HorseClip kHorseClips[kHorseClipCount];
+// Made in code by tools/leaf_sounds.py (leaf_sounds.cpp): a shaken tree, and something landing on the grass.
+extern const HorseClip kRustleClip, kThudClip;
 
 }  // namespace squatch

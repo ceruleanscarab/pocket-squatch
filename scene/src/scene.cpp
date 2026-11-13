@@ -1296,6 +1296,7 @@ void Scene::updateFetch(float dt) {
         coneY_ = std::max(300.0f, std::min(430.0f, coneY_));
         if (coneZ_ <= 0) {
             coneZ_ = 0;
+            if (coneVz_ < -500) cue(Cue::Thud);  // the first, real landing (not the little bounce)
             if (coneVz_ < -250) {  // a little bounce
                 coneVz_ = -coneVz_ * 0.3f;
                 coneVx_ *= 0.5f;

@@ -450,6 +450,7 @@ private:
     float fetchX_ = 240;  // where the pet is while it fetches
     uint32_t coneSince_ = 0;
     uint32_t fireUntil_ = 0, nextEmber_ = 0;
+    uint32_t nextClop_ = 0;
 
     // talking
     char bubble_[28] = {};

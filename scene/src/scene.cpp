@@ -184,6 +184,20 @@ void Scene::setSettings(const Settings& s) {
 
 void Scene::cue(Cue c) {
     if (settings_.volume == 0 || (screenOff_ && c != Cue::Knock)) return;
+    if (species_ == Species::Horse) {  // the horse's own voice
+        switch (c) {
+            case Cue::Happy:
+            case Cue::Giggle:
+            case Cue::Babble: c = Cue::Nicker; break;
+            case Cue::Play:
+            case Cue::Knock:
+            case Cue::Returned: c = Cue::Neigh; break;
+            case Cue::Sneeze:
+            case Cue::Sulk: c = Cue::Snort; break;
+            case Cue::Eat: c = Cue::Munch; break;
+            default: break;
+        }
+    }
     if (cueCount_ == static_cast<int>(sizeof cues_ / sizeof cues_[0])) return;  // nobody's listening
     cues_[cueCount_++] = c;
 }
@@ -1539,6 +1553,13 @@ void Scene::animate(float dt) {
     lookX_ += (lookTarget_ - lookX_) * std::min(1.0f, dt * 6);
     lookY_ += (lookTargetY_ - lookY_) * std::min(1.0f, dt * 6);
     updateFetch(dt);
+    if (species_ == Species::Horse && hatched() && !s.asleep && now_ >= nextClop_) {
+        const bool trotting = fetching() || (sim_.trustLevel() == TrustLevel::Wandering && std::fabs(wanderTarget_ - wanderX_) > 1);
+        if (trotting) {
+            cue(Cue::Clop);
+            nextClop_ = now_ + 420;
+        }
+    }
     if (fireLit() && now_ >= nextEmber_) {
         spawn(ParticleKind::Ember, kFireX + (rand01() - 0.5f) * 16, kFireY - 30, (rand01() - 0.5f) * 20,
               -50 - rand01() * 30, 1300);

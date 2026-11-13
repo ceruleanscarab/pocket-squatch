@@ -40,6 +40,11 @@ enum class Cue : uint8_t {
     Rustle,      // a tree shaken
     Crackle,     // the campfire lit
     Babble,      // it says something
+    Neigh,       // the horse edition: an excited whinny
+    Nicker,      // a soft, low, happy huh-huh-huh
+    Snort,
+    Clop,        // hooves, while it trots
+    Munch,
     Count
 };
 

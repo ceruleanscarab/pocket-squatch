@@ -1374,7 +1374,7 @@ static void testFoalBirth() {
 }
 
 static void testHorseGames() {
-    std::printf("horse games: six big choices; Fence Jump waits for each tap, so anyone can finish it\n");
+    std::printf("horse games: five big choices\n");
     auto openPicker = [](Driver& d) {
         d.openTray();
         d.pressSlot(Scene::Slot::Play);
@@ -1382,27 +1382,16 @@ static void testHorseGames() {
     Driver d;
     d.scene.setSpecies(Scene::Species::Horse);
     openPicker(d);
-    CHECK(d.scene.game() == Scene::Game::Pick && d.scene.gameChoiceCount() == 6);
-    for (int i = 0; i < 6; i++) {
+    CHECK(d.scene.game() == Scene::Game::Pick && d.scene.gameChoiceCount() == 5);
+    for (int i = 0; i < 5; i++) {
         const Scene::Rect r = d.scene.gameChoiceArea(i);
-        CHECK(r.w >= 64 && r.h >= 64 && r.y >= 64 && r.y + r.h <= 456);
+        CHECK(r.w >= 64 && r.h >= 64 && r.y >= 100 && r.y + r.h <= 436);
     }
     std::vector<uint16_t> fb(Scene::kSize * Scene::kSize);
     Canvas c(fb.data(), Scene::kSize, Scene::kSize);
     d.scene.draw(c);
-    d.tap(d.scene.gameChoiceArea(2));
-    CHECK(d.scene.game() == Scene::Game::Jump);
-    // Nobody taps: it waits at the first fence, for as long as it takes.
-    for (int i = 0; i < 600; i++) d.step();
-    CHECK(!d.scene.gameOver() && d.scene.gameScore() == 0);
-    d.scene.draw(c);
-    // Tap whenever, slowly: every fence gets cleared.
-    for (int k = 0; k < 200 && !d.scene.gameOver(); k++) {
-        d.tap(240, 240);
-        for (int i = 0; i < 90; i++) d.step();
-    }
-    CHECK(d.scene.gameOver() && d.scene.gameWon());
-    CHECK(d.scene.gameScore() == 8);
+    d.tap(240, 30);  // outside the panel closes it
+    CHECK(d.scene.game() == Scene::Game::None);
     // Its own Hide and Seek reveal draws.
     for (int i = 0; i < 200; i++) d.step();
     openPicker(d);
@@ -1419,7 +1408,7 @@ static void testGrooming() {
     d.scene.setSpecies(Scene::Species::Horse);
     d.openTray();
     d.pressSlot(Scene::Slot::Play);
-    d.tap(d.scene.gameChoiceArea(3));
+    d.tap(d.scene.gameChoiceArea(2));
     CHECK(d.scene.game() == Scene::Game::Groom);
     CHECK(d.scene.groomStep() == Scene::GroomStep::Brush);
     std::vector<uint16_t> fb(Scene::kSize * Scene::kSize);

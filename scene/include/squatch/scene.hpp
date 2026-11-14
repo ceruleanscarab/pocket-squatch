@@ -82,10 +82,10 @@ public:
 
     // ---- the games, from the tray's Play button: a picker, then one of three games, or a
     // quick game of catch with no timing at all. Each ends in Sim::finishedGame().
-    enum class Game : uint8_t { None, Pick, Seek, Berry, Photo, Jump, Groom };
+    enum class Game : uint8_t { None, Pick, Seek, Berry, Photo, Groom };
     static constexpr int kGameChoices = 4;  // Hide and Seek, Berry Catch, Blurry Photo, Quick Catch
-    // The horse edition has six: Hide and Seek, Apple Catch, Fence Jump, Grooming, Blurry Photo, Quick Catch.
-    int gameChoiceCount() const { return species_ == Species::Horse ? 6 : kGameChoices; }
+    // The horse edition has five: Hide and Seek, Apple Catch, Grooming, Blurry Photo, Quick Catch.
+    int gameChoiceCount() const { return species_ == Species::Horse ? 5 : kGameChoices; }
     // Grooming: brush off the mud, pick out the hooves, comb the mane, choose a ribbon. No clock.
     enum class GroomStep : uint8_t { Brush, Hooves, Mane, Ribbon };
     static constexpr int kMudSpots = 6, kTangles = 4, kRibbons = 4, kPebbles = 2;
@@ -504,13 +504,6 @@ private:
     char wifiSsid_[33] = {}, wifiHotspot_[24] = {}, wifiTown_[40] = {};
     int wifiRequest_ = 0;
     void drawWifi(Canvas& c);
-    // Fence Jump: the next fence's x, when the current jump began (0: on the ground), and
-    // how many were cleared with a well-timed jump.
-    float fenceX_ = 0;
-    uint32_t jumpAt_ = 0;
-    int stars_ = 0;
-    bool perfect_ = false;
-    float jumpHeight() const;
     // Grooming
     GroomStep groomStep_ = GroomStep::Brush;
     float groomDirt_[kMudSpots] = {};       // 1 = mucky, 0 = clean: mud for Brush, tangles for Mane

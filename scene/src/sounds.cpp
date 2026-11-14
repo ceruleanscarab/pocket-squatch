@@ -102,7 +102,7 @@ constexpr Shape kShapes[static_cast<int>(Cue::Count)] = {
     SHAPE(kForageBack), SHAPE(kPhoto), SHAPE(kWarning), SHAPE(kThunder), SHAPE(kBoo),
     SHAPE(kBoop), SHAPE(kGiggle), SHAPE(kRustle), SHAPE(kCrackle), SHAPE(kBabble),
     SHAPE(kNeigh), SHAPE(kNicker), SHAPE(kSnort), SHAPE(kClop), SHAPE(kMunch), SHAPE(kBrush), SHAPE(kGobble), SHAPE(kGobble),
-    SHAPE(kSnort), SHAPE(kNicker), SHAPE(kNicker), SHAPE(kClop), SHAPE(kTweet), SHAPE(kQuack), SHAPE(kHoot),
+    SHAPE(kSnort), SHAPE(kNicker), SHAPE(kNicker), SHAPE(kClop), SHAPE(kTweet), SHAPE(kQuack), SHAPE(kHoot), SHAPE(kClop), SHAPE(kClop),
 };
 #undef SHAPE
 
@@ -139,6 +139,8 @@ ClipStyle clipFor(Cue c) {
         case Cue::Sigh: return {&k[kClipNicker], 0.8f, 0.7f, 1};       // low and slow
         case Cue::Rustle: return {&kRustleClip, 1, 0.8f, 1};           // for both editions
         case Cue::Thud: return {&kThudClip, 1, 0.8f, 1};
+        case Cue::StepNear: return {&kStepClips[0], 1, 0.75f, 1};
+        case Cue::StepFar: return {&kStepClips[1], 1, 0.45f, 1};
         default: return {nullptr, 1, 1, 1};
     }
 }
@@ -160,7 +162,7 @@ const char* toString(Cue c) {
                                    "forage back", "photo", "warning", "thunder", "boo",
                                    "boop", "giggle", "rustle", "crackle", "babble",
                                    "neigh", "nicker", "snort", "clop", "munch", "brush", "gobble", "ho ho ho",
-                                   "blow", "chuckle", "sigh", "thud", "tweet", "quack", "hoot"};
+                                   "blow", "chuckle", "sigh", "thud", "tweet", "quack", "hoot", "step", "step (far)"};
     int i = static_cast<int>(c);
     return i < static_cast<int>(Cue::Count) ? kNames[i] : "?";
 }

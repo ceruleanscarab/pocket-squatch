@@ -243,6 +243,17 @@ float Scene::voicePitch(Cue c) const {
         case Cue::Happy: case Cue::Eat: case Cue::Sneeze: case Cue::Sulk: case Cue::Knock:
         case Cue::Giggle: case Cue::Babble: case Cue::Neigh: case Cue::Nicker: case Cue::Snort:
         case Cue::Munch: case Cue::Clop: case Cue::Blow: case Cue::Chuckle: case Cue::Sigh: break;
+        case Cue::StepNear:
+        case Cue::StepFar: {  // hooves: a little lighter on a foal, and never two quite alike
+            const float jitter = 0.93f + 0.12f * noise01(now_ / 7 + static_cast<uint32_t>(c));
+            switch (sim_.state().stage) {
+                case Stage::Baby: return 1.3f * jitter;
+                case Stage::Child: return 1.18f * jitter;
+                case Stage::Teen: return 1.08f * jitter;
+                case Stage::Elder: return 0.95f * jitter;
+                default: return jitter;
+            }
+        }
         default: return 1;
     }
     switch (sim_.state().stage) {
@@ -2315,12 +2326,14 @@ void Scene::animate(float dt) {
     lookX_ += (lookTarget_ - lookX_) * std::min(1.0f, dt * 6);
     lookY_ += (lookTargetY_ - lookY_) * std::min(1.0f, dt * 6);
     updateFetch(dt);
-    if (species_ == Species::Horse && hatched() && !s.asleep && now_ >= nextClop_) {
-        const bool trotting = walkAmt_ > 0.4f;
-        if (trotting) {
-            cue(Cue::Clop);
-            nextClop_ = now_ + 420;
+    if (species_ == Species::Horse) {  // a hoofstep as each hoof comes down, near ones louder: clip... clop...
+        static const float kLegPhase[4] = {0.0f, 3.1f, 1.6f, 4.7f};  // as drawHorse: far front, far hind, near front, near hind
+        const bool walking = hatched() && !s.asleep && !hiding() && walkAmt_ > 0.15f;
+        for (int i = 0; walking && i < 4; i++) {
+            auto stride = [&](float p) { return std::floor((p + kLegPhase[i] - kPi / 2) / (2 * kPi)); };
+            if (stride(gaitPhase_) != stride(stepPhase_)) cue(i >= 2 ? Cue::StepNear : Cue::StepFar);
         }
+        stepPhase_ = gaitPhase_;
     }
     if (fireLit() && now_ >= nextEmber_) {
         spawn(ParticleKind::Ember, kFireX + (rand01() - 0.5f) * 16, kFireY - 30, (rand01() - 0.5f) * 20,

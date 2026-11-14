@@ -55,6 +55,8 @@ enum class Cue : uint8_t {
     Tweet,       // a visiting bird
     Quack,       // a visiting duck
     Hoot,        // a visiting owl
+    StepNear,    // a hoof landing: the near legs, a little louder
+    StepFar,     // and the far ones
     Count
 };
 

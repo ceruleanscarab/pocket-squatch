@@ -16,5 +16,6 @@ enum HorseClipId { kClipNeigh, kClipNicker, kClipSnort, kClipClop, kClipMunch, k
 extern const HorseClip kHorseClips[kHorseClipCount];
 // Made in code by tools/leaf_sounds.py (leaf_sounds.cpp): a shaken tree, and something landing on the grass.
 extern const HorseClip kRustleClip, kThudClip;
+extern const HorseClip kStepClips[2];  // a hoof on soft ground, two ways
 
 }  // namespace squatch

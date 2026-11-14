@@ -740,6 +740,10 @@ void Scene::onTap(int x, int y) {
             return;
         }
     }
+    if (visitor_ != Visitor::None && !visLeaving_ && visitorArea().contains(x, y)) {
+        tapVisitor();
+        return;
+    }
     if (holiday() != Holiday::None && pumpkinArea().contains(x, y)) {
         if (halloween()) tapPumpkin();
         else tapDecoration();
@@ -1430,6 +1434,299 @@ void Scene::drawCone(Canvas& c) {
     drawItem(c, Item::Pinecone, x, y, 0.85f);
 }
 
+// ================================================================ visitors
+
+namespace {
+constexpr float kBunnyY = 440, kDuckY = 452, kDeerY = 300;
+constexpr float kOwlX = kLeftTreeX + 22, kOwlY = 196;
+}  // namespace
+
+void Scene::previewVisitor(Visitor v) { startVisitor(v); }
+
+void Scene::startVisitor(Visitor v) {
+    visitor_ = v;
+    visSince_ = now_;
+    visLeaving_ = false;
+    visNextCall_ = now_ + 1200;
+    visDir_ = rand01() < 0.5f ? 1.0f : -1.0f;
+    const float edge = visDir_ > 0 ? -40.0f : S + 40.0f;
+    switch (v) {
+        case Visitor::Bunny: visX_ = edge, visY_ = kBunnyY + (rand01() - 0.5f) * 16, visV_ = 60; break;
+        case Visitor::Duck: visX_ = edge, visY_ = kDuckY, visV_ = 22; break;
+        case Visitor::Deer: visX_ = edge, visY_ = kDeerY, visV_ = 20; break;
+        case Visitor::Bird: visX_ = 120 + rand01() * 240, visY_ = 392 + rand01() * 20, visV_ = 0; break;  // where it lands
+        case Visitor::Butterfly: visX_ = edge, visY_ = 270, visV_ = 16; break;
+        case Visitor::Owl: visX_ = kOwlX, visY_ = kOwlY, visV_ = 0; break;
+        case Visitor::None: return;
+    }
+    // Its friend notices.
+    const State& s = sim_.state();
+    if (hatched() && !s.asleep && sim_.trustLevel() == TrustLevel::Friendly && now_ >= bubbleUntil_ && rand01() < 0.7f) {
+        static const char* kHello[] = {"", "LOOK, A BUNNY!", "HELLO, BIRDIE!", "A DEER! SHHH...", "QUACK QUACK! HEE HEE",
+                                       "A BUTTERFLY!", "WHO'S THAT? HOO!"};
+        speak(kHello[static_cast<int>(v)]);
+    }
+}
+
+void Scene::updateVisitor(float dt) {
+    if (visitor_ == Visitor::None) {
+        if (!nextVisit_) nextVisit_ = now_ + 60000 + static_cast<uint32_t>(rand01() * 60000);  // the first soon after waking
+        const State& s = sim_.state();
+        if (now_ < nextVisit_ || screenOff_ || compact_ || overlay_ != Overlay::None || s.stage == Stage::Away) return;
+        nextVisit_ = now_ + 240000 + static_cast<uint32_t>(rand01() * 360000);  // every 4 to 10 minutes
+        // Who might come by, for the hour, the month and the weather.
+        int m, d;
+        localDate(m, d);
+        const float h = hourOfDay();
+        const bool night = h >= 21 || h < 5, twilight = (h >= 5 && h < 9) || (h >= 17 && h < 21);
+        const bool wet = weather_.sky == Sky::Rain || weather_.sky == Sky::Drizzle || weather_.sky == Sky::Storm ||
+                         weather_.sky == Sky::Snow;
+        Visitor pool[6];
+        int n = 0;
+        if (night) {
+            pool[n++] = Visitor::Owl;
+        } else {
+            pool[n++] = Visitor::Bunny;
+            if (!wet) pool[n++] = Visitor::Bird;
+            if (twilight) pool[n++] = Visitor::Deer;
+            if (m >= 3 && m <= 9) pool[n++] = Visitor::Duck;
+            if (m >= 4 && m <= 9 && !wet && !twilight) pool[n++] = Visitor::Butterfly;
+        }
+        startVisitor(pool[static_cast<int>(rand01() * n) % n]);
+        return;
+    }
+    const float age = static_cast<float>(now_ - visSince_) / 1000.0f;
+    auto across = [&](float speed) { visX_ += visDir_ * speed * dt; };
+    auto gone = [&]() { return visX_ < -60 || visX_ > S + 60; };
+    switch (visitor_) {
+        case Visitor::Bunny:  // hop, hop, then a nibble
+            if (visLeaving_ || std::fmod(age, 3.4f) < 1.2f) across(visLeaving_ ? 170 : visV_);
+            if (gone()) visitor_ = Visitor::None;
+            break;
+        case Visitor::Duck:
+            across(visLeaving_ ? 55 : visV_);
+            if (now_ >= visNextCall_) {
+                cue(Cue::Quack);
+                visNextCall_ = now_ + 5000 + static_cast<uint32_t>(rand01() * 5000);
+            }
+            if (gone() && age > 3) visitor_ = Visitor::None;
+            break;
+        case Visitor::Deer: {  // walks in, stops to look at you a while, walks on
+            const bool looking = !visLeaving_ && std::fabs(visX_ - S / 2.0f) < 70 && age < 30;
+            if (!looking) across(visLeaving_ ? 140 : visV_);
+            if (gone() && age > 3) visitor_ = Visitor::None;
+            break;
+        }
+        case Visitor::Bird:  // flies down, hops and pecks a while, then away
+            if (!visLeaving_ && age > 16) visLeaving_ = true, visSince_ = now_;
+            if (!visLeaving_ && now_ >= visNextCall_ && age > 1.2f) {
+                cue(Cue::Tweet);
+                visNextCall_ = now_ + 3500 + static_cast<uint32_t>(rand01() * 4000);
+            }
+            if (visLeaving_ && age > 2) visitor_ = Visitor::None;
+            break;
+        case Visitor::Butterfly:
+            across(visLeaving_ ? 70 : visV_);
+            if (visLeaving_) visY_ -= 60 * dt;
+            if ((gone() || visY_ < 60) && age > 3) visitor_ = Visitor::None;
+            break;
+        case Visitor::Owl:
+            if (!visLeaving_ && age > 45) visLeaving_ = true, visSince_ = now_;
+            if (!visLeaving_ && now_ >= visNextCall_ && age > 2) {
+                cue(Cue::Hoot);
+                visNextCall_ = now_ + 7000 + static_cast<uint32_t>(rand01() * 6000);
+            }
+            if (visLeaving_ && age > 2) visitor_ = Visitor::None;
+            break;
+        case Visitor::None: break;
+    }
+}
+
+Scene::Rect Scene::visitorArea() const {
+    if (visitor_ == Visitor::None) return {0, 0, 0, 0};
+    float x = visX_, y = visY_;
+    if (visitor_ == Visitor::Butterfly) y += 12 * std::sin(t_ * 2.3f);
+    if (visitor_ == Visitor::Deer) y -= 26;  // its middle, not its hooves
+    if (visitor_ == Visitor::Bunny || visitor_ == Visitor::Duck || visitor_ == Visitor::Bird) y -= 10;
+    return {static_cast<int>(x) - 36, static_cast<int>(y) - 36, 72, 72};
+}
+
+void Scene::tapVisitor() {
+    visLeaving_ = true;
+    visSince_ = now_;
+    switch (visitor_) {
+        case Visitor::Bunny: cue(Cue::Pickup); break;
+        case Visitor::Bird: cue(Cue::Tweet); break;
+        case Visitor::Duck: cue(Cue::Quack); break;
+        case Visitor::Owl: cue(Cue::Hoot); break;
+        default: cue(Cue::Tick); break;
+    }
+    if (visitor_ == Visitor::Deer || visitor_ == Visitor::Bunny || visitor_ == Visitor::Duck) {
+        visDir_ = visX_ < S / 2.0f ? -1.0f : 1.0f;  // off by the nearer side
+    }
+    for (int i = 0; i < 3; i++)
+        spawn(ParticleKind::Sparkle, visX_ + (rand01() - 0.5f) * 30, visY_ - 20, (rand01() - 0.5f) * 40, -30, 700);
+    const State& s = sim_.state();
+    if (hatched() && !s.asleep && sim_.trustLevel() == TrustLevel::Friendly) {
+        static const char* kBye[] = {"", "BYE, BUNNY!", "BYE, BIRDIE!", "COME BACK, DEER!", "BYE, DUCKS!",
+                                     "FLY AWAY, BUTTERFLY", "NIGHT NIGHT, OWL"};
+        speak(kBye[static_cast<int>(visitor_)]);
+    }
+}
+
+void Scene::drawVisitor(Canvas& c, bool behind) {
+    if (visitor_ == Visitor::None || overlay_ == Overlay::Game) return;  // games have the paddock to themselves
+    const bool back = visitor_ == Visitor::Deer || visitor_ == Visitor::Owl;
+    if (back != behind) return;
+    const float age = static_cast<float>(now_ - visSince_) / 1000.0f, dir = visDir_;
+    float x = visX_, y = visY_;
+    int m, d;
+    localDate(m, d);
+    switch (visitor_) {
+        case Visitor::Bunny: {  // grey-brown, white in winter; hops with its ears back
+            const bool hopping = visLeaving_ || std::fmod(age, 3.4f) < 1.2f;
+            const float hop = hopping ? std::fabs(std::sin(age * (visLeaving_ ? 12 : 7.8f))) * 12 : 0;
+            const Rgb fur = sh(m == 12 || m <= 2 ? 0xEDEBE6 : 0x9C8A78), belly = sh(0xE8E0D4);
+            c.fillEllipse(x, y + 6, 14, 3.5f, 0x000000, 0.18f);
+            y -= hop;
+            c.fillEllipse(x, y - 8, 14, 10, fur);
+            c.fillCircle(x - dir * 13, y - 9, 5, belly);  // the white tail
+            c.fillCircle(x + dir * 11, y - 15, 7.5f, fur);
+            const float earTilt = hopping ? -dir * 4 : 0;
+            c.fillEllipse(x + dir * 8 + earTilt, y - 27, 3, 9, fur);
+            c.fillEllipse(x + dir * 13 + earTilt, y - 26, 3, 9, fur);
+            c.fillEllipse(x + dir * 13 + earTilt, y - 26, 1.3f, 6, sh(0xE8A0A8));
+            c.fillCircle(x + dir * 14, y - 17, 1.6f, 0x1A1A1A);
+            c.fillCircle(x + dir * 18, y - 14, 1.3f, sh(0xE88A9A));
+            if (!hopping) c.line(x + dir * 18, y - 12, x + dir * 20, y - 10 + std::sin(age * 18) * 1.5f, 1.5f, sh(0x6A9A3A));  // nibbling
+            break;
+        }
+        case Visitor::Duck: {  // a mallard, and in spring a line of ducklings
+            const int chicks = (m >= 3 && m <= 6) ? 3 : 0;
+            for (int i = chicks; i >= 0; i--) {
+                const float px = x - dir * i * 26, waddle = std::sin(age * 9 + i) * 2;
+                const bool mum = i == 0;
+                const float k = mum ? 1.0f : 0.55f;
+                c.fillEllipse(px, y + 4, 13 * k, 3 * k, 0x000000, 0.15f);
+                c.line(px - 3 * k, y - 2, px - 4 * k, y + 3, 2, sh(0xE88A2A));
+                c.line(px + 3 * k, y - 2, px + 4 * k, y + 3, 2, sh(0xE88A2A));
+                const Rgb body = sh(mum ? 0x8A6A4A : 0xF2D25A);
+                c.fillEllipse(px + waddle * 0.3f, y - 10 * k, 13 * k, 8 * k, body);
+                c.fillTriangle(px - dir * 11 * k, y - 12 * k, px - dir * 18 * k, y - 16 * k, px - dir * 10 * k, y - 6 * k, body);
+                const float hx = px + dir * 10 * k, hy = y - 19 * k + waddle * 0.4f;
+                c.fillCircle(hx, hy, 6 * k, sh(mum ? 0x2E7A4A : 0xF2D25A));
+                c.fillTriangle(hx + dir * 4 * k, hy - 1.5f * k, hx + dir * 4 * k, hy + 2.5f * k, hx + dir * 11 * k, hy + 1.5f * k, sh(0xF0B83A));
+                c.fillCircle(hx + dir * 2 * k, hy - 1.5f * k, 1.3f, 0x1A1A1A);
+            }
+            break;
+        }
+        case Visitor::Deer: {  // a young doe, lightly built; stops in the middle and turns to look
+            const bool looking = !visLeaving_ && std::fabs(visX_ - S / 2.0f) < 70 && age < 30;
+            const float g = looking ? 0 : age * (visLeaving_ ? 14 : 6), bound = visLeaving_ ? std::fabs(std::sin(g)) * 10 : 0;
+            const Rgb coat = sh(0xB07A4A), dark = sh(0x8A5A34), light = sh(0xF0E2CC);
+            c.fillEllipse(x, y + 3, 26, 4, 0x000000, 0.15f);
+            y -= bound;
+            for (int i = 0; i < 4; i++) {
+                const float lx = x + dir * (i < 2 ? 15 : -15) + (i % 2 ? 3 : -3), sw = std::sin(g + i * 1.6f) * 5;
+                c.line(lx, y - 28, lx + dir * sw, y, 3, i % 2 ? coat : dark);
+            }
+            c.fillEllipse(x, y - 34, 24, 11, coat);
+            c.fillEllipse(x - dir * 2, y - 29, 18, 5, light);  // pale belly
+            c.fillCircle(x - dir * 23, y - 38, 4, light);       // white tail
+            const float hx = x + dir * (looking ? 22 : 30), hy = y - 58;
+            c.line(x + dir * 18, y - 40, hx, hy + 6, 8, coat);
+            c.fillEllipse(hx + dir * (looking ? 0 : 5), hy, looking ? 7 : 9, 7, coat);
+            c.fillEllipse(hx - dir * 3 - 5, hy - 8, 2.5f, 6, coat);
+            c.fillEllipse(hx - dir * 3 + 5, hy - 8, 2.5f, 6, coat);
+            if (looking) {  // facing you: two dark eyes and a black nose
+                c.fillCircle(hx - 3, hy - 1, 1.6f, 0x1A1A1A);
+                c.fillCircle(hx + 3, hy - 1, 1.6f, 0x1A1A1A);
+                c.fillCircle(hx, hy + 4, 1.8f, 0x1A1A1A);
+            } else {
+                c.fillCircle(hx + dir * 6, hy - 2, 1.5f, 0x1A1A1A);
+                c.fillCircle(hx + dir * 13, hy + 1, 1.6f, 0x1A1A1A);
+            }
+            break;
+        }
+        case Visitor::Bird: {  // a bluebird: flutters down, hops and pecks, flutters off
+            float a = 1;
+            bool flying = false;
+            if (!visLeaving_ && age < 1.2f) {  // coming in to land, from above
+                const float p = age / 1.2f;
+                x -= dir * (1 - p) * 120;
+                y -= (1 - p) * (1 - p) * 220;
+                flying = true;
+            } else if (visLeaving_) {
+                x += dir * age * 140;
+                y -= age * age * 120;
+                flying = true;
+                a = std::max(0.0f, 1 - age / 2);
+            } else {  // little hops now and then, pecking between
+                const float p = std::fmod(age, 2.6f);
+                if (p < 0.3f) y -= std::sin(p / 0.3f * kPi) * 6;
+                if (p > 1.4f && p < 1.8f) y += 3;  // head down to peck
+            }
+            if (!flying) c.fillEllipse(x, y + 2, 7, 2, 0x000000, 0.15f);
+            const Rgb blue = sh(0x3A6FC8), breast = sh(0xE8843A);
+            c.fillTriangle(x - dir * 6, y - 6, x - dir * 13, y - 9, x - dir * 12, y - 4, blue, a);  // tail
+            c.fillEllipse(x, y - 6, 7, 5, blue, a);
+            c.fillEllipse(x + dir * 2, y - 4, 4.5f, 3.5f, breast, a);
+            c.fillCircle(x + dir * 6, y - 11, 4, blue, a);
+            c.fillTriangle(x + dir * 9, y - 12, x + dir * 9, y - 10, x + dir * 13, y - 11, sh(0x3A3A3A), a);
+            c.fillCircle(x + dir * 7, y - 12, 1, 0x1A1A1A, a);
+            if (flying) {
+                const float flap = std::sin(now_ * 0.04f) * 9;
+                c.line(x, y - 7, x - dir * 4, y - 13 - flap, 3, blue, a);
+            }
+            break;
+        }
+        case Visitor::Butterfly: {  // an orange monarch, flapping, wandering up and down
+            y += 12 * std::sin(t_ * 2.3f) + 6 * std::sin(t_ * 5.1f);
+            const float open = 0.35f + 0.65f * std::fabs(std::sin(t_ * 14));
+            const Rgb wing = sh(0xF08A24), edge = sh(0x2A1E14);
+            c.fillEllipse(x - 6 * open, y - 3, 7 * open + 1, 6, edge);
+            c.fillEllipse(x + 6 * open, y - 3, 7 * open + 1, 6, edge);
+            c.fillEllipse(x - 6 * open, y - 3, 5.5f * open + 0.5f, 4.8f, wing);
+            c.fillEllipse(x + 6 * open, y - 3, 5.5f * open + 0.5f, 4.8f, wing);
+            c.fillEllipse(x - 4 * open, y + 4, 4 * open + 1, 4, wing);
+            c.fillEllipse(x + 4 * open, y + 4, 4 * open + 1, 4, wing);
+            c.line(x, y - 6, x, y + 6, 2, edge);
+            break;
+        }
+        case Visitor::Owl: {  // a little owl on the apple tree's branch, blinking; fades in and out
+            float a = std::min(1.0f, age / 1.5f);
+            if (visLeaving_) {
+                a = std::max(0.0f, 1 - age / 1.5f);
+                x -= age * 40;
+                y -= age * 30;
+            }
+            const Rgb feathers = mix(0x8A6A4A, kNight, dark_ * 0.3f), face = mix(0xD8C4A0, kNight, dark_ * 0.3f);
+            c.fillEllipse(x, y, 12, 15, feathers, a);
+            c.fillEllipse(x, y + 4, 8, 9, face, a);
+            c.fillCircle(x, y - 14, 10, feathers, a);
+            c.fillTriangle(x - 9, y - 18, x - 5, y - 21, x - 9, y - 28, feathers, a);  // ear tufts
+            c.fillTriangle(x + 9, y - 18, x + 5, y - 21, x + 9, y - 28, feathers, a);
+            c.fillCircle(x - 4.5f, y - 14, 4.2f, face, a);
+            c.fillCircle(x + 4.5f, y - 14, 4.2f, face, a);
+            const bool blink = std::fmod(age, 4.0f) > 3.8f;
+            if (blink) {
+                c.line(x - 7, y - 14, x - 2, y - 14, 1.5f, 0x2A1E14, a);
+                c.line(x + 2, y - 14, x + 7, y - 14, 1.5f, 0x2A1E14, a);
+            } else {  // big yellow eyes that catch the light
+                c.fillCircle(x - 4.5f, y - 14, 3, 0xF2C230, a);
+                c.fillCircle(x + 4.5f, y - 14, 3, 0xF2C230, a);
+                c.fillCircle(x - 4.5f, y - 14, 1.4f, 0x1A1A1A, a);
+                c.fillCircle(x + 4.5f, y - 14, 1.4f, 0x1A1A1A, a);
+            }
+            c.fillTriangle(x - 1.5f, y - 10, x + 1.5f, y - 10, x, y - 7, 0xE8A23A, a);
+            c.line(x - 5, y + 15, x - 3, y + 17, 2, 0xE8A23A, a);
+            c.line(x + 5, y + 15, x + 3, y + 17, 2, 0xE8A23A, a);
+            break;
+        }
+        case Visitor::None: break;
+    }
+}
+
 // ================================================================ talking
 
 void Scene::speak(const char* text, uint32_t ms) {
@@ -1953,6 +2250,7 @@ float Scene::rand01() {
 
 void Scene::animate(float dt) {
     const State& s = sim_.state();
+    updateVisitor(dt);
 
     trayAnim_ += (trayTarget_ > trayAnim_ ? 1 : -1) * std::min(std::fabs(trayTarget_ - trayAnim_), dt * 6);
 
@@ -2356,6 +2654,7 @@ void Scene::draw(Canvas& c) {
         c.fillCircle(cx + 2.5f, cy - 1, 1.3f, 0x1A1A1A);
         c.fillCircle(cx, cy + 2, 1, 0xE88A9A);
     }
+    drawVisitor(c, true);
     const bool coneBehind = fetch_ != Fetch::Carry && coneY_ < squatchFoot();
     if (fetch_ != Fetch::None && coneBehind) drawCone(c);
     if (species_ == Species::Horse && bornAt_ && now_ - bornAt_ < 9000 && s.stage != Stage::Egg) drawMare(c);
@@ -2366,6 +2665,7 @@ void Scene::draw(Canvas& c) {
     else if (hiding()) drawHidingEyes(c);
     else if (hatched()) drawPet(c);
     if (fetch_ != Fetch::None && !coneBehind) drawCone(c);
+    drawVisitor(c, false);
     const float h = hourOfDay();
     if (fireLit() && !(h >= 17 && h < 23))  // lit by you: its light isn't in the scenery
         c.glow(kFireX, kFireY - 20, 90, 0xFFB347, 0.15f + 0.35f * dark_);

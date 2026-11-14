@@ -431,6 +431,36 @@ static void testHorseChatter() {
     CHECK(distinct >= 15);
 }
 
+static void testVisitors() {
+    std::printf("animals visit now and then; each is a big target, and a tap sends it on its way\n");
+    Driver d;
+    d.scene.setSpecies(Scene::Species::Horse);
+    Scene::Settings never = d.scene.settings();
+    never.timeout = 6;
+    d.scene.setSettings(never);
+    bool came = false;
+    for (int i = 0; i < 20000 && !came; i++) {  // within about 20 minutes
+        d.step(64);
+        came = d.scene.visitor() != Scene::Visitor::None;
+    }
+    CHECK(came);
+    using V = Scene::Visitor;
+    for (V v : {V::Bunny, V::Bird, V::Deer, V::Duck, V::Butterfly, V::Owl}) {
+        d.scene.previewVisitor(v);
+        for (int i = 0; i < 160; i++) d.step();  // let it arrive
+        CHECK(d.scene.visitor() == v);
+        const Scene::Rect r = d.scene.visitorArea();
+        CHECK(r.w >= 64 && r.h >= 64);
+        d.tap(r);
+        bool left = false;
+        for (int i = 0; i < 2000 && !left; i++) {
+            d.step();
+            left = d.scene.visitor() == V::None;
+        }
+        CHECK(left);
+    }
+}
+
 static void testRudolphNose() {
     std::printf("at Christmas a boop on the horse's nose switches its red reindeer nose, and it's kept\n");
     for (int month : {12, 6}) {
@@ -1559,6 +1589,7 @@ int main() {
     testBoardingStable();
     testHorseTouchVoices();
     testRudolphNose();
+    testVisitors();
     testHorseChatter();
     testTap();
     testLongPressThenDrag();

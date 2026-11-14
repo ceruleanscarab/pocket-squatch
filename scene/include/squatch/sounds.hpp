@@ -52,6 +52,9 @@ enum class Cue : uint8_t {
     Chuckle,     // a quick little nicker (tickled)
     Sigh,        // a low, contented nicker (a pat on the head)
     Thud,        // an apple or pinecone landing on the grass
+    Tweet,       // a visiting bird
+    Quack,       // a visiting duck
+    Hoot,        // a visiting owl
     Count
 };
 

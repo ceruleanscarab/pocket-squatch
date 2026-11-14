@@ -66,6 +66,9 @@ constexpr Note kGiggle[] = {{Sine, 1000, 1300, 55, 35, 0.45f}, {Sine, 1100, 1450
 constexpr Note kRustle[] = {{Noise, 2500, 5000, 130, 20, 0.4f}, {Noise, 4500, 2000, 180, 0, 0.35f}};
 constexpr Note kCrackle[] = {{Noise, 4000, 4000, 15, 60, 0.5f}, {Noise, 2500, 2500, 12, 90, 0.45f},
                              {Noise, 5000, 5000, 10, 40, 0.4f}, {Noise, 3000, 3000, 14, 0, 0.45f}};
+constexpr Note kTweet[] = {{Sine, 2700, 4100, 60, 45, 0.3f}, {Sine, 3000, 4400, 55, 40, 0.3f}, {Sine, 4300, 3100, 80, 0, 0.3f}};
+constexpr Note kQuack[] = {{Square, 460, 330, 110, 90, 0.28f}, {Square, 440, 310, 130, 0, 0.28f}};
+constexpr Note kHoot[] = {{Sine, 520, 480, 240, 140, 0.5f}, {Sine, 500, 470, 150, 60, 0.45f}, {Sine, 500, 450, 300, 0, 0.45f}};
 constexpr Note kBabble[] = {{Tri, 700, 900, 45, 30, 0.3f}, {Tri, 600, 750, 40, 25, 0.3f}, {Tri, 800, 650, 60, 0, 0.3f}};
 constexpr Note kNeigh[] = {{Tri, 620, 1250, 130, 0, 0.5f},
                            {Tri, 1250, 1020, 42, 0, 0.500f},
@@ -99,7 +102,7 @@ constexpr Shape kShapes[static_cast<int>(Cue::Count)] = {
     SHAPE(kForageBack), SHAPE(kPhoto), SHAPE(kWarning), SHAPE(kThunder), SHAPE(kBoo),
     SHAPE(kBoop), SHAPE(kGiggle), SHAPE(kRustle), SHAPE(kCrackle), SHAPE(kBabble),
     SHAPE(kNeigh), SHAPE(kNicker), SHAPE(kSnort), SHAPE(kClop), SHAPE(kMunch), SHAPE(kBrush), SHAPE(kGobble), SHAPE(kGobble),
-    SHAPE(kSnort), SHAPE(kNicker), SHAPE(kNicker), SHAPE(kClop),
+    SHAPE(kSnort), SHAPE(kNicker), SHAPE(kNicker), SHAPE(kClop), SHAPE(kTweet), SHAPE(kQuack), SHAPE(kHoot),
 };
 #undef SHAPE
 
@@ -157,7 +160,7 @@ const char* toString(Cue c) {
                                    "forage back", "photo", "warning", "thunder", "boo",
                                    "boop", "giggle", "rustle", "crackle", "babble",
                                    "neigh", "nicker", "snort", "clop", "munch", "brush", "gobble", "ho ho ho",
-                                   "blow", "chuckle", "sigh", "thud"};
+                                   "blow", "chuckle", "sigh", "thud", "tweet", "quack", "hoot"};
     int i = static_cast<int>(c);
     return i < static_cast<int>(Cue::Count) ? kNames[i] : "?";
 }

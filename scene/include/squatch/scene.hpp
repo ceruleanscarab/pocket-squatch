@@ -119,6 +119,13 @@ public:
     bool fireworksNight() const;  // New Year's Eve and Day, and the 4th of July, after dark
     bool hatWeek() const;
     Rect pumpkinArea() const;
+    // Visitors: now and then an animal drops by for a while: a bunny, a bird, a deer at dawn
+    // or dusk, a duck (with ducklings in spring), a butterfly in the warm months, an owl at
+    // night. Tap one and it hurries off. Only while the screen is on, never in the way.
+    enum class Visitor : uint8_t { None, Bunny, Bird, Deer, Duck, Butterfly, Owl };
+    Visitor visitor() const { return visitor_; }
+    Rect visitorArea() const;
+    void previewVisitor(Visitor v);  // for tests and previews: this one, now
     void previewDate(int month, int day);  // for trying the seasons out; 0 goes back to the real date
 
     // ---- settings and the screen timeout
@@ -502,6 +509,14 @@ private:
     uint32_t fireUntil_ = 0, nextEmber_ = 0;
     uint32_t nextClop_ = 0;
     uint32_t drinkAt_ = 0, nextSlurp_ = 0, barnPeekUntil_ = 0;
+    Visitor visitor_ = Visitor::None;
+    float visX_ = 0, visY_ = 0, visDir_ = 1, visV_ = 0;
+    uint32_t visSince_ = 0, nextVisit_ = 0, visNextCall_ = 0;
+    bool visLeaving_ = false;
+    void startVisitor(Visitor v);
+    void updateVisitor(float dt);
+    void tapVisitor();
+    void drawVisitor(Canvas& c, bool behind);
     bool wifiAvailable_ = false;
     WifiStatus wifiStatus_ = WifiStatus::NotSet;
     char wifiSsid_[33] = {}, wifiHotspot_[24] = {}, wifiTown_[40] = {};

@@ -88,4 +88,7 @@ Wiki: https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-4B
   Settings > Wi-Fi in `scene/`. Not yet run on hardware.
 - Boarding stable (More > Stable; "Sitter" for the Bigfoot): `Sim::board`, save version 3. While boarded nothing
   happens and it doesn't age (`born` and the rate-limit clocks shift by the time away); it comes home fed and clean.
+- Animal visitors (`Scene::Visitor`, both editions): every 4-10 minutes with the screen on, one comes by for a while,
+  chosen by hour, month and weather (bunny, bird, deer at dawn/dusk, ducks with spring ducklings, butterfly in
+  warm months, owl at night). Tap one to send it off. Scene-only: nothing in the save.
 - Later: Bluetooth visitors between two boards.

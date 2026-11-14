@@ -25,3 +25,8 @@ CONFIG_LCD_RGB_RESTART_IN_VSYNC=y
 
 # Two fingers are all the scene uses.
 CONFIG_ESP_LCD_TOUCH_MAX_POINTS=2
+
+# The Wi-Fi setup page (wifisetup.cpp): phones' browsers send long headers (cookies, and
+# their captive-portal checks), longer than the server's 512-byte default.
+CONFIG_HTTPD_MAX_REQ_HDR_LEN=2048
+CONFIG_HTTPD_MAX_URI_LEN=1024

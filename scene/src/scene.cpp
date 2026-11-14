@@ -1461,7 +1461,16 @@ void Scene::greet() {
     if (s.calling) speak("THERE YOU ARE!");
     else if (s.hunger <= 1) speak("SO HUNGRY...");
     else if (s.happiness <= 1) speak("I MISSED YOU!");
-    else {
+    else if (species_ == Species::Horse) {
+        const float h = hourOfDay();
+        static const char* kMorning[] = {"GOOD MORNING!", "MORNING! BREAKFAST?", "YAY, YOU'RE UP!"};
+        static const char* kDay[] = {"HI THERE!", "HAY THERE!", "YOU'RE BACK!", "I WAS WAITING FOR YOU"};
+        static const char* kEvening[] = {"GOOD EVENING!", "HI! PRETTY SKY TONIGHT", "THERE YOU ARE!"};
+        if (h >= 5 && h < 11) sayFresh(kMorning, 3);
+        else if (h < 17) sayFresh(kDay, 4);
+        else if (h < 21) sayFresh(kEvening, 3);
+        else speak("UP LATE?");
+    } else {
         const float h = hourOfDay();
         speak(h >= 5 && h < 11 ? "GOOD MORNING!" : h < 17 ? "HI THERE!" : h < 21 ? "GOOD EVENING!" : "UP LATE?");
     }
@@ -1481,6 +1490,7 @@ void Scene::chatter() {
     if (s.messes >= 2) return speak(species_ == Species::Horse ? "MUCK OUT MY PADDOCK?" : "STINKY IN HERE...");
     const float h = hourOfDay();
     if (h >= 21 || h < 5) return speak("YAWN... SLEEPY");
+    if (species_ == Species::Horse) return horseChatter();
     if (rand01() < 0.5f) {
         switch (weather_.sky) {
             case Sky::Rain:
@@ -1514,6 +1524,186 @@ void Scene::chatter() {
     if (pick == lastChatter_) pick = (pick + 1) % n;
     lastChatter_ = static_cast<uint8_t>(pick);
     speak(species_ == Species::Horse ? kHorseIdle[pick] : kIdle[pick]);
+}
+
+// Says one of these, but not one it said lately.
+void Scene::sayFresh(const char* const* lines, int n) {
+    if (n <= 0) return;
+    int pick = static_cast<int>(rand01() * n) % n;
+    for (int tries = 0; tries < n; tries++, pick = (pick + 1) % n) {
+        bool recent = false;
+        for (const char* r : recentLines_) recent |= r == lines[pick];
+        if (!recent) break;
+    }
+    recentLines_[recentAt_++ % 8] = lines[pick];
+    speak(lines[pick]);
+}
+
+// The horse's own chatter, once its needs are met: the weather, the holidays and seasons,
+// what it's wearing or what it is, the time of day, and things for its age, with a few
+// jokes. (Each line fits a bubble: 27 characters at most.)
+void Scene::horseChatter() {
+    const State& s = sim_.state();
+    const float h = hourOfDay();
+    int m, d;
+    localDate(m, d);
+    const float roll = rand01();
+    if (roll < 0.35f) {  // what's going on around it
+        switch (weather_.sky) {
+            case Sky::Rain:
+            case Sky::Drizzle: {
+                static const char* k[] = {"DRIP DRIP DRIP", "PUDDLES! SPLASH!", "MY MANE IS ALL WET", "RAIN MAKES GRASS GROW"};
+                return sayFresh(k, 4);
+            }
+            case Sky::Storm: {
+                static const char* k[] = {"THUNDER IS LOUD!", "STAY CLOSE, OK?", "I'M BRAVE. I THINK."};
+                return sayFresh(k, 3);
+            }
+            case Sky::Snow: {
+                static const char* k[] = {"SNOW! SNOW!", "SNOWFLAKE ON MY NOSE!", "LET'S PLAY IN THE SNOW", "MY HOOVES ARE COLD"};
+                return sayFresh(k, 4);
+            }
+            case Sky::Fog: {
+                static const char* k[] = {"SO FOGGY...", "WHERE DID THE BARN GO?", "SPOOKY FOG!"};
+                return sayFresh(k, 3);
+            }
+            case Sky::Clear:
+                if (h >= 9 && h < 17) {
+                    static const char* k[] = {"SUNNY DAY!", "THE SUN FEELS NICE", "PERFECT DAY TO GALLOP"};
+                    return sayFresh(k, 3);
+                }
+                break;
+            default: break;
+        }
+        if (weather_.sky != Sky::Unknown && weather_.tempC <= 0) {
+            static const char* k[] = {"BRRR! IT'S CHILLY", "I NEED A WARM BLANKET", "MY BREATH IS SMOKY!"};
+            return sayFresh(k, 3);
+        }
+        if (weather_.sky != Sky::Unknown && weather_.tempC >= 30) {
+            static const char* k[] = {"SO HOT TODAY!", "TIME FOR A DRINK", "SHADE UNDER THE TREE?"};
+            return sayFresh(k, 3);
+        }
+        if (weather_.sky != Sky::Unknown && weather_.windKmh >= 30) {
+            static const char* k[] = {"WINDY! MY MANE FLIES", "WHOOSH! SO WINDY"};
+            return sayFresh(k, 2);
+        }
+        if (halloween()) {
+            static const char* k[] = {"NEIGH-BOO! HEE HEE", "TRICK OR TREAT?", "I'M A SPOOKY HORSE"};
+            return sayFresh(k, 3);
+        }
+        switch (holiday()) {
+            case Holiday::Thanksgiving: {
+                static const char* k[] = {"GOBBLE GOBBLE!", "I'M THANKFUL FOR YOU", "PIE? NO, CARROT PIE!", "THAT TURKEY IS SILLY"};
+                return sayFresh(k, 4);
+            }
+            case Holiday::Christmas: {
+                static const char* k[] = {"MERRY CHRISTMAS!", "IS SANTA COMING?", "I'D PULL THE SLEIGH!",
+                                          "CARROTS IN MY STOCKING?", "JINGLE BELLS!"};
+                return sayFresh(k, 5);
+            }
+            case Holiday::Valentine: {
+                static const char* k[] = {"BE MY VALENTINE?", "I LOVE YOU A HAY-LOT"};
+                return sayFresh(k, 2);
+            }
+            case Holiday::StPatrick: {
+                static const char* k[] = {"I FEEL LUCKY!", "A LUCKY HORSESHOE!"};
+                return sayFresh(k, 2);
+            }
+            case Holiday::Easter: {
+                static const char* k[] = {"EGG HUNT?", "I SAW THE BUNNY!"};
+                return sayFresh(k, 2);
+            }
+            case Holiday::July4: {
+                static const char* k[] = {"FIREWORKS TONIGHT!", "HAPPY 4TH OF JULY!"};
+                return sayFresh(k, 2);
+            }
+            default: break;
+        }
+        if (autumn()) {
+            static const char* k[] = {"CRUNCHY LEAVES!", "APPLES ARE EXTRA GOOD", "THE LEAVES ARE ORANGE"};
+            return sayFresh(k, 3);
+        }
+        if (m >= 3 && m <= 5) {
+            static const char* k[] = {"SPRING GRASS! YUM", "I SEE FLOWERS!", "BIRDIES ARE SINGING"};
+            return sayFresh(k, 3);
+        }
+        if (m >= 6 && m <= 8) {
+            static const char* k[] = {"SUMMER IS FUN!", "BUZZ OFF, FLIES!", "LONG SUNNY DAYS"};
+            return sayFresh(k, 3);
+        }
+        if (m == 12 || m <= 2) {
+            static const char* k[] = {"MY COAT IS FLUFFY NOW", "COZY IN MY BARN"};
+            return sayFresh(k, 2);
+        }
+    }
+    if (roll < 0.5f) {  // what it's wearing, or what it is
+        bool unicorn, golden;
+        Rgb coat, mane, muzzle;
+        horseColours(coat, mane, muzzle, unicorn, golden);
+        if (ribbon_ && now_ < ribbonUntil_) {
+            static const char* k[] = {"DO YOU LIKE MY BOW?", "I FEEL SO FANCY", "BEST GROOMED HORSE!"};
+            return sayFresh(k, 3);
+        }
+        if (settings_.rudolph && holiday() == Holiday::Christmas) {
+            static const char* k[] = {"MY NOSE IS GLOWING!", "I CAN GUIDE THE SLEIGH"};
+            return sayFresh(k, 2);
+        }
+        if (golden) {
+            static const char* k[] = {"MY MANE IS GOLDEN!", "I'M ONE IN A MILLION"};
+            return sayFresh(k, 2);
+        }
+        if (unicorn) {
+            static const char* k[] = {"I'M A UNICORN, YOU KNOW", "SPARKLE SPARKLE!", "MY HORN IS MAGIC"};
+            return sayFresh(k, 3);
+        }
+    }
+    if (roll < 0.65f) {  // the time of day
+        if (h >= 5 && h < 11) {
+            static const char* k[] = {"GOOD MORNING SUNSHINE", "BREAKFAST TIME?", "I SLEPT SO WELL", "THE DEW IS COLD!"};
+            return sayFresh(k, 4);
+        }
+        if (h < 17) {
+            static const char* k[] = {"NAP IN THE SUN?", "AFTERNOON SNACK?", "WANT TO PLAY?"};
+            return sayFresh(k, 3);
+        }
+        static const char* k[] = {"PRETTY SUNSET!", "ALMOST BEDTIME", "LOOK, THE FIRST STAR!"};
+        return sayFresh(k, 3);
+    }
+    if (roll < 0.82f) {  // for its age
+        switch (s.stage) {
+            case Stage::Baby: {
+                static const char* k[] = {"MY LEGS ARE WOBBLY", "AM I BIG YET?", "I CAN RUN NOW!", "WHEE!", "TEE HEE!",
+                                          "MAMA SAYS HI!", "I'M LITTLE BUT FAST"};
+                return sayFresh(k, 7);
+            }
+            case Stage::Child:
+            case Stage::Teen: {
+                static const char* k[] = {"LET'S RACE!", "I'M GETTING TALLER!", "WATCH ME TROT!", "I CAN JUMP SO HIGH",
+                                          "LET'S EXPLORE!", "AM I GROWN UP YET?"};
+                return sayFresh(k, 6);
+            }
+            case Stage::Adult: {
+                static const char* k[] = {"I'M A BIG HORSE NOW", "WHAT A FINE DAY", "THANKS FOR CARING",
+                                          "READY FOR AN ADVENTURE?", "YOU RAISED ME WELL"};
+                return sayFresh(k, 5);
+            }
+            case Stage::Elder: {
+                static const char* k[] = {"I REMEMBER BEING TINY", "SLOW AND STEADY", "YOU'VE BEEN SO KIND",
+                                          "A NAP SOUNDS NICE"};
+                return sayFresh(k, 4);
+            }
+            default: break;
+        }
+    }
+    static const char* kAnyTime[] = {
+        "NEIGH!",          "MORE CARROTS?",          "LET'S GALLOP!",          "I LOVE MY BARN",
+        "SHAKE THE TREE?", "BRUSH MY MANE?",         "CLIP CLOP...",           "WHAT'S THAT?",
+        "SNIFF SNIFF",     "YOU'RE MY FAVE",         "APPLES ARE MY FAVE",     "I HEAR A BIRDIE",
+        "TELL ME A STORY?", "HAY THERE!",            "WHAT'S UP, BUTTERCUP?",  "I'M HOOF-RAY HAPPY!",
+        "YOU'RE SO NEIGH-CE!", "I SPY A BUTTERFLY",  "LET'S PLAY A GAME!",     "HORSES SLEEP STANDING!",
+        "THE BARN CAT IS FUNNY", "I LIKE YOUR FACE", "BOOP MY NOSE?",          "HUMMING A HORSE SONG",
+    };
+    sayFresh(kAnyTime, static_cast<int>(sizeof kAnyTime / sizeof kAnyTime[0]));
 }
 
 void Scene::drawBubble(Canvas& c) {

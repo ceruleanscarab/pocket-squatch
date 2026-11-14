@@ -396,6 +396,41 @@ static void testHorseTouchVoices() {
     CHECK(home == Cue::Neigh);
 }
 
+static void testHorseChatter() {
+    std::printf("the horse has lots to say, in the bubble's width, without repeating itself\n");
+    Driver d;
+    d.scene.setSpecies(Scene::Species::Horse);
+    Scene::Settings never = d.scene.settings();
+    never.timeout = 6;  // the screen stays on
+    d.scene.setSettings(never);
+    std::vector<std::string> said;
+    std::string last;
+    for (int i = 0; i < 400000 && said.size() < 60; i++) {  // a few hours of being left alone
+        d.step(64);
+        if (i % 2000 == 0) {  // keep it fed, happy and awake, so it chatters rather than asks
+            State& st = d.sim.mutableState();
+            st.hunger = st.happiness = 4;
+            st.messes = 0;
+            st.asleep = false;
+        }
+        const char* b = d.scene.bubble();
+        if (b && last != b) {
+            last = b;
+            said.push_back(b);
+        }
+    }
+    CHECK(said.size() >= 20);
+    int distinct = 0;
+    for (size_t i = 0; i < said.size(); i++) {
+        CHECK(said[i].size() <= 27);
+        bool seen = false;
+        for (size_t j = 0; j < i; j++) seen |= said[j] == said[i];
+        distinct += !seen;
+        if (i >= 1) CHECK(said[i] != said[i - 1]);
+    }
+    CHECK(distinct >= 15);
+}
+
 static void testRudolphNose() {
     std::printf("at Christmas a boop on the horse's nose switches its red reindeer nose, and it's kept\n");
     for (int month : {12, 6}) {
@@ -1524,6 +1559,7 @@ int main() {
     testBoardingStable();
     testHorseTouchVoices();
     testRudolphNose();
+    testHorseChatter();
     testTap();
     testLongPressThenDrag();
     testDrag();

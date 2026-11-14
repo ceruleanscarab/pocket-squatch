@@ -532,6 +532,10 @@ private:
     uint32_t bubbleUntil_ = 0, nextChatter_ = 30000, greetAt_ = 1200, offAt_ = 0;
     bool greeted_ = false, wasOff_ = false;
     uint8_t lastChatter_ = 255;
+    const char* recentLines_[8] = {};  // the horse's last few things said, so it doesn't repeat itself
+    uint8_t recentAt_ = 0;
+    void horseChatter();
+    void sayFresh(const char* const* lines, int n);
 
     static constexpr size_t kMaxParticles = 48;
     Particle particles_[kMaxParticles]{};

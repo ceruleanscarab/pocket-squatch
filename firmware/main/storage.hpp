@@ -31,5 +31,11 @@ void saveLocation(const Location& l);
 
 // The network to use: the one saved on the board, or else menuconfig's. False if neither.
 bool wifiCredentials(char* ssid, size_t ssidLen, char* password, size_t passwordLen);
+// menuconfig's Wi-Fi and town are only defaults, built in; an update over the air is a build
+// without them. At boot this copies them into the saved settings (if nothing's saved yet), so
+// they outlive the build that brought them.
+void keepBuiltInDefaults();
+// The town to look up the first time it's online: one saved from menuconfig, if any.
+bool townToFind(char* out, size_t n);
 
 }  // namespace storage

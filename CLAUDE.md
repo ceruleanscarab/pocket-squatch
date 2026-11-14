@@ -91,4 +91,9 @@ Wiki: https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-4B
 - Animal visitors (`Scene::Visitor`, both editions): every 4-10 minutes with the screen on, one comes by for a while,
   chosen by hour, month and weather (bunny, bird, deer at dawn/dusk, ducks with spring ducklings, butterfly in
   warm months, owl at night). Tap one to send it off. Scene-only: nothing in the save.
+- Updates over the air (`firmware/main/ota.cpp`, menuconfig Automatic updates): two app slots (`partitions.csv`, nvs kept
+  where it was), rollback if a new build doesn't run a minute. Nightly about 3 am (screen off, battery 40%+ or charging)
+  or Settings > Wi-Fi > the version row. Builds come from the "firmware" release, which CI keeps current on main
+  (`squatch-lcd4b.bin`, `squatch-amoled18.bin`, `pony-amoled18.bin`; version = CI run number, hand builds are 0).
+  menuconfig Wi-Fi and town are copied into NVS at boot (`storage::keepBuiltInDefaults`) since CI builds have neither.
 - Later: Bluetooth visitors between two boards.

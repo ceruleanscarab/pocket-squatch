@@ -74,8 +74,9 @@ void weatherTask(void*) {
         char ssid[33], pass[65];
         bool ok = storage::wifiCredentials(ssid, sizeof ssid, pass, sizeof pass) && netjoin::join(ssid, pass);
         storage::Location here;
-        if (ok && CONFIG_SQUATCH_TOWN[0] && !storage::loadLocation(here)) {
-            if (townlookup::find(CONFIG_SQUATCH_TOWN, here)) gTownChanged = true;  // from menuconfig, the first time
+        char wish[64];
+        if (ok && !storage::loadLocation(here) && storage::townToFind(wish, sizeof wish)) {
+            if (townlookup::find(wish, here)) gTownChanged = true;  // from menuconfig, the first time
         }
         ok = ok && fetch(w);
         netjoin::leave();
@@ -106,7 +107,8 @@ void start() {
     if (started) return;
     char ssid[33], pass[65];
     storage::Location here;
-    const bool somewhere = storage::loadLocation(here) || CONFIG_SQUATCH_TOWN[0] ||
+    char wish[64];
+    const bool somewhere = storage::loadLocation(here) || storage::townToFind(wish, sizeof wish) ||
                            (CONFIG_SQUATCH_WEATHER_LAT[0] && CONFIG_SQUATCH_WEATHER_LON[0]);
     if (!storage::wifiCredentials(ssid, sizeof ssid, pass, sizeof pass) || !somewhere) {
         ESP_LOGI(TAG, "no location or Wi-Fi set yet: no weather");

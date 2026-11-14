@@ -221,6 +221,11 @@ public:
     // 1: start the setup hotspot, 2: stop it; 0 nothing. Once per press.
     int takeWifiRequest();
     Rect wifiButtonArea() const;  // on the settings page
+    // Updates over the air, shown on the Wi-Fi page with the build number; tapping that row
+    // asks for a check (takeWifiRequest() == 3). Unavailable hides it (the PC, the phone).
+    enum class UpdateStatus : uint8_t { Unavailable, Idle, Checking, UpToDate, Downloading, Failed, Restarting };
+    void setUpdateStatus(UpdateStatus st, int build, int percent);
+    Rect updateArea() const;
     Rect wifiSetupArea() const;   // on the Wi-Fi page: Set up / Cancel
     Rect wifiDoneArea() const;
 
@@ -519,6 +524,9 @@ private:
     void drawVisitor(Canvas& c, bool behind);
     bool wifiAvailable_ = false;
     WifiStatus wifiStatus_ = WifiStatus::NotSet;
+    UpdateStatus updateStatus_ = UpdateStatus::Unavailable;
+    int updateBuild_ = 0, updatePercent_ = 0;
+    bool updateShown() const;
     char wifiSsid_[33] = {}, wifiHotspot_[24] = {}, wifiTown_[40] = {};
     int wifiRequest_ = 0;
     void drawWifi(Canvas& c);

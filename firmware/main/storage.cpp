@@ -19,6 +19,7 @@ const char* kSettingsKey = "settings";
 const char* kWifiSsidKey = "wifi_ssid";
 const char* kWifiPassKey = "wifi_pass";
 const char* kLocationKey = "location";
+const char* kTownWishKey = "town_wish";
 constexpr uint8_t kLocationVersion = 1;
 constexpr uint8_t kSettingsVersion = 3;  // 1 had no volume, 2 no reindeer nose
 }  // namespace
@@ -126,6 +127,31 @@ bool wifiCredentials(char* ssid, size_t ssidLen, char* password, size_t password
     std::snprintf(ssid, ssidLen, "%s", CONFIG_SQUATCH_WIFI_SSID);
     std::snprintf(password, passwordLen, "%s", CONFIG_SQUATCH_WIFI_PASSWORD);
     return ssid[0] != '\0';
+}
+
+void keepBuiltInDefaults() {
+    char ssid[33], pass[65];
+    if (!loadWifi(ssid, sizeof ssid, pass, sizeof pass) && CONFIG_SQUATCH_WIFI_SSID[0])
+        saveWifi(CONFIG_SQUATCH_WIFI_SSID, CONFIG_SQUATCH_WIFI_PASSWORD);
+#if CONFIG_SQUATCH_WEATHER
+    Location here;
+    char wish[64];
+    if (CONFIG_SQUATCH_TOWN[0] && !loadLocation(here) && !townToFind(wish, sizeof wish)) {
+        nvs_handle_t h;
+        if (nvs_open(kNamespace, NVS_READWRITE, &h) != ESP_OK) return;
+        if (nvs_set_str(h, kTownWishKey, CONFIG_SQUATCH_TOWN) != ESP_OK || nvs_commit(h) != ESP_OK) ESP_LOGW(TAG, "town not kept");
+        nvs_close(h);
+    }
+#endif
+}
+
+bool townToFind(char* out, size_t n) {
+    nvs_handle_t h;
+    if (nvs_open(kNamespace, NVS_READONLY, &h) != ESP_OK) return false;
+    size_t len = n;
+    const bool ok = nvs_get_str(h, kTownWishKey, out, &len) == ESP_OK && out[0];
+    nvs_close(h);
+    return ok;
 }
 
 }  // namespace storage

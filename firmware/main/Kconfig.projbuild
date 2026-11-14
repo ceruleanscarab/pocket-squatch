@@ -112,4 +112,22 @@ menu "Pocket Squatch"
             "EST5EDT,M3.2.0,M11.1.0" (US Eastern), "GMT0BST,M3.5.0/1,M10.5.0" (UK),
             "CET-1CEST,M3.5.0,M10.5.0/3" (Central Europe).
 
+    config SQUATCH_OTA
+        bool "Automatic updates over Wi-Fi"
+        default y
+        help
+            Once a night (around 3 am, with the screen off and enough battery or on the
+            charger) the board looks for a newer build of itself and installs it; Settings >
+            Wi-Fi can also check right away. Builds come from this repo's "firmware" release,
+            which CI keeps up to date. The pet, its settings, the Wi-Fi and the town are kept.
+            A build you make yourself is version 0, so the next update replaces it: turn this
+            off while developing.
+
+    config SQUATCH_OTA_URL
+        string "Where updates come from"
+        depends on SQUATCH_OTA
+        default "https://github.com/ceruleanscarab/pocket-squatch/releases/download/firmware/"
+        help
+            A folder of builds, one per edition and board, named like pony-amoled18.bin.
+
 endmenu

@@ -13,9 +13,11 @@
 #include "esp_log.h"
 #include "esp_pm.h"
 #include "esp_random.h"
+#include "esp_system.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "ota.hpp"
 #include "power.hpp"
 #include "radio.hpp"
 #include "squatch/canvas.hpp"
@@ -234,7 +236,7 @@ void gameLoop(void*) {
     power::Battery battery{false, -1, false, false};
     int lit = -1;                // the panel's brightness now, in percent
     uint32_t settingsDirty = 0;  // when the settings last changed and weren't saved yet
-    uint32_t lastKey = 0;
+    uint32_t lastKey = 0, lastOtaTick = 0;
     wifisetup::State wifiShown = wifisetup::State::Idle;
 
     for (;;) {
@@ -298,7 +300,35 @@ void gameLoop(void*) {
         switch (gScene.takeWifiRequest()) {
             case 1: wifisetup::start(kHotspotName); break;
             case 2: wifisetup::cancel(); break;
+            case 3: ota::checkNow(); break;
             default: break;
+        }
+
+        // Updates over the air: once a night, or when asked; then save and restart into it.
+        if (ms - lastOtaTick >= 60000) {
+            lastOtaTick = ms;
+            ota::tick(gScene.screenOff(), !battery.present || battery.charging || battery.percent >= 40);
+        }
+        switch (ota::state()) {
+            case ota::State::Off: break;
+            case ota::State::Idle: gScene.setUpdateStatus(Scene::UpdateStatus::Idle, ota::build(), 0); break;
+            case ota::State::Checking: gScene.setUpdateStatus(Scene::UpdateStatus::Checking, ota::build(), 0); break;
+            case ota::State::UpToDate: gScene.setUpdateStatus(Scene::UpdateStatus::UpToDate, ota::build(), 0); break;
+            case ota::State::Downloading:
+                gScene.setUpdateStatus(Scene::UpdateStatus::Downloading, ota::build(), ota::percent());
+                break;
+            case ota::State::Failed: gScene.setUpdateStatus(Scene::UpdateStatus::Failed, ota::build(), 0); break;
+            case ota::State::Restarting: gScene.setUpdateStatus(Scene::UpdateStatus::Restarting, ota::build(), 100); break;
+        }
+        if (ota::restartDue()) {
+            storage::savePet(gSim.state());
+            storage::saveSettings(gScene.settings());
+            if (!gScene.screenOff()) {
+                screenWake();
+                showMessage("UPDATED! RESTARTING");
+                vTaskDelay(pdMS_TO_TICKS(1500));
+            }
+            esp_restart();
         }
         if (const wifisetup::State ws = wifisetup::state(); ws != wifiShown) {
             char net[33];
@@ -383,6 +413,7 @@ void gameLoop(void*) {
 
 extern "C" void app_main(void) {
     storage::init();
+    storage::keepBuiltInDefaults();  // so an update without them keeps your Wi-Fi and town
     Scene::Settings settings;
     if (storage::loadSettings(settings)) gScene.setSettings(settings);
 #if CONFIG_SQUATCH_FAHRENHEIT
@@ -397,6 +428,7 @@ extern "C" void app_main(void) {
     if (gHavePower) power::keyInit();
     audio::init(board_i2c(), kAudioRail && gHavePower);
     radio::begin();
+    ota::begin();
     storage::Location here;
     const bool haveTown = storage::loadLocation(here);
     walltime::init(board_i2c(), haveTown && here.zone[0] ? here.zone : CONFIG_SQUATCH_TZ);

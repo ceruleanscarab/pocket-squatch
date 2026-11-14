@@ -48,32 +48,60 @@ jobs:
   firmware:
     runs-on: ubuntu-latest
     container: espressif/idf:v5.4.2
+    env:
+      SQUATCH_BUILD: ${{ github.run_number }}  # the version updates over the air compare
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build firmware (4" LCD board)
+      # One build per edition and board, each named as the boards ask for it (ota.cpp):
+      # squatch-lcd4b, squatch-amoled18 and pony-amoled18. None has Wi-Fi or a town in it.
+      - name: Build firmware
         shell: bash
         run: |
           . $IDF_PATH/export.sh
           set -o pipefail
-          idf.py -C firmware build 2>&1 | tee lcd4b.log || {
-            grep -E "error:|Error|undefined reference" lcd4b.log | head -20 | while read -r line; do echo "::error::$line"; done
-            exit 1
+          mkdir -p firmware-out
+          build() {  # name, extra defaults files
+            local name=$1 extra=$2 out="$PWD/firmware/build-$1"
+            mkdir -p "$out"
+            idf.py -C firmware -B "$out" -D SDKCONFIG="$out/sdkconfig" \
+              -D SDKCONFIG_DEFAULTS="sdkconfig.defaults$extra" build 2>&1 | tee "$name.log" || {
+              # Surface compiler errors as annotations, so they show without opening the log.
+              grep -E "error:|Error|undefined reference" "$name.log" | head -20 | while read -r line; do echo "::error::$line"; done
+              exit 1
+            }
+            cp "$out/pocket_squatch.bin" "firmware-out/$name.bin"
           }
+          build squatch-lcd4b ""
+          build squatch-amoled18 ";sdkconfig.amoled18"
+          build pony-amoled18 ";sdkconfig.amoled18;sdkconfig.pony"
+          ls -l firmware-out
 
-      - name: Build firmware (1.8" AMOLED board)
-        shell: bash
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware
+          path: firmware-out/*.bin
+
+  # The boards update themselves from the "firmware" release: keep it on the newest build
+  # of the main branch.
+  firmware-release:
+    needs: [build, firmware]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: firmware
+          path: firmware-out
+      - name: Publish to the "firmware" release
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          . $IDF_PATH/export.sh
-          set -o pipefail
-          out="$PWD/firmware/build-amoled18"
-          mkdir -p "$out"
-          idf.py -C firmware -B "$out" -D SDKCONFIG="$out/sdkconfig" \
-            -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.amoled18" build 2>&1 | tee amoled18.log || {
-            # Surface compiler errors as annotations, so they show without opening the log.
-            grep -E "error:|Error|undefined reference" amoled18.log | head -20 | while read -r line; do echo "::error::$line"; done
-            exit 1
-          }
+          gh release view firmware >/dev/null 2>&1 || gh release create firmware --prerelease \
+            --title "Firmware (updates over the air)" \
+            --notes "The newest build of each edition and board. The boards fetch these themselves; to flash one by hand use esptool at 0x20000 after a full idf.py flash."
+          gh release upload firmware firmware-out/*.bin --clobber
 
   android:
     runs-on: ubuntu-latest

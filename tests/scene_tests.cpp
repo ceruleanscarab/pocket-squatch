@@ -1526,6 +1526,35 @@ static void testGrooming() {
     d.scene.draw(c);  // wearing its ribbon
 }
 
+static void testUpdateRow() {
+    std::printf("Wi-Fi page: the version, and a big row that asks the board to check for an update\n");
+    Driver d;
+    d.scene.setWifiAvailable("POCKET-PONY");
+    d.scene.setWifiStatus(Scene::WifiStatus::Joined, "HOME");
+    d.openTray();
+    d.pressSlot(Scene::Slot::More);
+    d.pressSlot(Scene::Slot::Settings);
+    d.tap(d.scene.wifiButtonArea());
+    CHECK(d.scene.overlay() == Scene::Overlay::Wifi);
+    d.tap(d.scene.updateArea());  // no updates on this front end: nothing happens
+    CHECK(d.scene.takeWifiRequest() == 0);
+    d.scene.setUpdateStatus(Scene::UpdateStatus::Idle, 412, 0);
+    const Scene::Rect u = d.scene.updateArea();
+    CHECK(u.w >= 64 && u.h >= 64);
+    auto apart = [](const Scene::Rect& a, const Scene::Rect& b) {
+        return a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y;
+    };
+    CHECK(apart(u, d.scene.wifiSetupArea()) && apart(u, d.scene.wifiDoneArea()));
+    d.tap(u);
+    CHECK(d.scene.takeWifiRequest() == 3);
+    d.tap(u);  // already checking: once is enough
+    CHECK(d.scene.takeWifiRequest() == 0);
+    std::vector<uint16_t> fb(Scene::kSize * Scene::kSize);
+    Canvas c(fb.data(), Scene::kSize, Scene::kSize);
+    d.scene.setUpdateStatus(Scene::UpdateStatus::Downloading, 412, 50);
+    d.scene.draw(c);
+}
+
 static void testWifiPage() {
     std::printf("Wi-Fi page: only on boards; Set up asks for the hotspot; the screen stays on meanwhile\n");
     Driver d;
@@ -1628,6 +1657,7 @@ int main() {
     testHorseGames();
     testGrooming();
     testWifiPage();
+    testUpdateRow();
     testTownLookup();
 
     std::printf("\n%d checks, %d failed\n", gChecks, gFailures);

@@ -334,6 +334,17 @@ Scene::Rect Scene::wifiButtonArea() const {
     return {S / 2 - 66, kSetY + kSetH - 84, 132, 72};
 }
 Scene::Rect Scene::wifiSetupArea() const { return {S / 2 - 208, kSetY + kSetH - 84, 196, 72}; }
+Scene::Rect Scene::updateArea() const { return {kSetX + 16, kSetY + kSetH - 160, kSetW - 32, 68}; }
+
+void Scene::setUpdateStatus(UpdateStatus st, int build, int percent) {
+    updateStatus_ = st;
+    updateBuild_ = build;
+    updatePercent_ = percent;
+}
+
+bool Scene::updateShown() const {
+    return updateStatus_ != UpdateStatus::Unavailable && (wifiStatus_ == WifiStatus::Saved || wifiStatus_ == WifiStatus::Joined);
+}
 Scene::Rect Scene::wifiDoneArea() const { return {S / 2 + 12, kSetY + kSetH - 84, 196, 72}; }
 
 void Scene::setWifiAvailable(const char* hotspotName) {
@@ -651,6 +662,11 @@ void Scene::handle(const Gesture& g) {
             cue(Cue::Tick);
             if (wifiStatus_ == WifiStatus::SetupRunning) wifiRequest_ = 2;
             overlay_ = Overlay::Settings;
+        } else if (updateShown() && updateArea().contains(g.x, g.y) && updateStatus_ != UpdateStatus::Checking &&
+                   updateStatus_ != UpdateStatus::Downloading && updateStatus_ != UpdateStatus::Restarting) {
+            cue(Cue::Tick);
+            wifiRequest_ = 3;
+            updateStatus_ = UpdateStatus::Checking;  // the board confirms next frame
         }
         return;
     }
@@ -5234,6 +5250,29 @@ void Scene::drawWifi(Canvas& c) {
             line("CHECK THE PASSWORD", 2, faint);
             line("AND TAP SET UP TO TRY AGAIN", 2, faint);
             break;
+    }
+    if (updateShown()) {  // the version, and a row to tap to look for a newer one
+        const Rect u = updateArea();
+        c.fillRoundRect(u.x, u.y + 4, u.w, u.h - 8, 14, 0xE6DCC6);
+        char top[40], sub[40];
+        std::snprintf(top, sizeof top, updateBuild_ ? "VERSION %d" : "VERSION: YOUR OWN BUILD", updateBuild_);
+        switch (updateStatus_) {
+            case UpdateStatus::Checking: std::snprintf(sub, sizeof sub, "LOOKING FOR AN UPDATE..."); break;
+            case UpdateStatus::UpToDate: std::snprintf(sub, sizeof sub, "UP TO DATE"); break;
+            case UpdateStatus::Downloading:
+                std::snprintf(top, sizeof top, "UPDATING... %d%%", updatePercent_);
+                sub[0] = '\0';
+                break;
+            case UpdateStatus::Failed: std::snprintf(sub, sizeof sub, "COULDN'T UPDATE. TAP AGAIN"); break;
+            case UpdateStatus::Restarting: std::snprintf(sub, sizeof sub, "UPDATED! RESTARTING"); break;
+            default: std::snprintf(sub, sizeof sub, "TAP TO CHECK FOR AN UPDATE"); break;
+        }
+        c.text(u.cx(), u.y + 12, top, 2, ink, Align::Center);
+        if (sub[0]) c.text(u.cx(), u.y + 36, sub, 2, updateStatus_ == UpdateStatus::Failed ? bad : faint, Align::Center);
+        if (updateStatus_ == UpdateStatus::Downloading) {
+            c.fillRoundRect(u.x + 40, u.y + 40, u.w - 80, 10, 5, 0xCFC4AE);
+            c.fillRoundRect(u.x + 40, u.y + 40, (u.w - 80) * updatePercent_ / 100.0f, 10, 5, good);
+        }
     }
     const bool running = wifiStatus_ == WifiStatus::SetupRunning, checking = wifiStatus_ == WifiStatus::Checking;
     Rect a = wifiSetupArea(), d = wifiDoneArea();

@@ -479,7 +479,10 @@ private:
     uint32_t nextBlink_ = 1500, blinkUntil_ = 0;
     uint32_t nextIdle_ = 4000;  // next spontaneous wave, wobble or glance
     float lookX_ = 0, lookTarget_ = 0;
-    float wanderX_ = 240, wanderTarget_ = 240;
+    float wanderX_ = 240, wanderTarget_ = 240, wanderV_ = 0;  // wanderV_: px/s, eased
+    // The horse's legs follow how far it actually moves: a stride's phase and how much it's
+    // walking (0 standing .. 1 walking), eased so it starts and stops smoothly.
+    float gaitPhase_ = 0, walkAmt_ = 0, lastPetX_ = -1;
     uint32_t nextWander_ = 0;
     uint32_t nextZ_ = 0, nextThrow_ = 0, nextSneeze_ = 0, nextKnock_ = 0;
     uint32_t flashUntil_ = 0;

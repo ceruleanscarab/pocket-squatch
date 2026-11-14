@@ -1812,7 +1812,7 @@ void Scene::animate(float dt) {
     lookY_ += (lookTargetY_ - lookY_) * std::min(1.0f, dt * 6);
     updateFetch(dt);
     if (species_ == Species::Horse && hatched() && !s.asleep && now_ >= nextClop_) {
-        const bool trotting = fetching() || (sim_.trustLevel() == TrustLevel::Wandering && std::fabs(wanderTarget_ - wanderX_) > 1);
+        const bool trotting = walkAmt_ > 0.4f;
         if (trotting) {
             cue(Cue::Clop);
             nextClop_ = now_ + 420;
@@ -1830,8 +1830,26 @@ void Scene::animate(float dt) {
             wanderTarget_ = 150 + rand01() * 180;
             nextWander_ = now_ + 4000 + static_cast<uint32_t>(rand01() * 4000);
         }
-        float step = std::min(std::fabs(wanderTarget_ - wanderX_), 36 * dt);
-        wanderX_ += wanderTarget_ > wanderX_ ? step : -step;
+        if (species_ == Species::Horse) {  // speeds up and slows down rather than starting and stopping dead
+            const float want = std::max(-36.0f, std::min(36.0f, (wanderTarget_ - wanderX_) * 1.4f));
+            wanderV_ += (want - wanderV_) * std::min(1.0f, dt * 2.5f);
+            wanderX_ += wanderV_ * dt;
+        } else {
+            float step = std::min(std::fabs(wanderTarget_ - wanderX_), 36 * dt);
+            wanderX_ += wanderTarget_ > wanderX_ ? step : -step;
+        }
+    }
+    if (species_ == Species::Horse) {  // its stride follows the ground it covers, so the hooves don't slide
+        const float x = hatched() ? squatchX() : -1;
+        const float moved = lastPetX_ >= 0 && x >= 0 ? std::fabs(x - lastPetX_) : 0;
+        // A full stride covers about 36 px (less when it's only ambling), so the hooves don't slide.
+        if (moved < 40) gaitPhase_ += moved / (36 * squatchScale() * std::max(0.35f, walkAmt_)) * 2 * kPi;
+        const float want = dt > 0 ? std::min(1.0f, moved / dt / 28) : 0;
+        walkAmt_ += (want - walkAmt_) * std::min(1.0f, dt * (want > walkAmt_ ? 6.0f : 4.0f));
+        if (walkAmt_ < 0.02f && want == 0) {  // come to rest with the legs together
+            walkAmt_ = 0;
+        }
+        lastPetX_ = x;
     }
 
     if (hatched()) {
@@ -1925,20 +1943,23 @@ float Scene::squatchX() const {
     if (fetch_ == Fetch::Chase || fetch_ == Fetch::Carry) return fetchX_;
     if (drinking()) {  // over to the trough, a drink, and back
         const float since = static_cast<float>(now_ - drinkAt_) / 1000.0f, at = kFireX + 96;
-        if (since < 1.4f) return 240 + (at - 240) * since / 1.4f;
+        auto ease = [](float p) { return p * p * (3 - 2 * p); };  // gently away, gently to a stop
+        if (since < 1.4f) return 240 + (at - 240) * ease(since / 1.4f);
         if (since < 3.8f) return at;
-        return at + (240 - at) * std::min(1.0f, (since - 3.8f) / 1.4f);
+        return at + (240 - at) * ease(std::min(1.0f, (since - 3.8f) / 1.4f));
     }
     if (newborn()) {
         const float since = static_cast<float>(now_ - bornAt_) / 1000.0f;
         const float to = sim_.trustLevel() == TrustLevel::Hiding ? kHideX : 240.0f;
-        return since < 3 ? 214.0f : 214.0f + (to - 214.0f) * std::min(1.0f, (since - 3) / 2);
+        const float p = std::min(1.0f, std::max(0.0f, (since - 3) / 2));
+        return 214.0f + (to - 214.0f) * p * p * (3 - 2 * p);
     }
     switch (sim_.trustLevel()) {
         case TrustLevel::Hiding: return kHideX;
         case TrustLevel::Wandering: return wanderX_;
         case TrustLevel::Friendly: break;
     }
+    if (species_ == Species::Horse) return 240;  // a horse stands square (a slow sway would be a shuffle)
     return 240 + static_cast<float>(std::sin(t_ * 0.7)) * 6;
 }
 
@@ -2837,6 +2858,7 @@ struct Scene::Look {
     bool angry;
     bool hat;  // a witch's hat, Halloween week
     float gait = -1;  // walking: the legs' phase; below 0 standing still
+    float stride = 1; // how much it's walking, 0..1: the steps' size, and the bob and nod with them
     float graze = 0;  // the horse's head lowered (0 up .. 1 at the ground), to drink or graze
 };
 
@@ -2921,7 +2943,7 @@ void Scene::drawPet(Canvas& c) {
     L.hat = hatWeek();
 
     if (sim_.trustLevel() == TrustLevel::Wandering && !s.asleep && std::fabs(wanderTarget_ - wanderX_) > 1) {
-        L.foot -= std::fabs(std::sin(t * 8)) * 4 * L.s;  // walking bob
+        if (species_ != Species::Horse) L.foot -= std::fabs(std::sin(t * 8)) * 4 * L.s;  // walking bob
         L.lookX = wanderTarget_ > wanderX_ ? 0.8f : -0.8f;
     }
     switch (react_) {
@@ -2981,12 +3003,16 @@ void Scene::drawPet(Canvas& c) {
         default: break;
     }
     if (fetch_ == Fetch::Chase || fetch_ == Fetch::Carry) {
-        L.foot -= std::fabs(std::sin(t * 10)) * 5 * L.s;  // trotting
+        if (species_ != Species::Horse) L.foot -= std::fabs(std::sin(t * 10)) * 5 * L.s;  // trotting
         if (fetch_ == Fetch::Carry) L.armR = 0.25f;
         L.gait = t * 10;
     }
     if (sim_.trustLevel() == TrustLevel::Wandering && !s.asleep && std::fabs(wanderTarget_ - wanderX_) > 1)
         L.gait = t * 8;
+    if (species_ == Species::Horse) {  // its own walk: steps that match its pace (drawHorse bobs and nods with them)
+        L.gait = walkAmt_ > 0 ? gaitPhase_ : -1;
+        L.stride = walkAmt_;
+    }
     if (species_ == Species::Horse && overlay_ == Overlay::Game && game_ == Game::Groom) {  // standing still for it
         faceDir_ = 1;
         L.x = kGroomX;
@@ -3002,6 +3028,7 @@ void Scene::drawPet(Canvas& c) {
         game_ == Game::Photo && running_) {  // galloping past
         faceDir_ = runRight_ ? 1.0f : -1.0f;
         L.gait = t * 16;
+        L.stride = 1;
         L.ground = squatchFoot();
         L.mouth = 1;
         drawHorse(c, L);
@@ -3011,8 +3038,7 @@ void Scene::drawPet(Canvas& c) {
         const float since = static_cast<float>(now_ - drinkAt_) / 1000.0f;
         const bool there = since >= 1.4f && since < 3.8f;
         faceDir_ = since < 3.8f ? -1.0f : 1.0f;
-        if (!there) L.gait = t * 10;
-        else L.mouth = 2;  // slurping
+        if (there) L.mouth = 2;  // slurping
         // Head down to the water once it's there, and up again before it goes.
         L.graze = std::max(0.0f, std::min(1.0f, std::min((since - 1.4f) / 0.4f, (3.8f - since) / 0.4f)));
         if (there && now_ >= nextSlurp_) {
@@ -3026,8 +3052,8 @@ void Scene::drawPet(Canvas& c) {
     }
     if (species_ == Species::Horse && newborn()) {  // nuzzling its mother, then trotting off
         const bool off = now_ - bornAt_ >= 3000;
-        faceDir_ = off ? -1.0f : 1.0f;
-        if (off) L.gait = t * 10;
+        const bool toHide = sim_.trustLevel() == TrustLevel::Hiding;
+        faceDir_ = off ? (toHide ? -1.0f : 1.0f) : 1.0f;  // facing the way it goes
         drawHorse(c, L);
         return;
     }
@@ -3103,7 +3129,11 @@ void Scene::drawHorse(Canvas& c, const Look& L, bool mother) {
     horseColours(coat, mane, muzzle, unicorn, golden);
     if (mother) unicorn = golden = false;  // the foal's mother: a plain horse with the same coat
     const Stage stage = mother ? Stage::Adult : st.stage;
-    const float s = L.s, f = L.foot, dir = faceDir_, b = L.breath, w = L.wide;
+    const float s = L.s, dir = faceDir_, b = L.breath, w = L.wide;
+    // Walking: the body rises a little over each step and the head nods with it; the hooves stay on the ground.
+    const float amp = L.gait >= 0 ? std::max(0.0f, std::min(1.0f, L.stride)) : 0;
+    const float bob = amp * 2.2f * s * (0.5f - 0.5f * std::cos(2 * L.gait));
+    const float hoofGround = L.foot, f = L.foot - bob;
     const float hd = L.head;  // foals have bigger heads
     // Foals are mostly legs.
     const float legLen = (stage == Stage::Baby ? 62 : stage == Stage::Child ? 56 : stage == Stage::Teen ? 52 : 50);
@@ -3128,16 +3158,21 @@ void Scene::drawHorse(Canvas& c, const Look& L, bool mother) {
     // Legs: far pair first (darker), then the body, then the near pair.
     const float legW = (stage == Stage::Baby ? 10.5f : 13) * s;
     auto leg = [&](float dx, bool near, float phase, float lift) {
-        float swing = L.gait >= 0 ? std::sin(L.gait + phase) * 7 : 0;
+        // Each hoof swings forward through the air (lifted, the joint bent) and pushes back along the ground.
+        const float ph = L.gait + phase;
+        const float swing = amp > 0 ? std::sin(ph) * 9 * amp : 0;
+        const float up = amp > 0 ? std::max(0.0f, std::cos(ph)) : 0;  // in the air for half of each stride
         const float topX = X(dx), topY = Y(-legLen - 4);
-        float footX = X(dx + swing), footY = Y(-std::max(0.0f, L.gait >= 0 ? std::cos(L.gait + phase) * 5 : 0.0f));
+        float footX = X(dx + swing), footY = hoofGround - up * 7 * amp * s;
         if (lift > 0) {  // a raised front hoof, bent at the knee
             footX = X(dx + 14 * lift);
             footY = Y(-legLen * 0.45f * lift - 4);
         }
         const Rgb col = near ? coat : shade;
         const Rgb low = points ? mix(0x1E1612, kNight, dark_ * 0.35f) : (socks && near ? white : col);
-        const float kneeX = (topX + footX) / 2 + (lift > 0 ? dir * 6 * s : 0), kneeY = (topY + footY) / 2;
+        // Knees bend forward, hocks (the back legs) back, more as the hoof comes up.
+        const float bend = (lift > 0 ? 6 * s : up * 6 * amp * s) * (dx > 0 ? 1 : -1);
+        const float kneeX = (topX + footX) / 2 + dir * bend, kneeY = (topY + footY) / 2;
         c.line(topX, topY, kneeX, kneeY, legW, col);
         c.line(kneeX, kneeY, footX, footY, legW * 0.85f, low);
         c.fillRoundRect(footX - legW * 0.62f, footY - 7 * s, legW * 1.24f, 8 * s, 3 * s, hoof);
@@ -3147,7 +3182,7 @@ void Scene::drawHorse(Canvas& c, const Look& L, bool mother) {
     leg(-48, false, 3.1f, 0);
 
     // The tail, swishing gently.
-    const float swish = static_cast<float>(std::sin(t_ * 1.3)) * 4;
+    const float swish = static_cast<float>(std::sin(t_ * 1.3)) * 4 + amp * 3 * std::sin(L.gait);
     for (int k = 0; k < 5; k++) {
         float px = X(-bodyRx + 4), py = Y(bodyY - bodyRy * 0.5f);
         for (int i = 1; i <= 6; i++) {
@@ -3189,8 +3224,9 @@ void Scene::drawHorse(Canvas& c, const Look& L, bool mother) {
     }
 
     // The neck, up and forward to the head.
+    const float nod = amp * 2.5f * s * std::sin(2 * L.gait + 0.9f) * (1 - L.graze);  // the head nods with each step
     const float hx = X(bodyRx * 0.95f + 6 + 16 * L.graze),
-                hy = Y((bodyY - 50 - (hd - 1) * 12) * (1 - L.graze) + (-14 * hd) * L.graze);
+                hy = Y((bodyY - 50 - (hd - 1) * 12) * (1 - L.graze) + (-14 * hd) * L.graze) + nod;
     const float nbx = X(bodyRx * 0.6f), nby = Y(bodyY - bodyRy * 0.2f);
     // A broad base in the shoulders, tapering to the throat: two strokes and the wedge between.
     const float topX = nbx - dir * 16 * s, topY = nby - 10 * s, chestX = nbx + dir * 14 * s, chestY = nby + 14 * s;

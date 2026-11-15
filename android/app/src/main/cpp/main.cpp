@@ -71,7 +71,7 @@ void writeSave(const std::string& path, const State& s) {
 bool readSettings(const std::string& path, Scene::Settings& out) {
     std::FILE* f = std::fopen(path.c_str(), "r");
     if (!f) return false;
-    int b = 0, t = 0, v = out.volume, r = out.rudolph, g = out.glasses;
+    int b = 0, t = 0, v = out.volume, r = out.rudolph, g = 0;  // g: the glasses, no longer used
     bool ok = std::fscanf(f, "brightness %d timeout %d volume %d rudolph %d glasses %d", &b, &t, &v, &r, &g) >= 2;
     std::fclose(f);
     if (ok) {
@@ -79,7 +79,6 @@ bool readSettings(const std::string& path, Scene::Settings& out) {
         out.timeout = static_cast<uint8_t>(std::max(0, t));
         out.volume = static_cast<uint8_t>(std::max(0, v));
         out.rudolph = static_cast<uint8_t>(r ? 1 : 0);
-        out.glasses = static_cast<uint8_t>(std::max(0, g));
     }
     return ok;
 }
@@ -87,7 +86,7 @@ bool readSettings(const std::string& path, Scene::Settings& out) {
 void writeSettings(const std::string& path, const Scene::Settings& s) {
     std::FILE* f = std::fopen(path.c_str(), "w");
     if (!f) return;
-    std::fprintf(f, "brightness %d timeout %d volume %d rudolph %d glasses %d\n", s.brightness, s.timeout, s.volume, s.rudolph, s.glasses);
+    std::fprintf(f, "brightness %d timeout %d volume %d rudolph %d\n", s.brightness, s.timeout, s.volume, s.rudolph);
     std::fclose(f);
 }
 

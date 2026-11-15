@@ -51,7 +51,6 @@ public:
         uint8_t timeout = 2;     // a step of screenTimeoutMs(): 15 s, 30 s, 1, 2, 5, 10 min, never
         uint8_t volume = 1;      // off, quiet (the default), medium, loud (Synth's steps)
         uint8_t rudolph = 0;     // the horse's red nose at Christmas: boop it to switch
-        uint8_t glasses = 0;     // the horse's glasses: 0 none, then a frame colour (info card)
     };
     static constexpr int kBrightnessSteps = 5;
     static constexpr int kTimeoutSteps = 7;
@@ -254,9 +253,6 @@ public:
         return d;
     }
     Rect updateArea() const;
-    // The horse's info card has a button for its glasses: none, then each frame colour in turn.
-    static constexpr int kGlassesStyles = 5;  // none, purple, pink, blue, black
-    Rect glassesArea() const;
     Rect wifiSetupArea() const;   // on the Wi-Fi page: Set up / Cancel
     Rect wifiDoneArea() const;
 

@@ -477,32 +477,6 @@ static void testVisitors() {
     }
 }
 
-static void testGlasses() {
-    std::printf("the horse's info card switches its glasses: none, four frame colours, none again\n");
-    Driver d;
-    d.scene.setSpecies(Scene::Species::Horse);
-    d.tap(240, 20);  // the top bar opens the info card
-    CHECK(d.scene.overlay() == Scene::Overlay::Stats);
-    const Scene::Rect g = d.scene.glassesArea();
-    CHECK(g.w >= 64 && g.h >= 64);
-    d.scene.takeSettingsChanged();
-    for (int i = 1; i <= Scene::kGlassesStyles; i++) {
-        d.tap(g);
-        CHECK(d.scene.overlay() == Scene::Overlay::Stats);  // stays open
-        CHECK(d.scene.settings().glasses == i % Scene::kGlassesStyles);
-    }
-    CHECK(d.scene.takeSettingsChanged());
-    d.tap(g);
-    std::vector<uint16_t> fb(Scene::kSize * Scene::kSize);
-    Canvas c(fb.data(), Scene::kSize, Scene::kSize);
-    d.scene.draw(c);
-    d.tap(240, 250);  // anywhere else closes it
-    CHECK(d.scene.overlay() == Scene::Overlay::None);
-    d.scene.draw(c);  // wearing them
-    Driver b;  // the Bigfoot has no glasses button
-    CHECK(b.scene.glassesArea().w == 0);
-}
-
 static void testRudolphNose() {
     std::printf("at Christmas a boop on the horse's nose switches its red reindeer nose, and it's kept\n");
     for (int month : {12, 6}) {
@@ -1672,17 +1646,12 @@ static void testBigText() {
         CHECK(big(d.scene.nameEditArea()) && big(d.scene.homeArea()));
         CHECK(big(d.scene.startKeepArea()) && big(d.scene.startWipeArea()) && big(d.scene.startCancelArea()));
         CHECK(apart(d.scene.startKeepArea(), d.scene.startWipeArea()) && apart(d.scene.startWipeArea(), d.scene.startCancelArea()));
-        if (horse) CHECK(big(d.scene.glassesArea()) && apart(d.scene.glassesArea(), d.scene.nameEditArea()));
         for (int i = 0; i < d.scene.gameChoiceCount(); i++) CHECK(big(d.scene.gameChoiceArea(i)));
 
-        // The info card: the name opens naming, and (horse) the glasses button still works.
+        // The info card: the name opens naming.
         d.tap(240, 20);
         CHECK(d.scene.overlay() == Scene::Overlay::Stats);
         d.scene.draw(c);
-        if (horse) {
-            d.tap(d.scene.glassesArea());
-            CHECK(d.scene.settings().glasses == 1);
-        }
         d.tap(d.scene.nameEditArea());
         CHECK(d.scene.overlay() == Scene::Overlay::Name);
         d.scene.draw(c);
@@ -1846,7 +1815,6 @@ int main() {
     testBoardingStable();
     testHorseTouchVoices();
     testRudolphNose();
-    testGlasses();
     testVisitors();
     testHorseChatter();
     testTap();

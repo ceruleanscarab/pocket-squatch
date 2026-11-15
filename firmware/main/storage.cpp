@@ -71,12 +71,11 @@ bool loadSettings(squatch::Scene::Settings& out) {
     out.timeout = b[2];
     if (b[0] >= 2) out.volume = b[3];  // version 1: the default volume
     if (b[0] >= 3) out.rudolph = b[4];
-    if (b[0] >= 4) out.glasses = b[5];
     return true;
 }
 
 void saveSettings(const squatch::Scene::Settings& s) {
-    const uint8_t b[6] = {kSettingsVersion, s.brightness, s.timeout, s.volume, s.rudolph, s.glasses};
+    const uint8_t b[6] = {kSettingsVersion, s.brightness, s.timeout, s.volume, s.rudolph, 0};  // [5] was the glasses
     nvs_handle_t h;
     if (nvs_open(kNamespace, NVS_READWRITE, &h) != ESP_OK) return;
     if (nvs_set_blob(h, kSettingsKey, b, sizeof b) != ESP_OK || nvs_commit(h) != ESP_OK)

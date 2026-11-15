@@ -154,4 +154,12 @@ int percent() { return gPercent; }
 int build() { return std::atoi(esp_app_get_description()->version); }
 bool restartDue() { return gState == State::Restarting; }
 
+void keep() {
+#if CONFIG_SQUATCH_OTA
+    esp_ota_img_states_t st;
+    const esp_partition_t* running = esp_ota_get_running_partition();
+    if (esp_ota_get_state_partition(running, &st) == ESP_OK && st == ESP_OTA_IMG_PENDING_VERIFY) markHealthy(nullptr);
+#endif
+}
+
 }  // namespace ota

@@ -289,6 +289,7 @@ void gameLoop(void*) {
                     showMessage("SEE YOU SOON");
                     vTaskDelay(pdMS_TO_TICKS(1200));
                     board_backlight(0);
+                    ota::keep();
                     power::powerOff();
                     vTaskDelay(pdMS_TO_TICKS(2000));  // on USB the board stays on: carry on
                     lit = -1;
@@ -302,6 +303,7 @@ void gameLoop(void*) {
         gScene.setSetupPhoneJoined(wifisetup::state() == wifisetup::State::Running && wifisetup::phonesJoined() > 0);
         if (gScene.takeFactoryReset()) {  // "like new": erase it all and start as out of the box
             ESP_LOGW(TAG, "erasing everything (like new) and restarting");
+            ota::keep();  // a restart asked for: not a crash, so no going back to the last build
             storage::eraseAll();
             esp_restart();
         }

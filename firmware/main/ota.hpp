@@ -20,5 +20,8 @@ int percent();  // while downloading
 int build();    // the running build's number (0 for one made by hand)
 // The new build is in place: save everything and restart.
 bool restartDue();
+// Keep this build now, without waiting out its first minute: before a restart or power-off
+// someone asked for (like new), which shows it runs fine and mustn't be taken for a crash.
+void keep();
 
 }  // namespace ota

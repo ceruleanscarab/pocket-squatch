@@ -289,6 +289,7 @@ int main(int argc, char** argv) {
                 case SDL_KEYDOWN:
                     if (e.key.keysym.sym == SDLK_RIGHTBRACKET && speed < 3) speed++;
                     if (e.key.keysym.sym == SDLK_LEFTBRACKET && speed > 0) speed--;
+                    if (e.key.keysym.sym == SDLK_f) scene.startFindMe(30000);  // try "find me" (a ping)
                     if (e.key.keysym.sym == SDLK_p) {
                         char name[64];
                         std::snprintf(name, sizeof name, "squatch-%lld.bmp", static_cast<long long>(wallNow()));

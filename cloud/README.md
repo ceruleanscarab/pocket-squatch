@@ -11,6 +11,16 @@ back from its **backup code**, typed into the Wi-Fi setup page on a phone.
 - A restored pet comes back as if from the boarding stable: fed, clean, and no older for
   the time the board was away.
 
+## Find a lost toy (ping)
+
+Open `https://pocket-pony-saves.bluebeetlegames.workers.dev/ping` on any phone or computer,
+type the toy's backup code and press **Ping**. The toy checks about once an hour over the
+home Wi-Fi (while it fetches the weather, or on its own if it has no town). When it hears the
+ping it wakes, turns the screen to full brightness and calls out loudly every few seconds,
+even if its sound is off, for five minutes or until someone touches it. A ping waits two
+hours, then lapses; **Cancel the ping** takes it back. It only works where the toy can reach
+its home Wi-Fi and has some battery left.
+
 ## Set it up (once)
 
 You need a Cloudflare account (the free plan is plenty) and Node.js.

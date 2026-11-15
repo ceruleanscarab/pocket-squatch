@@ -300,6 +300,7 @@ void gameLoop(void*) {
 
         // Wi-Fi setup from the settings: start or stop the hotspot, and pass on how it's going.
         if (gScene.takeWelcomeDone()) storage::setWelcomed();
+        if (cloud::takePing()) gScene.startFindMe();  // lost and looked for: light up and call out
         gScene.setSetupPhoneJoined(wifisetup::state() == wifisetup::State::Running && wifisetup::phonesJoined() > 0);
         if (gScene.takeFactoryReset()) {  // "like new": erase it all and start as out of the box
             ESP_LOGW(TAG, "erasing everything (like new) and restarting");
@@ -358,6 +359,7 @@ void gameLoop(void*) {
                     char ssid[33], pass[65];
                     if (storage::wifiCredentials(ssid, sizeof ssid, pass, sizeof pass)) walltime::syncFromNetwork(ssid, pass);
                     weatherfetch::start();  // if it wasn't running for want of a network
+                    cloud::startPingChecks();
                     State back;
                     if (cloud::takeRestored(back)) {
                         // The pet from its backup, as if home from the boarding stable: fed, clean, and
@@ -489,6 +491,7 @@ extern "C" void app_main(void) {
         if (!have && !storage::welcomed()) gScene.openWelcome();
     }
     weatherfetch::start();
+    cloud::startPingChecks();  // "find me": about hourly, if a backups address is set
 
     startPet();
     xTaskCreatePinnedToCore(gameLoop, "game", 8192, nullptr, 5, nullptr, 1);

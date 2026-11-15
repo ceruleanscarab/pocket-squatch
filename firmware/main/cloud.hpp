@@ -30,4 +30,10 @@ bool fetchJoined(const char* code16, squatch::State& out);
 void offerRestored(const squatch::State& s, const char* code16);
 bool takeRestored(squatch::State& out);
 
+// "Find me" (cloud/worker.js /ping): has someone pinged this board? Checked about hourly: by the
+// weather task while it's joined anyway (checkPingJoined), else by a small task of its own.
+void startPingChecks();
+void checkPingJoined();
+bool takePing();  // true once per ping, for the game loop to start calling out
+
 }  // namespace cloud

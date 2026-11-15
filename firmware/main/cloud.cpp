@@ -10,6 +10,7 @@
 #include "esp_http_client.h"
 #include "esp_log.h"
 #include "esp_random.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "netjoin.hpp"
@@ -33,6 +34,9 @@ size_t gOutLen = 0;
 int gLastNight = -1;
 squatch::State gRestored;
 std::atomic<bool> gHaveRestored{false};
+std::atomic<bool> gPinged{false};
+std::atomic<int64_t> gLastPingCheckUs{-1};
+constexpr int64_t kPingEveryUs = 60LL * 60 * 1000000;
 
 #ifdef CONFIG_SQUATCH_CLOUD_URL
 const char* kUrl = CONFIG_SQUATCH_CLOUD_URL;
@@ -63,10 +67,20 @@ void rawCode(char out[17]) {
     saveCode(out);
 }
 
+// The Worker's ping address for a code: the backups address with save/ swapped for ping/.
+bool pingUrl(const char* code16, char* url, size_t n) {
+    const size_t len = std::strlen(kUrl);
+    if (len < 5 || std::strcmp(kUrl + len - 5, "save/") != 0) return false;
+    std::snprintf(url, n, "%.*sping/%s", static_cast<int>(len - 5), kUrl, code16);
+    return true;
+}
+
 // One request to the Worker for this code: PUT (body) or GET (into buf). Joined already.
-int request(const char* code16, bool put, const uint8_t* body, size_t bodyLen, uint8_t* buf, size_t cap, size_t& got) {
+int request(const char* code16, bool put, const uint8_t* body, size_t bodyLen, uint8_t* buf, size_t cap, size_t& got,
+            const char* fullUrl = nullptr) {
     char url[200];
-    std::snprintf(url, sizeof url, "%s%s", kUrl, code16);
+    if (fullUrl) std::snprintf(url, sizeof url, "%s", fullUrl);
+    else std::snprintf(url, sizeof url, "%s%s", kUrl, code16);
     esp_http_client_config_t cfg{};
     cfg.url = url;
     cfg.crt_bundle_attach = esp_crt_bundle_attach;
@@ -88,6 +102,25 @@ int request(const char* code16, bool put, const uint8_t* body, size_t bodyLen, u
     }
     esp_http_client_cleanup(client);
     return status;
+}
+
+// Its own hourly check, for boards with no weather (no town set): skipped whenever the weather
+// task has checked within the hour.
+void pingTask(void*) {
+    vTaskDelay(pdMS_TO_TICKS(3 * 60 * 1000));
+    for (;;) {
+        const int64_t last = gLastPingCheckUs.load();
+        if (last < 0 || esp_timer_get_time() - last >= kPingEveryUs) {
+            char ssid[33], pass[65];
+            if (storage::wifiCredentials(ssid, sizeof ssid, pass, sizeof pass)) {
+                radio::take();
+                if (netjoin::join(ssid, pass)) checkPingJoined();
+                netjoin::leave();
+                radio::give();
+            }
+        }
+        vTaskDelay(pdMS_TO_TICKS(10 * 60 * 1000));
+    }
 }
 
 void backupTask(void*) {
@@ -174,5 +207,31 @@ bool takeRestored(squatch::State& out) {
     out = gRestored;
     return true;
 }
+
+void checkPingJoined() {
+    if (!enabled()) return;
+    gLastPingCheckUs = esp_timer_get_time();
+    char code16[17], url[200];
+    rawCode(code16);
+    if (!pingUrl(code16, url, sizeof url)) return;
+    uint8_t buf[8];
+    size_t got = 0;
+    const int status = request(code16, false, nullptr, 0, buf, sizeof buf, got, url);
+    if (status == 200 && got >= 4 && std::memcmp(buf, "ring", 4) == 0) {
+        ESP_LOGW(TAG, "pinged: calling out so it can be found");
+        gPinged = true;
+    } else {
+        ESP_LOGI(TAG, "no ping (HTTP %d)", status);
+    }
+}
+
+void startPingChecks() {  // does nothing without a backups address, or once running
+    static bool started = false;
+    if (started || !enabled()) return;
+    started = true;
+    xTaskCreatePinnedToCore(pingTask, "ping", 6144, nullptr, 3, nullptr, 0);
+}
+
+bool takePing() { return gPinged.exchange(false); }
 
 }  // namespace cloud

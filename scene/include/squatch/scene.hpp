@@ -136,12 +136,16 @@ public:
     bool takeSettingsChanged();           // true once after the player changes one
     int brightnessPercent() const;
     uint32_t screenTimeoutMs() const;     // 0: never
-    int volume() const { return settings_.volume; }  // 0 (off) .. kVolumeSteps - 1
+    int volume() const { return findingMe() ? 3 : settings_.volume; }  // 0 (off) .. kVolumeSteps - 1; loud when found
     // After the timeout with no touch the screen should go dark; the front end turns the
     // panel off and stops drawing. The touch that wakes it does nothing else, so a tap on
     // a dark screen can't feed or scold by accident. News (hatching, a knock at the door,
     // getting sick, low battery...) wakes it too.
     bool screenOff() const { return screenOff_; }
+    // "Find me": someone pinged the toy (from the web page) because it's lost. It wakes, calls out
+    // loudly every few seconds and flashes "HERE I AM!" until it's touched or durationMs pass.
+    void startFindMe(uint32_t durationMs = 5 * 60 * 1000);
+    bool findingMe() const { return findMeUntil_ != 0; }
     void wake();
     void screenOffNow();  // e.g. the board's power key
     // Sounds to play, oldest first; the front end hands them to a Synth at volume(). Nothing
@@ -505,6 +509,8 @@ private:
     bool trailsAvailable_ = true;
     bool privacyAvailable_ = false, privacyRequest_ = false;
     bool welcome_ = false, welcomeDone_ = false;
+    uint32_t findMeUntil_ = 0, findMeNextCall_ = 0;
+    void drawFindMe(Canvas& c) const;
     bool factoryAvailable_ = false, confirmNew_ = false, factoryReset_ = false;
     uint8_t qr_[160] = {};  // the setup hotspot as a Wi-Fi QR code (qrcodegen's format), if qrSize_ > 0
     int qrSize_ = 0;

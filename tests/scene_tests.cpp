@@ -1847,6 +1847,43 @@ static void testNoTrails() {
     CHECK(p.scene.overlay() == Scene::Overlay::Settings);
 }
 
+static void testFindMe() {
+    std::printf("find me: wakes the screen, calls loudly every few seconds, and a touch stops it\n");
+    for (int horse = 0; horse < 2; horse++) {
+        Driver d;
+        if (horse) d.scene.setSpecies(Scene::Species::Horse);
+        Scene::Settings st = d.scene.settings();
+        st.volume = 0;  // muted: a lost toy must still be heard
+        d.scene.setSettings(st);
+        d.scene.screenOffNow();
+        CHECK(d.scene.screenOff());
+        Cue c;
+        while (d.scene.takeCue(c)) {}
+        d.scene.startFindMe(60000);
+        int calls = 0;
+        for (int k = 0; k < 600; k++) {  // ~10 s
+            d.step();
+            while (d.scene.takeCue(c)) calls += c == (horse ? Cue::Neigh : Cue::Happy);
+        }
+        CHECK(d.scene.findingMe() && !d.scene.screenOff());
+        CHECK(calls >= 2);
+        CHECK(d.scene.volume() == 3 && d.scene.brightnessPercent() == 100);
+        std::vector<uint16_t> fb(Scene::kSize * Scene::kSize);
+        Canvas cv(fb.data(), Scene::kSize, Scene::kSize);
+        d.scene.draw(cv);
+        d.tap(240, 300);
+        CHECK(!d.scene.findingMe());
+        CHECK(d.scene.volume() == 0);  // back to her settings
+        CHECK(d.scene.overlay() == Scene::Overlay::None);  // the stopping touch did nothing else
+    }
+    {
+        Driver d;
+        d.scene.startFindMe(2000);  // nobody comes: it gives up
+        for (int k = 0; k < 200; k++) d.step();
+        CHECK(!d.scene.findingMe());
+    }
+}
+
 int main() {
     testBoardingStable();
     testHorseTouchVoices();
@@ -1898,6 +1935,7 @@ int main() {
     testMareAnswers();
     testHorseEatsApple();
     testNoTrails();
+    testFindMe();
 
     std::printf("\n%d checks, %d failed\n", gChecks, gFailures);
     return gFailures ? 1 : 0;

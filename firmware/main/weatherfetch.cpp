@@ -8,6 +8,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "cloud.hpp"
 #include "netjoin.hpp"
 #include "storage.hpp"
 #include "townlookup.hpp"
@@ -78,7 +79,9 @@ void weatherTask(void*) {
         if (ok && !storage::loadLocation(here) && storage::townToFind(wish, sizeof wish)) {
             if (townlookup::find(wish, here)) gTownChanged = true;  // from menuconfig, the first time
         }
+        const bool joined = ok;
         ok = ok && fetch(w);
+        if (joined) cloud::checkPingJoined();  // anyone looking for it? (while joined anyway)
         netjoin::leave();
         radio::give();
         if (ok) {

@@ -169,6 +169,15 @@ public:
     Rect startKeepArea() const;
     Rect startWipeArea() const;
     Rect startCancelArea() const;
+    // Boards: a fourth choice, "like new", which (after a second tap to confirm) asks the board to
+    // erase everything, Wi-Fi and settings too, and restart as out of the box.
+    void setFactoryResetAvailable(bool on) { factoryAvailable_ = on; }
+    Rect startNewArea() const;  // {0,0,0,0} when not offered
+    bool takeFactoryReset() {
+        const bool r = factoryReset_;
+        factoryReset_ = false;
+        return r;
+    }
 
     // ---- layout queries, for the tests and the front end
     Rect squatchArea() const;  // where tapping or dropping reaches the pet (or egg)
@@ -474,6 +483,7 @@ private:
     bool compact_ = false;
     bool bigText_ = false;
     bool welcome_ = false, welcomeDone_ = false;
+    bool factoryAvailable_ = false, confirmNew_ = false, factoryReset_ = false;
     uint8_t qr_[160] = {};  // the setup hotspot as a Wi-Fi QR code (qrcodegen's format), if qrSize_ > 0
     int qrSize_ = 0;
     void drawQr(Canvas& c, float cx, float y, int modulePx) const;
@@ -575,6 +585,7 @@ private:
     int wifiRequest_ = 0;
     void drawWifi(Canvas& c);
     void drawWifiBig(Canvas& c);
+    void drawStartOverFour(Canvas& c);
     // Grooming
     GroomStep groomStep_ = GroomStep::Brush;
     float groomDirt_[kMudSpots] = {};       // 1 = mucky, 0 = clean: mud for Brush, tangles for Mane

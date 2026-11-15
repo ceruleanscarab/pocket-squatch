@@ -1736,6 +1736,43 @@ static void testWelcome() {
     }
 }
 
+static void testLikeNew() {
+    std::printf("like new (boards): a fourth start-over choice, confirmed by a second tap, asks the board to erase it all\n");
+    auto apart = [](const Scene::Rect& a, const Scene::Rect& b) {
+        return a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y;
+    };
+    std::vector<uint16_t> fb(Scene::kSize * Scene::kSize);
+    Canvas c(fb.data(), Scene::kSize, Scene::kSize);
+    {
+        Driver d;
+        CHECK(d.scene.startNewArea().w == 0);  // the PC and phone don't offer it
+    }
+    for (int big = 0; big < 2; big++) {
+        Driver d;
+        d.scene.setBigText(big);
+        d.scene.setFactoryResetAvailable(true);
+        const Scene::Rect k = d.scene.startKeepArea(), w = d.scene.startWipeArea(), n = d.scene.startNewArea(),
+                          x = d.scene.startCancelArea();
+        for (const Scene::Rect& r : {k, w, n, x}) CHECK(r.w >= 64 && r.h >= 64 && r.y + r.h <= Scene::kSize);
+        CHECK(apart(k, w) && apart(w, n) && apart(n, x));
+        d.openTray();
+        d.pressSlot(Scene::Slot::More);
+        d.pressSlot(Scene::Slot::Settings);
+        d.tap(d.scene.startOverArea());
+        CHECK(d.scene.overlay() == Scene::Overlay::StartOver);
+        d.scene.draw(c);
+        d.tap(n);  // asks first
+        CHECK(!d.scene.takeFactoryReset() && d.scene.overlay() == Scene::Overlay::StartOver);
+        d.scene.draw(c);
+        d.tap(x);  // cancel: back to the four choices, nothing erased
+        CHECK(!d.scene.takeFactoryReset() && d.scene.overlay() == Scene::Overlay::StartOver);
+        d.tap(n);
+        d.tap(n);  // yes
+        CHECK(d.scene.takeFactoryReset());
+        CHECK(!d.scene.takeFactoryReset());
+    }
+}
+
 int main() {
     testBoardingStable();
     testHorseTouchVoices();
@@ -1784,6 +1821,7 @@ int main() {
     testTownLookup();
     testBigText();
     testWelcome();
+    testLikeNew();
 
     std::printf("\n%d checks, %d failed\n", gChecks, gFailures);
     return gFailures ? 1 : 0;

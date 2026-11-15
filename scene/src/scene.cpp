@@ -425,9 +425,23 @@ int Scene::takeWifiRequest() {
     wifiRequest_ = 0;
     return r;
 }
-Scene::Rect Scene::startKeepArea() const { return bigText_ ? Rect{48, 176, 384, 76} : Rect{48, 196, 384, 68}; }
-Scene::Rect Scene::startWipeArea() const { return bigText_ ? Rect{48, 260, 384, 68} : Rect{48, 276, 384, 68}; }
-Scene::Rect Scene::startCancelArea() const { return bigText_ ? Rect{48, 336, 384, 68} : Rect{48, 356, 384, 68}; }
+// With the "like new" choice there are four buttons, so everything sits higher.
+Scene::Rect Scene::startKeepArea() const {
+    if (factoryAvailable_) return {48, bigText_ ? 168 : 156, 384, 68};
+    return bigText_ ? Rect{48, 176, 384, 76} : Rect{48, 196, 384, 68};
+}
+Scene::Rect Scene::startWipeArea() const {
+    if (factoryAvailable_) return {48, bigText_ ? 240 : 228, 384, 68};
+    return bigText_ ? Rect{48, 260, 384, 68} : Rect{48, 276, 384, 68};
+}
+Scene::Rect Scene::startNewArea() const {
+    if (!factoryAvailable_) return {0, 0, 0, 0};
+    return {48, bigText_ ? 312 : 300, 384, 68};
+}
+Scene::Rect Scene::startCancelArea() const {
+    if (factoryAvailable_) return {48, bigText_ ? 384 : 372, 384, 68};
+    return bigText_ ? Rect{48, 336, 384, 68} : Rect{48, 356, 384, 68};
+}
 
 void Scene::startOver(bool keepCollection) {
     sim_.startOver(keepCollection);
@@ -701,9 +715,18 @@ void Scene::handle(const Gesture& g) {
     }
     if (overlay_ == Overlay::StartOver) {
         if (g.type != GestureType::Tap) return;
+        if (confirmNew_) {  // "erase it all?": only the yes button does it
+            confirmNew_ = false;
+            cue(Cue::Tick);
+            if (startNewArea().contains(g.x, g.y)) factoryReset_ = true;  // the board erases and restarts
+            return;
+        }
         if (startKeepArea().contains(g.x, g.y)) startOver(true);
         else if (startWipeArea().contains(g.x, g.y)) startOver(false);
-        else {
+        else if (startNewArea().contains(g.x, g.y)) {
+            confirmNew_ = true;
+            cue(Cue::Tick);
+        } else {
             overlay_ = Overlay::Settings;  // cancel, or a tap anywhere else: back to the settings
             cue(Cue::Tick);
         }
@@ -749,6 +772,7 @@ void Scene::handle(const Gesture& g) {
         }
         if (startOverArea().contains(g.x, g.y)) {
             overlay_ = Overlay::StartOver;
+            confirmNew_ = false;
             cue(Cue::Tick);
             return;
         }
@@ -5365,6 +5389,10 @@ void Scene::drawNaming(Canvas& c) {
 void Scene::drawStartOver(Canvas& c) {
     const Rgb ink = 0x3B2A1E, faint = 0x8A7A66;
     c.tint(0x000000, 0.6f);
+    if (factoryAvailable_) {
+        drawStartOverFour(c);
+        return;
+    }
     c.fillRoundRect(24, 40, 432, 400, 20, kUiLight);
     c.text(240, bigText_ ? 54 : 62, "START OVER?", 3, 0x7A2E1E, Align::Center);
     const char* name = sim_.state().name[0] ? sim_.state().name : "THIS PET";
@@ -5396,6 +5424,49 @@ void Scene::drawStartOver(Canvas& c) {
     c.text(w.cx(), w.y + 39.0f, "A COMPLETELY FRESH START", 1, 0xF2D0C4, Align::Center);
     c.fillRoundRect(x.x, x.y + 3, x.w, x.h - 6, 14, 0xD9CFBC);
     c.text(x.cx(), x.cy() - 7.0f, "CANCEL", 2, ink, Align::Center);
+}
+
+// The start-over page with the fourth choice, "like new" (boards), and its confirmation.
+void Scene::drawStartOverFour(Canvas& c) {
+    const Rgb ink = 0x3B2A1E, faint = 0x8A7A66, red = 0x8A3A2A;
+    const bool horse = species_ == Species::Horse;
+    c.fillRoundRect(24, bigText_ ? 30 : 24, 432, 428, 20, kUiLight);
+    const Rect k = startKeepArea(), w = startWipeArea(), n = startNewArea(), x = startCancelArea();
+    auto button = [&](const Rect& r, Rgb fill, const char* top, const char* sub, Rgb col, Rgb subCol) {
+        c.fillRoundRect(r.x, r.y + 3, r.w, r.h - 6, 14, fill);
+        if (bigText_ || !sub) {
+            label(c, {r.x, r.y + 3, r.w, r.h - 6}, top, 2, col);
+            return;
+        }
+        c.text(r.cx(), r.y + 13.0f, top, 2, col, Align::Center);
+        c.text(r.cx(), r.y + 39.0f, sub, 1, subCol, Align::Center);
+    };
+    if (confirmNew_) {
+        c.text(240, bigText_ ? 46 : 44, "ERASE IT ALL?", 3, 0x7A2E1E, Align::Center);
+        para(c, 240, bigText_ ? 84 : 90,
+             "THE PET, ITS PHOTOS, THE WI-FI AND THE SETTINGS ARE ALL ERASED. IT RESTARTS LIKE NEW, WITH THE WELCOME SCREEN.",
+             2, ink, 400);
+        button(n, red, "YES, ERASE IT ALL", nullptr, kUiLight, kUiLight);
+        button(x, 0xD9CFBC, "CANCEL", nullptr, ink, ink);
+        return;
+    }
+    c.text(240, bigText_ ? 46 : 40, "START OVER?", 3, 0x7A2E1E, Align::Center);
+    const char* name = sim_.state().name[0] ? sim_.state().name : "THIS PET";
+    char all[96];
+    std::snprintf(all, sizeof all, "%.10s WILL BE GONE FOR GOOD, %s", name,
+                  horse ? "AND A NEW FOAL WILL COME." : "AND A NEW EGG WILL BE LAID.");
+    if (bigText_) {
+        para(c, 240, 78, all, 2, ink, 400);
+    } else {
+        const float y = para(c, 240, 76, all, 2, ink, 400);
+        c.text(240, y + 4, "THE FIRST TWO KEEP THE WI-FI AND SETTINGS.", 1, faint, Align::Center);
+    }
+    button(k, kButton, horse ? "NEW FOAL, KEEP PHOTOS" : "NEW EGG, KEEP PHOTOS",
+           horse ? "AND HOOFPRINTS AND THE TRAIL MAP" : "AND FOOTPRINTS AND THE TRAIL MAP", kUiLight, 0xD9CFBC);
+    button(w, red, horse ? "NEW FOAL, WIPE EVERYTHING" : "NEW EGG, WIPE EVERYTHING", "A COMPLETELY FRESH START", kUiLight, 0xF2D0C4);
+    button(n, 0x5A2A20, bigText_ ? "LIKE NEW: ERASE WI-FI TOO" : "LIKE NEW, AS OUT OF THE BOX", "ERASES THE WI-FI AND SETTINGS TOO",
+           kUiLight, 0xE8C8BC);
+    button(x, 0xD9CFBC, "CANCEL", nullptr, ink, ink);
 }
 
 void Scene::drawSettings(Canvas& c) {

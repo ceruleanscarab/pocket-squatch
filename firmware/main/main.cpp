@@ -299,6 +299,11 @@ void gameLoop(void*) {
 
         // Wi-Fi setup from the settings: start or stop the hotspot, and pass on how it's going.
         if (gScene.takeWelcomeDone()) storage::setWelcomed();
+        if (gScene.takeFactoryReset()) {  // "like new": erase it all and start as out of the box
+            ESP_LOGW(TAG, "erasing everything (like new) and restarting");
+            storage::eraseAll();
+            esp_restart();
+        }
         switch (gScene.takeWifiRequest()) {
             case 1: wifisetup::start(kHotspotName); break;
             case 2: wifisetup::cancel(); break;
@@ -473,6 +478,7 @@ extern "C" void app_main(void) {
         const bool have = storage::wifiCredentials(ssid, sizeof ssid, pass, sizeof pass);
         if (have) walltime::syncFromNetwork(ssid, pass);
         gScene.setWifiAvailable(kHotspotName);
+        gScene.setFactoryResetAvailable(true);
         gScene.setWifiStatus(have ? Scene::WifiStatus::Saved : Scene::WifiStatus::NotSet, ssid);
         if (haveTown) gScene.setWifiTown(here.name);
         // Straight out of the box: a welcome with a QR code for setting up from a phone.

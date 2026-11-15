@@ -133,6 +133,15 @@ bool wifiCredentials(char* ssid, size_t ssidLen, char* password, size_t password
 }
 
 void keepBuiltInDefaults() {
+    {  // not after "like new": that's meant to start with nothing
+        nvs_handle_t h;
+        uint8_t v = 0;
+        if (nvs_open(kNamespace, NVS_READONLY, &h) == ESP_OK) {
+            nvs_get_u8(h, "nodefaults", &v);
+            nvs_close(h);
+        }
+        if (v) return;
+    }
     char ssid[33], pass[65];
     if (!loadWifi(ssid, sizeof ssid, pass, sizeof pass) && CONFIG_SQUATCH_WIFI_SSID[0])
         saveWifi(CONFIG_SQUATCH_WIFI_SSID, CONFIG_SQUATCH_WIFI_PASSWORD);
@@ -170,6 +179,19 @@ void setWelcomed() {
     nvs_handle_t h;
     if (nvs_open(kNamespace, NVS_READWRITE, &h) != ESP_OK) return;
     nvs_set_u8(h, "welcomed", 1);
+    nvs_commit(h);
+    nvs_close(h);
+}
+
+void eraseAll() {
+    nvs_flash_deinit();
+    if (nvs_flash_erase() != ESP_OK || nvs_flash_init() != ESP_OK) {
+        ESP_LOGE(TAG, "couldn't erase");
+        return;
+    }
+    nvs_handle_t h;
+    if (nvs_open(kNamespace, NVS_READWRITE, &h) != ESP_OK) return;
+    nvs_set_u8(h, "nodefaults", 1);
     nvs_commit(h);
     nvs_close(h);
 }

@@ -38,6 +38,10 @@ void keepBuiltInDefaults();
 // Whether the first-start welcome (the Wi-Fi QR code) has been seen through: set up, or put off.
 bool welcomed();
 void setWelcomed();
+// "Like new": erases everything kept here (the pet, settings, Wi-Fi, town, backup code) and notes
+// not to copy menuconfig's Wi-Fi and town back in, so the next start is as out of the box.
+// Restart straight after.
+void eraseAll();
 // The town to look up the first time it's online: one saved from menuconfig, if any.
 bool townToFind(char* out, size_t n);
 

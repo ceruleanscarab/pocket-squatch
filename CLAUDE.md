@@ -76,6 +76,11 @@ Wiki: https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-4B
 - Android app (`android/`, SDL2, built and published to the "android" release by CI) — basic version done;
   real Wi-Fi scans (MainActivity.startWifiScan) and "needs you" notifications (PhonePet/NudgeReceiver, using
   `Wrist::nextNeed` via the `forecast` JNI export in main.cpp) — done, not yet run on a phone. It draws at 2x/3x (`Canvas` scale) inside a handheld frame.
+- Pocket Pony on Google Play: the Android "pony" flavor (`games.bluebeetle.pocketpony`, define `POCKET_PONY`): the horse,
+  no trail map (`Scene::setTrailsAvailable(false)`, no Wi-Fi or location permissions: `src/pony/AndroidManifest.xml`),
+  no watch (`WatchSync` is a no-op there, no Play services), Settings > PRIVACY (`setPrivacyAvailable`) opens
+  https://bluebeetle.games/pocket-pony/privacy.html. CI publishes pocket-pony.apk/.aab; uploading to Play waits for the
+  variable PONY_PLAY_TRACK. Listing, privacy policy, graphics and the Play Console steps are in `store/pocket-pony/`.
 - Galaxy Watch companion (`android/wear`, Java + the sim/scene via JNI; `scene/` `wrist.hpp` is its screen): the save
   syncs over the Wear OS Data Layer (item `/pet`, newest `at` wins), a tile, and predicted nudges. Not yet run on a watch.
 - Play and talk (`scene/`): boop, tickle and pat the pet (its eyes follow your finger), shake a tree for a pinecone

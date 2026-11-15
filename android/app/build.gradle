@@ -50,6 +50,7 @@ android {
         pony {
             dimension "pet"
             applicationId "games.bluebeetle.pocketpony"
+            versionName "1.0." + (System.getenv("VERSION_CODE") ?: "0")
             externalNativeBuild {
                 cmake {
                     cppFlags "-DPOCKET_PONY=1"

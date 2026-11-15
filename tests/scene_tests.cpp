@@ -1811,6 +1811,22 @@ static void testHorseEatsApple() {
     CHECK(!d.scene.coneOnGround() && !d.scene.fetching());  // eaten: no apple left lying about
 }
 
+static void testNoTrails() {
+    std::printf("without trails (the store phone app) More has four buttons and none is TRAILS\n");
+    Driver d;
+    d.scene.setTrailsAvailable(false);
+    d.openTray();
+    d.pressSlot(Scene::Slot::More);
+    CHECK(d.scene.slotCount() == 4);
+    for (int i = 0; i < d.scene.slotCount(); i++) {
+        CHECK(d.scene.slotAt(i) != Scene::Slot::Trails);
+        CHECK(d.scene.slotArea(i).w >= 64);
+    }
+    CHECK(d.scene.slotAt(2) == Scene::Slot::Stable && d.scene.slotAt(3) == Scene::Slot::Settings);
+    d.pressSlot(Scene::Slot::Settings);
+    CHECK(d.scene.overlay() == Scene::Overlay::Settings);
+}
+
 int main() {
     testBoardingStable();
     testHorseTouchVoices();
@@ -1861,6 +1877,7 @@ int main() {
     testLikeNew();
     testMareAnswers();
     testHorseEatsApple();
+    testNoTrails();
 
     std::printf("\n%d checks, %d failed\n", gChecks, gFailures);
     return gFailures ? 1 : 0;

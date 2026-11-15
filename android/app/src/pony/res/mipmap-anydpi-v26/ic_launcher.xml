@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The pony's head, filling the launcher's shape (Android 8 and later). -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@mipmap/ic_launcher_layer" />
+    <foreground android:drawable="@android:color/transparent" />
+</adaptive-icon>

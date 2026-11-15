@@ -39,6 +39,24 @@ android {
             }
         }
     }
+    // Two editions: the Bigfoot (as before, with the watch companion and the trail map), and
+    // Pocket Pony for Google Play (the horse, no trail map or Wi-Fi permissions, no watch).
+    flavorDimensions "pet"
+    productFlavors {
+        squatch {
+            dimension "pet"
+            applicationId "com.ceruleanscarab.pocketsquatch"
+        }
+        pony {
+            dimension "pet"
+            applicationId "games.bluebeetle.pocketpony"
+            externalNativeBuild {
+                cmake {
+                    cppFlags "-DPOCKET_PONY=1"
+                }
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
@@ -61,6 +79,6 @@ android {
 }
 
 dependencies {
-    // The Wear OS Data Layer, for the Galaxy Watch companion (../wear).
-    implementation 'com.google.android.gms:play-services-wearable:18.1.0'
+    // The Wear OS Data Layer, for the Galaxy Watch companion (../wear): the Bigfoot edition only.
+    squatchImplementation 'com.google.android.gms:play-services-wearable:18.1.0'
 }

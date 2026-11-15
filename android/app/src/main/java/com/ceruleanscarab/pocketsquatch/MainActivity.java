@@ -4,7 +4,6 @@ import android.Manifest;
 import android.app.NotificationManager;
 import android.content.Context;
 import android.content.pm.PackageManager;
-import android.net.Uri;
 import android.net.wifi.ScanResult;
 import android.net.wifi.WifiManager;
 import android.os.Build;
@@ -13,25 +12,17 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 
-import com.google.android.gms.tasks.Tasks;
-import com.google.android.gms.wearable.DataItem;
-import com.google.android.gms.wearable.DataItemBuffer;
-import com.google.android.gms.wearable.DataMap;
-import com.google.android.gms.wearable.DataMapItem;
-import com.google.android.gms.wearable.PutDataMapRequest;
-import com.google.android.gms.wearable.Wearable;
 
 import org.libsdl.app.SDL;
 import org.libsdl.app.SDLActivity;
 
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 
 // SDL runs the game (app/src/main/cpp/main.cpp, built as libmain.so). This names it, and does
 // the Android jobs the game asks for:
-//   - the Galaxy Watch companion, over the Wear OS Data Layer: the save goes out as the item
-//     "/pet" with when it was written ("at", ms) and by whom ("from")
-//   - Wi-Fi scans for the trail map (the names are hashed in the game; none are kept)
+//   - the Galaxy Watch companion (WatchSync: the Bigfoot build only; the Pocket Pony build has none)
+//   - Wi-Fi scans for the trail map (the names are hashed in the game; none are kept; the
+//     Pocket Pony build has no trail map and no Wi-Fi permissions, so it never asks)
 //   - planning the "needs you" notification when you leave (PhonePet, NudgeReceiver)
 public class MainActivity extends SDLActivity {
     private static final String TAG = "PocketSquatch";
@@ -131,16 +122,7 @@ public class MainActivity extends SDLActivity {
     // From the game when you leave the app: the watch takes it if it's newer than its own.
     public static void publishSave(byte[] save, long at) {
         Context ctx = SDL.getContext();
-        if (ctx == null || save == null) return;
-        try {
-            PutDataMapRequest req = PutDataMapRequest.create("/pet");
-            req.getDataMap().putByteArray("save", save);
-            req.getDataMap().putLong("at", at);
-            req.getDataMap().putString("from", "phone");
-            Wearable.getDataClient(ctx).putDataItem(req.asPutDataRequest().setUrgent());
-        } catch (Exception e) {
-            Log.w(TAG, "couldn't publish to the watch", e);
-        }
+        if (ctx != null && save != null) WatchSync.publish(ctx, save, at);
     }
 
     // From the game when you come back (on its own thread; waits up to 3 s): the watch's save
@@ -148,25 +130,10 @@ public class MainActivity extends SDLActivity {
     public static byte[] watchSaveNewerThan(long at) {
         Context ctx = SDL.getContext();
         if (ctx == null) return null;
-        try {
-            DataItemBuffer items = Tasks.await(
-                    Wearable.getDataClient(ctx).getDataItems(Uri.parse("wear://*/pet")), 3, TimeUnit.SECONDS);
-            byte[] best = null;
-            long bestAt = at;
-            for (DataItem item : items) {
-                DataMap m = DataMapItem.fromDataItem(item).getDataMap();
-                if (!"watch".equals(m.getString("from"))) continue;
-                if (m.getLong("at") > bestAt) {
-                    bestAt = m.getLong("at");
-                    best = m.getByteArray("save");
-                }
-            }
-            items.release();
-            sWatchAt = bestAt;
-            return best;
-        } catch (Exception e) {
-            return null;  // no watch, or no Google Play services: just the phone
-        }
+        long[] when = {at};
+        byte[] best = WatchSync.newerThan(ctx, at, when);
+        sWatchAt = when[0];
+        return best;
     }
 
     public static long watchAt() {

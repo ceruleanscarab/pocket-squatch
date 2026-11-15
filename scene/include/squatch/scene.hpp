@@ -270,6 +270,9 @@ public:
     // For the watch, which draws its own controls on top.
     // Bigger lettering for small screens (the 1.8" AMOLED shows this 480x480 scene at 368x368):
     // text one size up, with longer lines wrapped or reworded to fit.
+    // The trail map needs Wi-Fi scans, which the store edition of the phone app does without
+    // (Android counts them as location): off, More has no TRAILS button.
+    void setTrailsAvailable(bool on) { trailsAvailable_ = on; }
     // Touch slop for a small screen (see GestureReader::setSlop).
     void setTouchSlop(int px) { gestures_.setSlop(px); }
     void setBigText(bool on) {
@@ -490,6 +493,7 @@ private:
     bool cacheScenery_ = true;
     bool compact_ = false;
     bool bigText_ = false;
+    bool trailsAvailable_ = true;
     bool welcome_ = false, welcomeDone_ = false;
     bool factoryAvailable_ = false, confirmNew_ = false, factoryReset_ = false;
     uint8_t qr_[160] = {};  // the setup hotspot as a Wi-Fi QR code (qrcodegen's format), if qrSize_ > 0

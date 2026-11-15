@@ -9,6 +9,9 @@
 //   - sound, through SDL audio
 //   - the battery icon, from the phone's own battery
 // The trail map's Wi-Fi scan is pretend for now, as on the PC.
+#ifndef POCKET_PONY
+#define POCKET_PONY 0
+#endif
 #include <SDL.h>
 #include <jni.h>
 #include <sys/stat.h>
@@ -327,7 +330,11 @@ int main(int, char**) {
     const std::string savePath = dir + "squatch.sav", settingsPath = dir + "squatch.settings";
 
     // ---- the pet: load and catch up, or lay a first egg
+#if POCKET_PONY  // the Google Play edition: the horse, quick to trust, and no trail map
+    Sim sim(Tuning::quickToTrust());
+#else
     Sim sim;
+#endif
     const int64_t now = wallNow();
     State loaded;
     if (readSave(savePath, loaded)) {
@@ -342,11 +349,15 @@ int main(int, char**) {
 
     Scene scene(sim);
     scene.setDetail(true);  // a phone has the pixels and speed for the extra fur, grass and boughs
+#if POCKET_PONY
+    scene.setSpecies(Scene::Species::Horse);
+    scene.setTrailsAvailable(false);
+#endif
     Scene::Settings settings;
     if (readSettings(settingsPath, settings)) scene.setSettings(settings);
 
     // ---- screen and sound
-    SDL_Window* window = SDL_CreateWindow("Pocket Squatch", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, kSize,
+    SDL_Window* window = SDL_CreateWindow(POCKET_PONY ? "Pocket Pony" : "Pocket Squatch", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, kSize,
                                           kSize, SDL_WINDOW_FULLSCREEN_DESKTOP);
     SDL_Renderer* renderer = window ? SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC)
                                     : nullptr;

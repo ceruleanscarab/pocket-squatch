@@ -886,7 +886,9 @@ void Scene::pressSlot(Slot s) {
             page_ = Page::Main;
             held_ = Item::None;
             break;
-        case Slot::Trails: openTrails(); break;
+        case Slot::Trails:
+            if (trailsAvailable_) openTrails();
+            break;
         case Slot::Light:
             sim_.lights(!sim_.state().lightsOn);
             cue(sim_.state().lightsOn ? Cue::LightOn : Cue::LightOff);
@@ -2997,7 +2999,7 @@ Scene::Rect Scene::footprintArea() const { return {S - 96, 0, 96, kStripTouchH};
 int Scene::slotCount() const {
     switch (page_) {
         case Page::Food: return 4;
-        case Page::More: return 5;
+        case Page::More: return trailsAvailable_ ? 5 : 4;
         case Page::Main: break;
     }
     return 6;
@@ -3011,7 +3013,7 @@ Scene::Rect Scene::slotArea(int i) const {
 Scene::Slot Scene::slotAt(int i) const {
     switch (page_) {
         case Page::Food: return kFoodSlots[i];
-        case Page::More: return kMoreSlots[i];
+        case Page::More: return kMoreSlots[!trailsAvailable_ && i >= 2 ? i + 1 : i];  // past TRAILS, if it's off
         case Page::Main: break;
     }
     return kMainSlots[i];
@@ -5664,7 +5666,7 @@ void Scene::drawStartOver(Canvas& c) {
     Rect k = startKeepArea(), w = startWipeArea(), x = startCancelArea();
     c.fillRoundRect(k.x, k.y + 3, k.w, k.h - 6, 14, kButton);
     c.text(k.cx(), k.y + 13.0f, species_ == Species::Horse ? "NEW FOAL, KEEP PHOTOS" : "NEW EGG, KEEP PHOTOS", 2, kUiLight, Align::Center);
-    c.text(k.cx(), k.y + 39.0f, species_ == Species::Horse ? "AND HOOFPRINTS AND THE TRAIL MAP" : "AND FOOTPRINTS AND THE TRAIL MAP", 1, 0xD9CFBC, Align::Center);
+    c.text(k.cx(), k.y + 39.0f, !trailsAvailable_ ? (species_ == Species::Horse ? "AND HOOFPRINTS" : "AND FOOTPRINTS") : species_ == Species::Horse ? "AND HOOFPRINTS AND THE TRAIL MAP" : "AND FOOTPRINTS AND THE TRAIL MAP", 1, 0xD9CFBC, Align::Center);
     c.fillRoundRect(w.x, w.y + 3, w.w, w.h - 6, 14, 0x8A3A2A);
     c.text(w.cx(), w.y + 13.0f, species_ == Species::Horse ? "NEW FOAL, WIPE EVERYTHING" : "NEW EGG, WIPE EVERYTHING", 2, kUiLight, Align::Center);
     c.text(w.cx(), w.y + 39.0f, "A COMPLETELY FRESH START", 1, 0xF2D0C4, Align::Center);
@@ -5708,7 +5710,7 @@ void Scene::drawStartOverFour(Canvas& c) {
         c.text(240, y + 4, "THE FIRST TWO KEEP THE WI-FI AND SETTINGS.", 1, faint, Align::Center);
     }
     button(k, kButton, horse ? "NEW FOAL, KEEP PHOTOS" : "NEW EGG, KEEP PHOTOS",
-           horse ? "AND HOOFPRINTS AND THE TRAIL MAP" : "AND FOOTPRINTS AND THE TRAIL MAP", kUiLight, 0xD9CFBC);
+           !trailsAvailable_ ? (horse ? "AND HOOFPRINTS" : "AND FOOTPRINTS") : horse ? "AND HOOFPRINTS AND THE TRAIL MAP" : "AND FOOTPRINTS AND THE TRAIL MAP", kUiLight, 0xD9CFBC);
     button(w, red, horse ? "NEW FOAL, WIPE EVERYTHING" : "NEW EGG, WIPE EVERYTHING", "A COMPLETELY FRESH START", kUiLight, 0xF2D0C4);
     button(n, 0x5A2A20, bigText_ ? "LIKE NEW: ERASE WI-FI TOO" : "LIKE NEW, AS OUT OF THE BOX", "ERASES THE WI-FI AND SETTINGS TOO",
            kUiLight, 0xE8C8BC);
@@ -6235,7 +6237,7 @@ void Scene::drawStats(Canvas& c) {
     char code[12];
     dnaCode(s.genome, code, sizeof code);
     if (!bigText_)  // too long to fit big, and the least needed
-        std::snprintf(lines[n++], 40, "DNA: %s  TRAILS: %u", code, static_cast<unsigned>(s.trailsVisited));
+        std::snprintf(lines[n++], 40, trailsAvailable_ ? "DNA: %s  TRAILS: %u" : "DNA: %s", code, static_cast<unsigned>(s.trailsVisited));
     if (batteryPct_ >= 0 && !bigText_)  // the strip at the top shows it too
         std::snprintf(lines[n++], 40, "BATTERY: %d%%%s", batteryPct_, charging_ ? " (CHARGING)" : "");
     if (weather_.sky != Sky::Unknown && n < 10) {

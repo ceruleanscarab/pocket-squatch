@@ -17,5 +17,6 @@ extern const HorseClip kHorseClips[kHorseClipCount];
 // Made in code by tools/leaf_sounds.py (leaf_sounds.cpp): a shaken tree, and something landing on the grass.
 extern const HorseClip kRustleClip, kThudClip;
 extern const HorseClip kStepClips[2];  // a hoof on soft ground, two ways
+extern const HorseClip kSplashClip, kSipClip;  // water: the trough, and a horse drinking
 
 }  // namespace squatch

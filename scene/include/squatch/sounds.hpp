@@ -57,6 +57,8 @@ enum class Cue : uint8_t {
     Hoot,        // a visiting owl
     StepNear,    // a hoof landing: the near legs, a little louder
     StepFar,     // and the far ones
+    Splash,      // a hand in the water trough
+    Sip,         // the horse drinking from it
     Count
 };
 

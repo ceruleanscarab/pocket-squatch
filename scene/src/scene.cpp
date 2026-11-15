@@ -1398,7 +1398,7 @@ void Scene::updateFetch(float dt) {
 
 void Scene::lightFire() {
     if (species_ == Species::Horse) {  // the water trough: a splash, and a drink if it's about
-        cue(Cue::Clean);
+        cue(Cue::Splash);
         for (int i = 0; i < 6; i++)
             spawn(ParticleKind::Drop, kFireX + (rand01() - 0.5f) * 50, kFireY - 20, (rand01() - 0.5f) * 60, -120 - rand01() * 60, 700);
         if (canPlay() && fetch_ == Fetch::None && !drinking()) {
@@ -3575,10 +3575,10 @@ void Scene::drawPet(Canvas& c) {
         if (there) L.mouth = 2;  // slurping
         // Head down to the water once it's there, and up again before it goes.
         L.graze = std::max(0.0f, std::min(1.0f, std::min((since - 1.4f) / 0.4f, (3.8f - since) / 0.4f)));
-        if (there && now_ >= nextSlurp_) {
-            cue(Cue::Munch);
+        if (there && now_ >= nextSlurp_) {  // a sip, a gulp, a pause, another
+            cue(Cue::Sip);
             spawn(ParticleKind::Drop, kFireX + 20, kFireY - 22, (rand01() - 0.5f) * 30, -60, 500);
-            nextSlurp_ = now_ + 700;
+            nextSlurp_ = now_ + 800;
         }
         if (since >= 2.0f && since < 2.1f && !bubble()) speak("SLURP SLURP... AHH!");
         drawHorse(c, L);

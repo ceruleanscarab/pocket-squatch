@@ -61,8 +61,29 @@ void appendEscaped(char* out, size_t n, const char* s) {  // for HTML text and a
     }
 }
 
+#if CONFIG_SQUATCH_PET_HORSE
+// The illustrated guide, built into the app (firmware/main/guide/, EMBED_FILES in CMakeLists.txt).
+extern const uint8_t kGuideStart[] asm("_binary_pocket_pony_guide_pdf_start");
+extern const uint8_t kGuideEnd[] asm("_binary_pocket_pony_guide_pdf_end");
+
+esp_err_t guideGet(httpd_req_t* req) {
+    httpd_resp_set_type(req, "application/pdf");
+    httpd_resp_set_hdr(req, "Content-Disposition", "inline; filename=\"pocket-pony-guide.pdf\"");
+    const uint8_t* at = kGuideStart;
+    while (at < kGuideEnd) {  // in pieces, so a slow phone doesn't stall one huge send
+        const size_t n = std::min<size_t>(8192, kGuideEnd - at);
+        if (httpd_resp_send_chunk(req, reinterpret_cast<const char*>(at), n) != ESP_OK) return ESP_FAIL;
+        at += n;
+    }
+    return httpd_resp_send_chunk(req, nullptr, 0);
+}
+#endif
+
 esp_err_t pageGet(httpd_req_t* req) {
-    static char html[6144];
+    static char html[7168];
+#if CONFIG_SQUATCH_PET_HORSE
+    static char line2[640];
+#endif
     std::snprintf(html, sizeof html,
                   "<!doctype html><html><head><meta charset=utf-8>"
                   "<meta name=viewport content='width=device-width,initial-scale=1'><title>%s</title>"
@@ -108,7 +129,18 @@ esp_err_t pageGet(httpd_req_t* req) {
                      "autocapitalize=characters autocorrect=off><small>Only to restore a pet from a backup: it "
                      "<b>replaces</b> the pet on this toy.</small>",
                      sizeof html - std::strlen(html) - 1);
-    std::strncat(html, "<button>Save</button></form></body></html>", sizeof html - std::strlen(html) - 1);
+    std::strncat(html, "<button>Save</button></form>", sizeof html - std::strlen(html) - 1);
+#if CONFIG_SQUATCH_PET_HORSE
+    std::snprintf(line2, sizeof line2,
+                  "<p style='background:#fff;border-radius:10px;padding:12px;margin-top:24px'>&#128214; "
+                  "<a href=/guide.pdf style='color:#9e2b23;font-weight:bold'>The Pocket Pony guide</a> "
+                  "(PDF, %u KB): how to look after your pony, the games, and more. Save it to your phone to read "
+                  "any time.<br><small>If it doesn't open here, open your web browser and go to "
+                  "<b>192.168.4.1/guide.pdf</b> while the phone is still on %s.</small></p>",
+                  static_cast<unsigned>((kGuideEnd - kGuideStart + 1023) / 1024), gHotspot);
+    std::strncat(html, line2, sizeof html - std::strlen(html) - 1);
+#endif
+    std::strncat(html, "</body></html>", sizeof html - std::strlen(html) - 1);
     httpd_resp_set_type(req, "text/html");
     return httpd_resp_send(req, html, HTTPD_RESP_USE_STRLEN);
 }
@@ -255,6 +287,10 @@ void setupTask(void*) {
         const httpd_uri_t save{"/save", HTTP_POST, saveposted, nullptr};
         httpd_register_uri_handler(server, &page);
         httpd_register_uri_handler(server, &save);
+#if CONFIG_SQUATCH_PET_HORSE
+        const httpd_uri_t guide{"/guide.pdf", HTTP_GET, guideGet, nullptr};
+        httpd_register_uri_handler(server, &guide);
+#endif
         httpd_register_err_handler(server, HTTPD_404_NOT_FOUND, redirect);
     }
     xTaskCreatePinnedToCore(dnsTask, "dns", 3072, nullptr, 3, &gDnsTask, 0);

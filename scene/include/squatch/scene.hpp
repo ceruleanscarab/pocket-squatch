@@ -225,6 +225,8 @@ public:
     // asks for a check (takeWifiRequest() == 3). Unavailable hides it (the PC, the phone).
     enum class UpdateStatus : uint8_t { Unavailable, Idle, Checking, UpToDate, Downloading, Failed, Restarting };
     void setUpdateStatus(UpdateStatus st, int build, int percent);
+    // Cloud backups: this board's backup code, shown on the Wi-Fi page ("" hides it).
+    void setBackupCode(const char* code);
     Rect updateArea() const;
     Rect wifiSetupArea() const;   // on the Wi-Fi page: Set up / Cancel
     Rect wifiDoneArea() const;
@@ -527,6 +529,7 @@ private:
     WifiStatus wifiStatus_ = WifiStatus::NotSet;
     UpdateStatus updateStatus_ = UpdateStatus::Unavailable;
     int updateBuild_ = 0, updatePercent_ = 0;
+    char backupCode_[24] = {};
     bool updateShown() const;
     char wifiSsid_[33] = {}, wifiHotspot_[24] = {}, wifiTown_[40] = {};
     int wifiRequest_ = 0;

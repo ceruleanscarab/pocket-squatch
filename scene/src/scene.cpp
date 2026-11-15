@@ -353,6 +353,8 @@ void Scene::setUpdateStatus(UpdateStatus st, int build, int percent) {
     updatePercent_ = percent;
 }
 
+void Scene::setBackupCode(const char* code) { std::snprintf(backupCode_, sizeof backupCode_, "%s", code ? code : ""); }
+
 bool Scene::updateShown() const {
     return updateStatus_ != UpdateStatus::Unavailable && (wifiStatus_ == WifiStatus::Saved || wifiStatus_ == WifiStatus::Joined);
 }
@@ -5263,6 +5265,11 @@ void Scene::drawWifi(Canvas& c) {
             line("CHECK THE PASSWORD", 2, faint);
             line("AND TAP SET UP TO TRY AGAIN", 2, faint);
             break;
+    }
+    if (backupCode_[0]) {  // the backup code, to write down (between the town and the version)
+        char line[40];
+        std::snprintf(line, sizeof line, "BACKUP CODE %s", backupCode_);
+        c.text(240, kSetY + kSetH - 184, line, 2, faint, Align::Center);
     }
     if (updateShown()) {  // the version, and a row to tap to look for a newer one
         const Rect u = updateArea();

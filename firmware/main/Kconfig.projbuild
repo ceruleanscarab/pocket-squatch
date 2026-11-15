@@ -130,4 +130,13 @@ menu "Pocket Squatch"
         help
             A folder of builds, one per edition and board, named like pony-amoled18.bin.
 
+    config SQUATCH_CLOUD_URL
+        string "Cloud backups address"
+        default ""
+        help
+            The Cloudflare Worker in cloud/ (see cloud/README.md), ending in /v1/save/. With it
+            set, the board backs its pet up once a night and after Wi-Fi setup, and shows its
+            backup code under Settings > Wi-Fi; the setup page can bring a pet back from a code.
+            Empty: no backups.
+
 endmenu

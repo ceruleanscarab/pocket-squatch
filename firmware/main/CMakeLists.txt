@@ -1,4 +1,4 @@
-set(srcs "main.cpp" "walltime.cpp" "storage.cpp" "radio.cpp" "wifiscan.cpp" "power.cpp" "audio.cpp" "netjoin.cpp" "weatherfetch.cpp" "wifisetup.cpp" "townlookup.cpp" "ota.cpp")
+set(srcs "main.cpp" "walltime.cpp" "storage.cpp" "radio.cpp" "wifiscan.cpp" "power.cpp" "audio.cpp" "netjoin.cpp" "weatherfetch.cpp" "wifisetup.cpp" "townlookup.cpp" "ota.cpp" "cloud.cpp")
 if(CONFIG_SQUATCH_BOARD_AMOLED_18)
     list(APPEND srcs "board_amoled18.c")
 else()

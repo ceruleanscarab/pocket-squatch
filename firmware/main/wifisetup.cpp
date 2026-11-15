@@ -12,6 +12,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "lwip/sockets.h"
+#include "cloud.hpp"
 #include "netjoin.hpp"
 #include "radio.hpp"
 #include "storage.hpp"
@@ -30,6 +31,8 @@ std::atomic<bool> gCancel{false}, gGotIt{false};
 char gHotspot[32];
 char gSsid[33], gPass[65];
 char gTown[64], gTownFound[40];
+char gRestore[17];  // a backup code typed in, tidied ("" for none)
+std::atomic<int> gRestoreResult{0};  // 1 brought back, -1 not found
 char gNetworks[kMaxNetworks][33];
 int gNetworkCount = 0;
 TaskHandle_t gDnsTask = nullptr;
@@ -69,9 +72,20 @@ esp_err_t pageGet(httpd_req_t* req) {
                   "border-radius:10px;background:#fff}button{margin-top:20px;width:100%%;font-size:1.2em;padding:14px;"
                   "border:0;border-radius:12px;background:#6e8f5a;color:#fff}small{color:#8a7a66}</style></head><body>"
                   "<h1>Wi-Fi for %s</h1><p>Pick your home network and type its password. The toy uses it "
-                  "to set its clock and check the weather.</p><form method=post action=/save>"
-                  "<label>Network</label><select name=ssid>",
+                  "to set its clock and check the weather.</p>",
                   gHotspot, gHotspot);
+    if (cloud::enabled()) {  // its backup code, for safe keeping
+        char code[24], line[256];
+        cloud::code(code, sizeof code);
+        std::snprintf(line, sizeof line,
+                      "<p style='background:#fff;border-radius:10px;padding:10px'>This pet's <b>backup code</b>: "
+                      "<b style='font-size:1.2em;letter-spacing:1px'>%s</b><br><small>Take a photo of it or write it "
+                      "down. It brings the pet back if the toy is ever reset or replaced.</small></p>",
+                      code);
+        std::strncat(html, line, sizeof html - std::strlen(html) - 1);
+    }
+    std::strncat(html, "<form method=post action=/save><label>Network</label><select name=ssid>",
+                 sizeof html - std::strlen(html) - 1);
     for (int i = 0; i < gNetworkCount; i++) {
         std::strncat(html, "<option value=\"", sizeof html - std::strlen(html) - 1);
         appendEscaped(html, sizeof html, gNetworks[i]);
@@ -86,9 +100,15 @@ esp_err_t pageGet(httpd_req_t* req) {
                  "<small><input type=checkbox style='width:auto' onclick=\"p.type=this.checked?'text':'password'\"> "
                  "show the password</small>"
                  "<label>Your town</label><input name=town placeholder='e.g. Colorado Springs' autocorrect=off>"
-                 "<small>For the weather and the clock. Leave it empty to keep what's set.</small>"
-                 "<button>Save</button></form></body></html>",
+                 "<small>For the weather and the clock. Leave it empty to keep what's set.</small>",
                  sizeof html - std::strlen(html) - 1);
+    if (cloud::enabled())
+        std::strncat(html,
+                     "<label>Bring back a pet (optional)</label><input name=restore placeholder='its backup code' "
+                     "autocapitalize=characters autocorrect=off><small>Only to restore a pet from a backup: it "
+                     "<b>replaces</b> the pet on this toy.</small>",
+                     sizeof html - std::strlen(html) - 1);
+    std::strncat(html, "<button>Save</button></form></body></html>", sizeof html - std::strlen(html) - 1);
     httpd_resp_set_type(req, "text/html");
     return httpd_resp_send(req, html, HTTPD_RESP_USE_STRLEN);
 }
@@ -118,6 +138,12 @@ esp_err_t saveposted(httpd_req_t* req) {
     httpd_query_key_value(body, "town", town, sizeof town);
     urlDecode(town);
     std::snprintf(gTown, sizeof gTown, "%s", town);
+    char restore[48] = {};
+    httpd_query_key_value(body, "restore", restore, sizeof restore);
+    urlDecode(restore);
+    if (restore[0] && !cloud::tidy(restore, gRestore))
+        return httpd_resp_send(req, "That backup code doesn't look right: it's 16 letters and numbers. Go back and check it.",
+                               HTTPD_RESP_USE_STRLEN);
     httpd_query_key_value(body, "ssid", ssid, sizeof ssid);
     httpd_query_key_value(body, "other", other, sizeof other);
     httpd_query_key_value(body, "pass", pass, sizeof pass);
@@ -254,6 +280,15 @@ void setupTask(void*) {
         storage::saveWifi(gSsid, gPass);
         gState = State::Checking;
         const bool ok = netjoin::join(gSsid, gPass);
+        if (ok && gRestore[0]) {  // bring a pet back from its backup, while it's on the network
+            squatch::State pet;
+            if (cloud::fetchJoined(gRestore, pet)) {
+                cloud::offerRestored(pet, gRestore);
+                gRestoreResult = 1;
+            } else {
+                gRestoreResult = -1;
+            }
+        }
         if (ok && gTown[0]) {  // while it's on the network
             storage::Location here;
             if (townlookup::find(gTown, here)) std::snprintf(gTownFound, sizeof gTownFound, "%s", here.name);
@@ -275,7 +310,8 @@ void start(const char* hotspotName) {
     if (gState == State::Running || gState == State::Checking) return;
     std::snprintf(gHotspot, sizeof gHotspot, "%s", hotspotName);
     gCancel = gGotIt = false;
-    gTown[0] = gTownFound[0] = '\0';
+    gTown[0] = gTownFound[0] = gRestore[0] = '\0';
+    gRestoreResult = 0;
     gState = State::Running;
     if (xTaskCreatePinnedToCore(setupTask, "wifisetup", 6144, nullptr, 3, nullptr, 0) != pdPASS) gState = State::Idle;
 }
@@ -287,5 +323,7 @@ State state() { return gState; }
 void network(char* out, size_t n) { std::snprintf(out, n, "%s", gSsid); }
 
 void town(char* out, size_t n) { std::snprintf(out, n, "%s", gTownFound); }
+
+int restoreResult() { return gRestoreResult; }
 
 }  // namespace wifisetup

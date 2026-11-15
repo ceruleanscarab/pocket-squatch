@@ -22,5 +22,8 @@ void network(char* out, size_t n);
 // The town found from the page's "Your town" box, in capitals ("" if none was asked for,
 // "TOWN NOT FOUND" if the lookup found nothing).
 void town(char* out, size_t n);
+// A pet asked for by its backup code: 1 brought back (cloud::takeRestored has it), -1 the code
+// had no backup, 0 none asked for.
+int restoreResult();
 
 }  // namespace wifisetup

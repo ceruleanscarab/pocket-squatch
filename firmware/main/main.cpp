@@ -17,6 +17,7 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "cloud.hpp"
 #include "ota.hpp"
 #include "power.hpp"
 #include "radio.hpp"
@@ -307,7 +308,9 @@ void gameLoop(void*) {
         // Updates over the air: once a night, or when asked; then save and restart into it.
         if (ms - lastOtaTick >= 60000) {
             lastOtaTick = ms;
-            ota::tick(gScene.screenOff(), !battery.present || battery.charging || battery.percent >= 40);
+            const bool batteryOk = !battery.present || battery.charging || battery.percent >= 40;
+            cloud::tick(gSim.state(), batteryOk);  // about 2 am
+            ota::tick(gScene.screenOff(), batteryOk);  // about 3 am
         }
         switch (ota::state()) {
             case ota::State::Off: break;
@@ -346,6 +349,30 @@ void gameLoop(void*) {
                     char ssid[33], pass[65];
                     if (storage::wifiCredentials(ssid, sizeof ssid, pass, sizeof pass)) walltime::syncFromNetwork(ssid, pass);
                     weatherfetch::start();  // if it wasn't running for want of a network
+                    State back;
+                    if (cloud::takeRestored(back)) {
+                        // The pet from its backup, as if home from the boarding stable: fed, clean, and
+                        // no older for the time it was away.
+                        back.boarding = true;
+                        back.boardedSince = back.now;
+                        back.now = time(nullptr);
+                        back.tzOffset = walltime::tzOffset();
+                        gSim.mutableState() = back;
+                        gSim.board(false);
+                        storage::savePet(gSim.state());
+                        char code[24];
+                        cloud::code(code, sizeof code);
+                        gScene.setBackupCode(code);
+                        showMessage("WELCOME BACK!");
+                        vTaskDelay(pdMS_TO_TICKS(1500));
+                        ESP_LOGI(TAG, "restored from backup %s: %s", code, toString(gSim.state().stage));
+                    } else {
+                        if (wifisetup::restoreResult() < 0) {
+                            showMessage("NO BACKUP WITH THAT CODE");
+                            vTaskDelay(pdMS_TO_TICKS(2000));
+                        }
+                        cloud::backupNow(gSim.state());  // the first backup, now there's a network
+                    }
                     break;
                 }
                 case wifisetup::State::Idle: {  // cancelled: back to what's saved
@@ -429,6 +456,11 @@ extern "C" void app_main(void) {
     audio::init(board_i2c(), kAudioRail && gHavePower);
     radio::begin();
     ota::begin();
+    if (cloud::enabled()) {
+        char code[24];
+        cloud::code(code, sizeof code);
+        gScene.setBackupCode(code);
+    }
     storage::Location here;
     const bool haveTown = storage::loadLocation(here);
     walltime::init(board_i2c(), haveTown && here.zone[0] ? here.zone : CONFIG_SQUATCH_TZ);

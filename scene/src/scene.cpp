@@ -5568,8 +5568,10 @@ void Scene::drawWifi(Canvas& c) {
                 }
                 c.text(240, kSetY + 46, "SCAN THIS WITH A PHONE CAMERA", 2, ink, Align::Center);
                 drawQr(c, 240, kSetY + 68, 7);
-                c.text(240, kSetY + 290, "OR JOIN THE WI-FI", 2, faint, Align::Center);
-                c.text(240, kSetY + 312, wifiHotspot_, 2, 0x7A4E1E, Align::Center);
+                c.text(240, kSetY + 284, "THEN OPEN 192.168.4.1 IN A BROWSER", 2, 0x7A4E1E, Align::Center);
+                char join[48];
+                std::snprintf(join, sizeof join, "(OR JOIN THE WI-FI %s)", wifiHotspot_);
+                c.text(240, kSetY + 308, join, Canvas::textWidth(join, 2) <= kSetW - 24 ? 2 : 1, faint, Align::Center);
                 break;
             }
             line("1. ON A PHONE, JOIN THE WI-FI", 2, ink);
@@ -5661,9 +5663,18 @@ void Scene::drawWifiBig(Canvas& c) {
         case WifiStatus::SetupRunning:
             if (qrSize_ > 0) {
                 c.text(240, kSetY + 42, setupPhone_ ? "PHONE JOINED!" : "SCAN WITH A PHONE", 3, setupPhone_ ? good : ink, Align::Center);
-                drawQr(c, 240, kSetY + 68, 8);
-                c.text(240, kSetY + 300, setupPhone_ ? "NO PAGE? SCAN THIS OR GO TO" : "OR JOIN THE WI-FI", 2, faint, Align::Center);
-                c.text(240, kSetY + 318, setupPhone_ ? "192.168.4.1" : wifiHotspot_, 3, 0x7A4E1E, Align::Center);
+                drawQr(c, 240, kSetY + 68, 7);
+                if (setupPhone_) {
+                    c.text(240, kSetY + 276, "NO PAGE? SCAN THIS OR OPEN", 2, faint, Align::Center);
+                    c.text(240, kSetY + 296, "192.168.4.1", 3, 0x7A4E1E, Align::Center);
+                    c.text(240, kSetY + 322, "IN THE PHONE'S BROWSER", 2, faint, Align::Center);
+                } else {
+                    c.text(240, kSetY + 278, "THEN OPEN 192.168.4.1", 3, 0x7A4E1E, Align::Center);
+                    c.text(240, kSetY + 304, "IN THE PHONE'S BROWSER", 2, ink, Align::Center);
+                    char join[48];
+                    std::snprintf(join, sizeof join, "(OR JOIN THE WI-FI %s)", wifiHotspot_);
+                    c.text(240, kSetY + 324, join, Canvas::textWidth(join, 2) <= w ? 2 : 1, faint, Align::Center);
+                }
                 break;
             }
             y = para(c, 240, y + 4, "1. ON A PHONE, JOIN", 2, ink, w);

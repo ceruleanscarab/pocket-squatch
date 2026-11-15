@@ -1,9 +1,9 @@
 # Cloud backups for the boards (worker.js). Deploy with `npx wrangler deploy` from this folder;
 # see README.md. The KV id below is filled in once, by `npx wrangler kv namespace create SAVES`.
-name = "pocket-squatch-saves"
+name = "pocket-pony-saves"
 main = "worker.js"
 compatibility_date = "2026-10-01"
 
 [[kv_namespaces]]
 binding = "SAVES"
-id = "PASTE-THE-KV-NAMESPACE-ID-HERE"
+id = "822aef5e536f4e0a836c2912d22f99cf"

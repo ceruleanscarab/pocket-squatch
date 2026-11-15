@@ -1609,6 +1609,7 @@ void Scene::drawCone(Canvas& c) {
 
 namespace {
 constexpr float kBunnyY = 440, kDuckY = 452, kDeerY = 300;
+constexpr float kHenY = 448, kGoatY = 306, kDogY = 436;  // farm visitors: hens and pigs in front, goats and sheep by the fence
 constexpr float kOwlX = kLeftTreeX + 22, kOwlY = 196;
 }  // namespace
 
@@ -1628,13 +1629,27 @@ void Scene::startVisitor(Visitor v) {
         case Visitor::Bird: visX_ = 120 + rand01() * 240, visY_ = 392 + rand01() * 20, visV_ = 0; break;  // where it lands
         case Visitor::Butterfly: visX_ = edge, visY_ = 270, visV_ = 16; break;
         case Visitor::Owl: visX_ = kOwlX, visY_ = kOwlY, visV_ = 0; break;
+        case Visitor::Hen: visX_ = edge, visY_ = kHenY, visV_ = 26; break;
+        case Visitor::Goat: visX_ = edge, visY_ = kGoatY, visV_ = 34; break;
+        case Visitor::Sheep: visX_ = edge, visY_ = kGoatY + 6, visV_ = 18; break;
+        case Visitor::Dog: visX_ = edge, visY_ = kDogY, visV_ = 80; break;
+        case Visitor::Piglet: visX_ = edge, visY_ = kHenY - 4, visV_ = 36; break;
+        case Visitor::Cat: visX_ = edge, visY_ = kDogY + 6, visV_ = 42; break;
         case Visitor::None: return;
     }
+    // A farm visitor stops a while to one side of the pony, then goes on its way.
+    // (Goats and sheep by the fence stop left of the pony, clear of it and the barn; the dog,
+    // who is tall, stops right of it, clear of the trough.)
+    if (v == Visitor::Goat || v == Visitor::Sheep) visStopX_ = 100 + rand01() * 60;
+    else if (v == Visitor::Dog) visStopX_ = 330 + rand01() * 50;
+    else visStopX_ = (rand01() < 0.5f ? 110.0f : 330.0f) + rand01() * 50;
+    visStopUntil_ = 0;
     // Its friend notices.
     const State& s = sim_.state();
     if (hatched() && !s.asleep && sim_.trustLevel() == TrustLevel::Friendly && now_ >= bubbleUntil_ && rand01() < 0.7f) {
         static const char* kHello[] = {"", "LOOK, A BUNNY!", "HELLO, BIRDIE!", "A DEER! SHHH...", "QUACK QUACK! HEE HEE",
-                                       "A BUTTERFLY!", "WHO'S THAT? HOO!"};
+                                       "A BUTTERFLY!", "WHO'S THAT? HOO!", "HI, MRS HEN!", "A GOAT! HE'S SILLY",
+                                       "HELLO, WOOLLY!", "HI, PUPPY!", "A PIGGY! OINK!", "HI, BARN CAT!"};
         speak(kHello[static_cast<int>(v)]);
     }
 }
@@ -1652,16 +1667,27 @@ void Scene::updateVisitor(float dt) {
         const bool night = h >= 21 || h < 5, twilight = (h >= 5 && h < 9) || (h >= 17 && h < 21);
         const bool wet = weather_.sky == Sky::Rain || weather_.sky == Sky::Drizzle || weather_.sky == Sky::Storm ||
                          weather_.sky == Sky::Snow;
-        Visitor pool[6];
+        Visitor pool[14];
         int n = 0;
         if (night) {
             pool[n++] = Visitor::Owl;
+            if (species_ == Species::Horse && rand01() < 0.4f) pool[n++] = Visitor::Cat;  // out mousing
         } else {
             pool[n++] = Visitor::Bunny;
             if (!wet) pool[n++] = Visitor::Bird;
             if (twilight) pool[n++] = Visitor::Deer;
             if (m >= 3 && m <= 9) pool[n++] = Visitor::Duck;
             if (m >= 4 && m <= 9 && !wet && !twilight) pool[n++] = Visitor::Butterfly;
+            if (species_ == Species::Horse) {  // the farm's own animals
+                pool[n++] = Visitor::Dog;
+                pool[n++] = Visitor::Cat;
+                if (!wet) {
+                    pool[n++] = Visitor::Hen;
+                    pool[n++] = Visitor::Goat;
+                    pool[n++] = Visitor::Sheep;
+                    pool[n++] = Visitor::Piglet;
+                }
+            }
         }
         startVisitor(pool[static_cast<int>(rand01() * n) % n]);
         return;
@@ -1701,6 +1727,27 @@ void Scene::updateVisitor(float dt) {
             if (visLeaving_) visY_ -= 60 * dt;
             if ((gone() || visY_ < 60) && age > 3) visitor_ = Visitor::None;
             break;
+        case Visitor::Hen:  // a few steps, then a peck or two; chicks follow
+        case Visitor::Goat:
+        case Visitor::Sheep:
+        case Visitor::Dog:
+        case Visitor::Piglet:
+        case Visitor::Cat: {
+            // Walk in, stop a while beside the pony, then walk on (faster once tapped).
+            const bool stopped = !visLeaving_ && visStopUntil_ && now_ < visStopUntil_;
+            if (!visLeaving_ && !visStopUntil_ && std::fabs(visX_ - visStopX_) < 6) {
+                visStopUntil_ = now_ + 9000 + static_cast<uint32_t>(rand01() * 8000);
+            }
+            const bool pecking = visitor_ == Visitor::Hen && !visLeaving_ && std::fmod(age, 2.6f) > 1.6f;
+            if (!stopped && !pecking) across(visLeaving_ ? visV_ * 2.6f + 40 : visV_);
+            if (!visLeaving_ && now_ >= visNextCall_ && age > 1.5f) {
+                static const Cue kCall[] = {Cue::Cluck, Cue::Bleat, Cue::Bleat, Cue::Woof, Cue::Oink, Cue::Meow};
+                cue(kCall[static_cast<int>(visitor_) - static_cast<int>(Visitor::Hen)]);
+                visNextCall_ = now_ + 5000 + static_cast<uint32_t>(rand01() * 6000);
+            }
+            if (gone() && age > 3) visitor_ = Visitor::None;
+            break;
+        }
         case Visitor::Owl:
             if (!visLeaving_ && age > 45) visLeaving_ = true, visSince_ = now_;
             if (!visLeaving_ && now_ >= visNextCall_ && age > 2) {
@@ -1719,6 +1766,9 @@ Scene::Rect Scene::visitorArea() const {
     if (visitor_ == Visitor::Butterfly) y += 12 * std::sin(t_ * 2.3f);
     if (visitor_ == Visitor::Deer) y -= 26;  // its middle, not its hooves
     if (visitor_ == Visitor::Bunny || visitor_ == Visitor::Duck || visitor_ == Visitor::Bird) y -= 10;
+    if (visitor_ == Visitor::Goat || visitor_ == Visitor::Sheep) y -= 28;
+    if (visitor_ == Visitor::Hen || visitor_ == Visitor::Piglet || visitor_ == Visitor::Cat) y -= 14;
+    if (visitor_ == Visitor::Dog) y -= 22;
     return {static_cast<int>(x) - 36, static_cast<int>(y) - 36, 72, 72};
 }
 
@@ -1730,9 +1780,15 @@ void Scene::tapVisitor() {
         case Visitor::Bird: cue(Cue::Tweet); break;
         case Visitor::Duck: cue(Cue::Quack); break;
         case Visitor::Owl: cue(Cue::Hoot); break;
+        case Visitor::Hen: cue(Cue::Cluck); break;
+        case Visitor::Goat:
+        case Visitor::Sheep: cue(Cue::Bleat); break;
+        case Visitor::Dog: cue(Cue::Woof); break;
+        case Visitor::Piglet: cue(Cue::Oink); break;
+        case Visitor::Cat: cue(Cue::Meow); break;
         default: cue(Cue::Tick); break;
     }
-    if (visitor_ == Visitor::Deer || visitor_ == Visitor::Bunny || visitor_ == Visitor::Duck) {
+    if (visitor_ == Visitor::Deer || visitor_ == Visitor::Bunny || visitor_ == Visitor::Duck || visitor_ >= Visitor::Hen) {
         visDir_ = visX_ < S / 2.0f ? -1.0f : 1.0f;  // off by the nearer side
     }
     for (int i = 0; i < 3; i++)
@@ -1740,14 +1796,15 @@ void Scene::tapVisitor() {
     const State& s = sim_.state();
     if (hatched() && !s.asleep && sim_.trustLevel() == TrustLevel::Friendly) {
         static const char* kBye[] = {"", "BYE, BUNNY!", "BYE, BIRDIE!", "COME BACK, DEER!", "BYE, DUCKS!",
-                                     "FLY AWAY, BUTTERFLY", "NIGHT NIGHT, OWL"};
+                                     "FLY AWAY, BUTTERFLY", "NIGHT NIGHT, OWL", "BYE, CHICKS!", "BYE, BILLY GOAT!",
+                                     "SEE YOU, SHEEP!", "BYE, GOOD DOG!", "BYE, PIGGY!", "BYE, KITTY!"};
         speak(kBye[static_cast<int>(visitor_)]);
     }
 }
 
 void Scene::drawVisitor(Canvas& c, bool behind) {
     if (visitor_ == Visitor::None || overlay_ == Overlay::Game) return;  // games have the paddock to themselves
-    const bool back = visitor_ == Visitor::Deer || visitor_ == Visitor::Owl;
+    const bool back = visitor_ == Visitor::Deer || visitor_ == Visitor::Owl || visitor_ == Visitor::Goat || visitor_ == Visitor::Sheep;
     if (back != behind) return;
     const float age = static_cast<float>(now_ - visSince_) / 1000.0f, dir = visDir_;
     float x = visX_, y = visY_;
@@ -1892,6 +1949,165 @@ void Scene::drawVisitor(Canvas& c, bool behind) {
             c.fillTriangle(x - 1.5f, y - 10, x + 1.5f, y - 10, x, y - 7, 0xE8A23A, a);
             c.line(x - 5, y + 15, x - 3, y + 17, 2, 0xE8A23A, a);
             c.line(x + 5, y + 15, x + 3, y + 17, 2, 0xE8A23A, a);
+            break;
+        }
+        case Visitor::Hen: {  // a brown hen with a red comb, and three chicks behind her
+            const bool stopped = !visLeaving_ && visStopUntil_ && now_ < visStopUntil_;
+            const bool walking = !stopped && !(std::fmod(age, 2.6f) > 1.6f && !visLeaving_);
+            for (int i = 3; i >= 0; i--) {
+                const bool mum = i == 0;
+                const float k = mum ? 1.0f : 0.5f, px = x - dir * i * 24 - (mum ? 0 : dir * 6);
+                const float step = walking ? std::sin(age * 10 + i * 1.7f) : 0;
+                const float peck = !walking && std::fmod(age * (mum ? 1.4f : 2.1f) + i, 1.0f) < 0.4f ? 1.0f : 0.0f;
+                c.fillEllipse(px, y + 3, 12 * k, 3 * k, 0x000000, 0.16f);
+                c.line(px - 3 * k, y - 6 * k, px - 3 * k - step * 2, y + 1, 2, sh(0xE0A030));
+                c.line(px + 3 * k, y - 6 * k, px + 3 * k + step * 2, y + 1, 2, sh(0xE0A030));
+                const Rgb body = sh(mum ? 0xA8582A : 0xF4D860);
+                c.fillEllipse(px, y - 14 * k, 13 * k, 10 * k, body);
+                if (mum) {  // tail feathers up at the back, a wing
+                    c.fillTriangle(px - dir * 9, y - 18, px - dir * 19, y - 32, px - dir * 15, y - 12, sh(0x7A3A1A));
+                    c.fillEllipse(px - dir * 2, y - 14, 8, 5, sh(0x8E4820));
+                }
+                const float hx = px + dir * (10 + peck * 4) * k, hy = y - (24 - peck * 14) * k;
+                c.fillCircle(hx, hy, 6 * k, body);
+                if (mum) {
+                    c.fillCircle(hx - dir * 1, hy - 6, 2.4f, sh(0xD63A2E));  // comb
+                    c.fillCircle(hx + dir * 2, hy - 6.5f, 2.2f, sh(0xD63A2E));
+                    c.fillCircle(hx + dir * 4, hy + 4, 1.8f, sh(0xD63A2E));  // wattle
+                }
+                c.fillTriangle(hx + dir * 5 * k, hy - 1.5f * k, hx + dir * 10 * k, hy + 0.5f * k, hx + dir * 5 * k, hy + 2 * k,
+                               sh(0xE8A030));
+                c.fillCircle(hx + dir * 2 * k, hy - 1.5f * k, 1.2f, 0x1A1A1A);
+            }
+            break;
+        }
+        case Visitor::Goat:
+        case Visitor::Sheep: {  // by the fence: a white-and-brown goat with horns, or a woolly sheep (a lamb in spring)
+            const bool goat = visitor_ == Visitor::Goat;
+            const bool stopped = !visLeaving_ && visStopUntil_ && now_ < visStopUntil_;
+            const int lambs = !goat && m >= 3 && m <= 6 ? 1 : 0;
+            for (int i = lambs; i >= 0; i--) {
+                const float k = i ? 0.6f : 0.85f, px = x - dir * i * 46;
+                const float step = stopped ? 0 : std::sin(age * 6 + i);
+                // a goat's little hop now and then, while it stands
+                const float hop = goat && stopped && std::fmod(age, 5.0f) < 0.45f ? std::sin(std::fmod(age, 5.0f) / 0.45f * 3.14159f) * 10 : 0;
+                const float by = y - hop;
+                c.fillEllipse(px, y + 2, 26 * k, 4 * k, 0x000000, 0.15f);
+                const Rgb leg = sh(goat ? 0x6A5040 : 0x3A3030);
+                for (int l = 0; l < 4; l++) {
+                    const float lx = px + (l < 2 ? 14 : -14) * k + (l % 2 ? 4 : -4) * k;
+                    const float swing = (l % 2 ? step : -step) * 3 * k;
+                    c.line(lx, by - 22 * k, lx + swing, by, 3.2f * k, leg);
+                }
+                if (goat) {
+                    c.fillEllipse(px, by - 30 * k, 26 * k, 13 * k, sh(0xEDE8DE));
+                    c.fillEllipse(px - dir * 8 * k, by - 32 * k, 10 * k, 8 * k, sh(0x9A6A44));  // a brown patch
+                    c.fillTriangle(px - dir * 24 * k, by - 36 * k, px - dir * 30 * k, by - 46 * k, px - dir * 20 * k, by - 38 * k, sh(0xEDE8DE));  // tail up
+                } else {  // fluffy: a cloud of wool
+                    const Rgb wool = sh(0xF4F0E6), wool2 = sh(0xE6E0D2);
+                    for (int b = 0; b < 6; b++)
+                        c.fillCircle(px + (b - 2.5f) * 7 * k, by - (30 + (b % 2) * 6) * k, 11 * k, b % 2 ? wool2 : wool);
+                    c.fillEllipse(px, by - 30 * k, 24 * k, 12 * k, wool);
+                }
+                // the head, up and forward (lowered to graze while a sheep stands)
+                const float graze = !goat && stopped && std::fmod(age + i, 6.0f) < 3.5f ? 1.0f : 0.0f;
+                const float hx = px + dir * (26 + graze * 4) * k, hy = by - (44 - graze * 26) * k;
+                c.line(px + dir * 18 * k, by - 34 * k, hx, hy + 4 * k, 9 * k, goat ? sh(0xEDE8DE) : sh(0xF4F0E6));
+                const Rgb face = goat ? sh(0xEDE8DE) : sh(0x3E3434);
+                c.fillEllipse(hx + dir * 5 * k, hy + 2 * k, 10 * k, 6.5f * k, face);
+                c.fillEllipse(hx - dir * 4 * k, hy - 2 * k, 3 * k, 6 * k, face);  // an ear
+                if (goat) {
+                    c.line(hx - dir * 1 * k, hy - 6 * k, hx - dir * 8 * k, hy - 15 * k, 2.5f * k, sh(0x8A7A60));  // horns
+                    c.line(hx + dir * 2 * k, hy - 6 * k, hx - dir * 4 * k, hy - 16 * k, 2.5f * k, sh(0x8A7A60));
+                    c.fillTriangle(hx + dir * 9 * k, hy + 6 * k, hx + dir * 13 * k, hy + 6 * k, hx + dir * 11 * k, hy + 14 * k, sh(0xD8D0C2));  // beard
+                }
+                c.fillCircle(hx + dir * 4 * k, hy, 1.6f, goat ? 0x1A1A1A : 0xF4F0E6);
+            }
+            break;
+        }
+        case Visitor::Dog: {  // a black-and-white farm dog that sits a while and wags
+            const bool stopped = !visLeaving_ && visStopUntil_ && now_ < visStopUntil_;
+            const float step = stopped ? 0 : std::sin(age * 12);
+            const Rgb black = sh(0x2A2622), white = sh(0xF2EEE8);
+            c.fillEllipse(x, y + 3, 22, 4, 0x000000, 0.16f);
+            const float wag = std::sin(age * (stopped ? 14 : 8)) * 0.5f;
+            const float tx = x - dir * 20, ty = y - 26;
+            c.line(tx, ty, tx - dir * 14 * std::cos(wag), ty - 14 + 8 * std::sin(wag), 4, black);
+            if (stopped) {  // sitting: haunches down, front legs straight
+                c.fillEllipse(x - dir * 6, y - 14, 16, 13, black);
+                c.line(x + dir * 8, y - 18, x + dir * 9, y, 4, white);
+                c.line(x + dir * 14, y - 18, x + dir * 15, y, 4, white);
+                c.fillEllipse(x + dir * 9, y - 26, 10, 12, white);  // the white chest
+            } else {
+                for (int l = 0; l < 4; l++) {
+                    const float lx = x + (l < 2 ? 12 : -12) + (l % 2 ? 3 : -3);
+                    c.line(lx, y - 18, lx + (l % 2 ? step : -step) * 4, y, 3.5f, l < 2 ? white : black);
+                }
+                c.fillEllipse(x, y - 24, 22, 10, black);
+                c.fillEllipse(x + dir * 12, y - 22, 9, 8, white);
+            }
+            const float hx = x + dir * (stopped ? 12 : 22), hy = y - (stopped ? 42 : 36);
+            c.fillCircle(hx, hy, 10, black);
+            c.fillEllipse(hx + dir * 3, hy + 2, 3, 9, white);  // the blaze
+            c.fillEllipse(hx + dir * 9, hy + 4, 6, 4.5f, white);  // the muzzle
+            c.fillCircle(hx + dir * 14, hy + 3, 2.2f, 0x111111);
+            c.fillEllipse(hx - dir * 6, hy - 6, 4, 7, black);  // a floppy ear
+            c.fillCircle(hx + dir * 5, hy - 3, 1.8f, 0xF2EEE8);
+            c.fillCircle(hx + dir * 5, hy - 3, 1.1f, 0x111111);
+            if (stopped) c.fillEllipse(hx + dir * 11, hy + 10, 2.5f, 3.5f, sh(0xE07080));  // a pink tongue, panting
+            break;
+        }
+        case Visitor::Piglet: {  // pink, with a curly tail; roots about with its snout
+            const bool stopped = !visLeaving_ && visStopUntil_ && now_ < visStopUntil_;
+            const float step = stopped ? 0 : std::sin(age * 13);
+            const float root = stopped && std::fmod(age, 2.2f) < 1.2f ? 1.0f : 0.0f;
+            const Rgb pink = sh(0xF2A8A8), dark = sh(0xD88888);
+            c.fillEllipse(x, y + 3, 18, 3.5f, 0x000000, 0.16f);
+            for (int l = 0; l < 4; l++) {
+                const float lx = x + (l < 2 ? 9 : -9) + (l % 2 ? 3 : -3);
+                c.line(lx, y - 8, lx + (l % 2 ? step : -step) * 2, y, 4, dark);
+            }
+            c.fillEllipse(x, y - 15, 19, 12, pink);
+            c.ring(x - dir * 20, y - 20, 3.5f, 1.8f, dark);  // the curly tail
+            const float hx = x + dir * 15, hy = y - 16 + root * 6;
+            c.fillCircle(hx, hy, 9, pink);
+            c.fillEllipse(hx + dir * 8, hy + 2, 4, 4.5f, dark);  // the snout
+            c.fillCircle(hx + dir * 8, hy + 1, 0.9f, 0x5A2A2A);
+            c.fillCircle(hx + dir * 8, hy + 3.5f, 0.9f, 0x5A2A2A);
+            c.fillTriangle(hx - dir * 2, hy - 7, hx - dir * 8, hy - 14, hx + dir * 3, hy - 9, dark);  // ear
+            c.fillCircle(hx + dir * 2, hy - 2, 1.4f, 0x1A1A1A);
+            if (root) c.fillCircle(hx + dir * 12, y - 2, 1.6f, sh(0x7A5A3A));  // a bit of earth flicked up
+            break;
+        }
+        case Visitor::Cat: {  // a ginger barn cat: pads in, sits, washes a paw, tail swishing
+            const bool stopped = !visLeaving_ && visStopUntil_ && now_ < visStopUntil_;
+            const float step = stopped ? 0 : std::sin(age * 11);
+            const Rgb fur = sh(0xE0913A), stripe = sh(0xB86A22), pale = sh(0xF6DFC0);
+            c.fillEllipse(x, y + 3, 15, 3, 0x000000, 0.16f);
+            const float swish = std::sin(age * 2.5f) * 0.6f;
+            if (stopped) {
+                c.line(x - dir * 8, y - 2, x - dir * 18, y - 4 - 10 * std::sin(swish), 3, fur);  // tail on the ground, curling
+                c.fillEllipse(x, y - 12, 10, 13, fur);
+                c.fillEllipse(x + dir * 3, y - 10, 5, 8, pale);
+                const float wash = std::fmod(age, 4.0f) < 1.6f ? 1.0f : 0.0f;  // a paw up to its face now and then
+                c.line(x + dir * 5, y - 2, x + dir * (6 + wash * 2), y - 4 - wash * 16, 3, fur);
+            } else {
+                c.line(x - dir * 13, y - 14, x - dir * 20, y - 28 + 4 * swish, 3, fur);  // tail up
+                for (int l = 0; l < 4; l++) {
+                    const float lx = x + (l < 2 ? 8 : -8) + (l % 2 ? 2 : -2);
+                    c.line(lx, y - 8, lx + (l % 2 ? step : -step) * 3, y, 3, fur);
+                }
+                c.fillEllipse(x, y - 13, 14, 7, fur);
+                for (int b = -1; b <= 1; b++) c.line(x + b * 5, y - 19, x + b * 5 - dir * 2, y - 14, 1.6f, stripe);
+            }
+            const float hx = x + dir * (stopped ? 3 : 13), hy = y - (stopped ? 28 : 21);
+            c.fillCircle(hx, hy, 7, fur);
+            c.fillTriangle(hx - 6, hy - 3, hx - 4, hy - 12, hx - 1, hy - 6, fur);  // ears
+            c.fillTriangle(hx + 6, hy - 3, hx + 4, hy - 12, hx + 1, hy - 6, fur);
+            c.line(hx - 2, hy - 6, hx - 1, hy - 3, 1.4f, stripe);
+            c.fillCircle(hx - 2.5f + dir * 1.5f, hy - 1, 1.3f, 0x2A4A1A);
+            c.fillCircle(hx + 2.5f + dir * 1.5f, hy - 1, 1.3f, 0x2A4A1A);
+            c.fillCircle(hx + dir * 1.5f, hy + 2, 1, sh(0xE07080));
             break;
         }
         case Visitor::None: break;

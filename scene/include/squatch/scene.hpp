@@ -123,7 +123,9 @@ public:
     // Visitors: now and then an animal drops by for a while: a bunny, a bird, a deer at dawn
     // or dusk, a duck (with ducklings in spring), a butterfly in the warm months, an owl at
     // night. Tap one and it hurries off. Only while the screen is on, never in the way.
-    enum class Visitor : uint8_t { None, Bunny, Bird, Deer, Duck, Butterfly, Owl };
+    // The horse edition's farm also gets visits from a hen (and her chicks), a goat, a sheep (a
+    // lamb with her in spring), the farm dog, a piglet and the barn cat.
+    enum class Visitor : uint8_t { None, Bunny, Bird, Deer, Duck, Butterfly, Owl, Hen, Goat, Sheep, Dog, Piglet, Cat };
     Visitor visitor() const { return visitor_; }
     Rect visitorArea() const;
     void previewVisitor(Visitor v);  // for tests and previews: this one, now
@@ -581,7 +583,8 @@ private:
     uint32_t tootAt_ = 0;  // ...and the consequence, due then
     uint32_t drinkAt_ = 0, nextSlurp_ = 0, barnPeekUntil_ = 0;
     Visitor visitor_ = Visitor::None;
-    float visX_ = 0, visY_ = 0, visDir_ = 1, visV_ = 0;
+    float visX_ = 0, visY_ = 0, visDir_ = 1, visV_ = 0, visStopX_ = 0;
+    uint32_t visStopUntil_ = 0;  // farm visitors: where they stop a while, and till when
     uint32_t visSince_ = 0, nextVisit_ = 0, visNextCall_ = 0;
     bool visLeaving_ = false;
     void startVisitor(Visitor v);

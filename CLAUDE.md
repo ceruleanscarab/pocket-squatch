@@ -106,6 +106,9 @@ Wiki: https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-4B
 - Animal visitors (`Scene::Visitor`, both editions): every 4-10 minutes with the screen on, one comes by for a while,
   chosen by hour, month and weather (bunny, bird, deer at dawn/dusk, ducks with spring ducklings, butterfly in
   warm months, owl at night). Tap one to send it off. Scene-only: nothing in the save.
+  The horse edition's farm adds a hen with chicks, a goat, a sheep (a lamb in spring), the farm dog, a piglet and the
+  barn cat (also some nights), each with its own synth call (`Cue::Cluck`, `Bleat`, `Woof`, `Oink`, `Meow`); they walk
+  in, stop a while beside the pony (`visStopX_`), and walk on.
 - Updates over the air (`firmware/main/ota.cpp`, menuconfig Automatic updates): two app slots (`partitions.csv`, nvs kept
   where it was), rollback if a new build doesn't run a minute. Nightly about 3 am (screen off, battery 40%+ or charging)
   or Settings > Wi-Fi > the version row. Builds come from the "firmware" release, which CI keeps current on main

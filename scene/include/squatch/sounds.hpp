@@ -61,6 +61,11 @@ enum class Cue : uint8_t {
     Sip,         // the horse drinking from it
     MunchHay,    // the horse chewing hay (Munch is for apples and carrots)
     Toot,        // ahem: a pony after too many apples
+    Cluck,       // farm visitors (the horse edition): a hen
+    Bleat,       // a goat or a sheep
+    Woof,        // the farm dog
+    Oink,        // a piglet
+    Meow,        // the barn cat
     Count
 };
 

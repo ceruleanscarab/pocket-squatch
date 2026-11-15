@@ -461,7 +461,7 @@ static void testVisitors() {
     }
     CHECK(came);
     using V = Scene::Visitor;
-    for (V v : {V::Bunny, V::Bird, V::Deer, V::Duck, V::Butterfly, V::Owl}) {
+    for (V v : {V::Bunny, V::Bird, V::Deer, V::Duck, V::Butterfly, V::Owl, V::Hen, V::Goat, V::Sheep, V::Dog, V::Piglet, V::Cat}) {
         d.scene.previewVisitor(v);
         for (int i = 0; i < 160; i++) d.step();  // let it arrive
         CHECK(d.scene.visitor() == v);

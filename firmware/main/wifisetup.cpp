@@ -80,7 +80,15 @@ esp_err_t guideGet(httpd_req_t* req) {
 }
 #endif
 
+esp_err_t redirect(httpd_req_t* req, httpd_err_code_t);
+
 esp_err_t pageGet(httpd_req_t* req) {
+    // Asked for under some other name (a phone checking for internet, say www.google.com):
+    // redirect, which is how a phone knows there's a page to sign in on and offers it.
+    char host[64] = "";
+    httpd_req_get_hdr_value_str(req, "Host", host, sizeof host);
+    if (host[0] && std::strcmp(host, "192.168.4.1") != 0 && std::strcmp(host, "192.168.4.1:80") != 0)
+        return redirect(req, HTTPD_404_NOT_FOUND);
     ESP_LOGI(TAG, "setup page sent to a phone");
     static char html[7168];
 #if CONFIG_SQUATCH_PET_HORSE

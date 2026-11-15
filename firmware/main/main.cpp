@@ -298,6 +298,7 @@ void gameLoop(void*) {
         }
 
         // Wi-Fi setup from the settings: start or stop the hotspot, and pass on how it's going.
+        if (gScene.takeWelcomeDone()) storage::setWelcomed();
         switch (gScene.takeWifiRequest()) {
             case 1: wifisetup::start(kHotspotName); break;
             case 2: wifisetup::cancel(); break;
@@ -474,6 +475,8 @@ extern "C" void app_main(void) {
         gScene.setWifiAvailable(kHotspotName);
         gScene.setWifiStatus(have ? Scene::WifiStatus::Saved : Scene::WifiStatus::NotSet, ssid);
         if (haveTown) gScene.setWifiTown(here.name);
+        // Straight out of the box: a welcome with a QR code for setting up from a phone.
+        if (!have && !storage::welcomed()) gScene.openWelcome();
     }
     weatherfetch::start();
 

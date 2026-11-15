@@ -228,6 +228,17 @@ public:
     void setUpdateStatus(UpdateStatus st, int build, int percent);
     // Cloud backups: this board's backup code, shown on the Wi-Fi page ("" hides it).
     void setBackupCode(const char* code);
+    // First start: the Wi-Fi page opens as a welcome and asks for the setup hotspot
+    // (takeWifiRequest() == 1). While it's up the page shows a QR code a phone camera scans to
+    // join it; the phone then opens the setup page, which also has the guide.
+    void openWelcome();
+    bool welcoming() const { return welcome_; }
+    // True once, when the welcome is done with: Wi-Fi joined, or put off with LATER.
+    bool takeWelcomeDone() {
+        const bool d = welcomeDone_;
+        welcomeDone_ = false;
+        return d;
+    }
     Rect updateArea() const;
     // The horse's info card has a button for its glasses: none, then each frame colour in turn.
     static constexpr int kGlassesStyles = 5;  // none, purple, pink, blue, black
@@ -462,6 +473,11 @@ private:
     bool cacheScenery_ = true;
     bool compact_ = false;
     bool bigText_ = false;
+    bool welcome_ = false, welcomeDone_ = false;
+    uint8_t qr_[160] = {};  // the setup hotspot as a Wi-Fi QR code (qrcodegen's format), if qrSize_ > 0
+    int qrSize_ = 0;
+    void drawQr(Canvas& c, float cx, float y, int modulePx) const;
+    bool welcomeLater() const { return welcome_ && wifiStatus_ != WifiStatus::Joined && wifiStatus_ != WifiStatus::Saved; }
     // The text size to draw at: one up with big text (titles, 3 and over, stay).
     int ts(int scale) const { return bigText_ && scale <= 2 ? scale + 1 : scale; }
     // Text centred on cx from y down, wrapped at spaces to maxW at ts(scale); returns the y

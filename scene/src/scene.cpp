@@ -5,6 +5,8 @@
 #include <cstdio>
 #include <cstring>
 
+#include "qrcodegen.h"
+
 namespace squatch {
 
 namespace {
@@ -372,10 +374,40 @@ Scene::Rect Scene::wifiDoneArea() const { return {S / 2 + 12, kSetY + kSetH - 84
 void Scene::setWifiAvailable(const char* hotspotName) {
     wifiAvailable_ = true;
     std::snprintf(wifiHotspot_, sizeof wifiHotspot_, "%s", hotspotName ? hotspotName : "");
+    // "Join this open network", in the form phone cameras understand.
+    char text[64];
+    std::snprintf(text, sizeof text, "WIFI:T:nopass;S:%s;;", wifiHotspot_);
+    uint8_t temp[sizeof qr_];
+    static_assert(sizeof qr_ >= qrcodegen_BUFFER_LEN_FOR_VERSION(4), "room for a version 4 code");
+    qrSize_ = qrcodegen_encodeText(text, temp, qr_, qrcodegen_Ecc_LOW, 1, 4, qrcodegen_Mask_AUTO, true)
+                  ? qrcodegen_getSize(qr_)
+                  : 0;
+}
+
+void Scene::openWelcome() {
+    if (!wifiAvailable_) return;
+    welcome_ = true;
+    overlay_ = Overlay::Wifi;
+    trayTarget_ = 0;
+    if (wifiStatus_ != WifiStatus::SetupRunning && wifiStatus_ != WifiStatus::Checking) {
+        wifiRequest_ = 1;
+        wifiStatus_ = WifiStatus::SetupRunning;  // the board confirms (or not) next frame
+    }
+}
+
+void Scene::drawQr(Canvas& c, float cx, float y, int m) const {
+    if (qrSize_ <= 0) return;
+    const int quiet = 2, side = (qrSize_ + 2 * quiet) * m;
+    const float x0 = std::round(cx - side / 2.0f), y0 = std::round(y);
+    c.fillRoundRect(x0, y0, side, side, m, 0xFFFFFF);
+    for (int r = 0; r < qrSize_; r++)
+        for (int q = 0; q < qrSize_; q++)
+            if (qrcodegen_getModule(qr_, q, r)) c.fillRect(x0 + (q + quiet) * m, y0 + (r + quiet) * m, m, m, 0x000000);
 }
 
 void Scene::setWifiStatus(WifiStatus st, const char* ssid) {
     wifiStatus_ = st;
+    if (welcome_ && st == WifiStatus::Joined) welcomeDone_ = true;  // set up: no need to welcome again
     // The font is capitals, digits and a little punctuation: show the name in those.
     size_t n = 0;
     for (const char* p = ssid ? ssid : ""; *p && n < sizeof wifiSsid_ - 1; p++) {
@@ -691,6 +723,12 @@ void Scene::handle(const Gesture& g) {
             cue(Cue::Tick);
             if (wifiStatus_ == WifiStatus::SetupRunning) wifiRequest_ = 2;
             overlay_ = Overlay::Settings;
+            if (welcome_) {  // straight back to the pet
+                welcome_ = false;
+                welcomeDone_ = true;
+                overlay_ = Overlay::None;
+                if (wifiStatus_ != WifiStatus::Joined && wifiStatus_ != WifiStatus::Saved) say("WI-FI CAN WAIT. IT'S IN SETTINGS", true);
+            }
         } else if (updateShown() && updateArea().contains(g.x, g.y) && updateStatus_ != UpdateStatus::Checking &&
                    updateStatus_ != UpdateStatus::Downloading && updateStatus_ != UpdateStatus::Restarting) {
             cue(Cue::Tick);
@@ -5409,8 +5447,9 @@ void Scene::drawWifi(Canvas& c) {
     const Rgb ink = 0x3B2A1E, faint = 0x8A7A66, good = 0x3F7A3A, bad = 0x8A3A2A;
     c.tint(0x000000, 0.55f);
     c.fillRoundRect(kSetX, kSetY, kSetW, kSetH, 20, kUiLight);
-    c.text(240, kSetY + 12, "WI-FI", 3, ink, Align::Center);
-    c.text(240, kSetY + (bigText_ ? 42 : 46), "FOR THE CLOCK AND THE WEATHER", 2, faint, Align::Center);
+    const bool scan = wifiStatus_ == WifiStatus::SetupRunning && qrSize_ > 0;
+    c.text(240, kSetY + 12, !welcome_ ? "WI-FI" : wifiStatus_ == WifiStatus::Joined ? "ALL SET!" : "HELLO!", 3, ink, Align::Center);
+    if (!scan) c.text(240, kSetY + (bigText_ ? 42 : 46), "FOR THE CLOCK AND THE WEATHER", 2, faint, Align::Center);
     if (bigText_) {
         drawWifiBig(c);
         return;
@@ -5441,6 +5480,13 @@ void Scene::drawWifi(Canvas& c) {
             }
             break;
         case WifiStatus::SetupRunning:
+            if (scan) {  // a code to scan, and the network's name for typing in by hand
+                c.text(240, kSetY + 46, "SCAN THIS WITH A PHONE CAMERA", 2, ink, Align::Center);
+                drawQr(c, 240, kSetY + 68, 7);
+                c.text(240, kSetY + 290, "OR JOIN THE WI-FI", 2, faint, Align::Center);
+                c.text(240, kSetY + 312, wifiHotspot_, 2, 0x7A4E1E, Align::Center);
+                break;
+            }
             line("1. ON A PHONE, JOIN THE WI-FI", 2, ink);
             y += 2;
             line(wifiHotspot_, 3, 0x7A4E1E);
@@ -5464,7 +5510,7 @@ void Scene::drawWifi(Canvas& c) {
             line("AND TAP SET UP TO TRY AGAIN", 2, faint);
             break;
     }
-    if (backupCode_[0]) {  // the backup code, to write down (between the town and the version)
+    if (backupCode_[0] && !scan) {  // the backup code, to write down (between the town and the version)
         char line[40];
         std::snprintf(line, sizeof line, "BACKUP CODE %s", backupCode_);
         c.text(240, kSetY + kSetH - 184, line, 2, faint, Align::Center);
@@ -5498,7 +5544,7 @@ void Scene::drawWifi(Canvas& c) {
     c.text(a.cx(), a.cy() - 7.0f, running ? "CANCEL" : wifiStatus_ == WifiStatus::NotSet ? "SET UP" : "SET UP AGAIN", 2,
            running ? 0x7A2E1E : kUiLight, Align::Center);
     c.fillRoundRect(d.x, d.y + 4, d.w, d.h - 8, 14, kButton);
-    c.text(d.cx(), d.cy() - 7.0f, "DONE", 2, kUiLight, Align::Center);
+    c.text(d.cx(), d.cy() - 7.0f, welcomeLater() ? "LATER" : "DONE", 2, kUiLight, Align::Center);
 }
 
 // The Wi-Fi page with big text: the same things, wrapped, with short labels above their values.
@@ -5528,6 +5574,13 @@ void Scene::drawWifiBig(Canvas& c) {
             }
             break;
         case WifiStatus::SetupRunning:
+            if (qrSize_ > 0) {
+                c.text(240, kSetY + 42, "SCAN WITH A PHONE", 3, ink, Align::Center);
+                drawQr(c, 240, kSetY + 68, 8);
+                c.text(240, kSetY + 305, "OR JOIN THE WI-FI", 2, faint, Align::Center);
+                c.text(240, kSetY + 322, wifiHotspot_, 3, 0x7A4E1E, Align::Center);
+                break;
+            }
             y = para(c, 240, y + 4, "1. ON A PHONE, JOIN", 2, ink, w);
             y = para(c, 240, y, wifiHotspot_, 2, 0x7A4E1E, w) + 8;
             y = para(c, 240, y, "2. A PAGE OPENS. IF NOT, GO TO 192.168.4.1", 2, ink, w) + 8;
@@ -5577,7 +5630,7 @@ void Scene::drawWifiBig(Canvas& c) {
     label(c, {a.x, a.y + 4, a.w, a.h - 8}, running ? "CANCEL" : wifiStatus_ == WifiStatus::NotSet ? "SET UP" : "SET UP AGAIN", 2,
           running ? 0x7A2E1E : kUiLight);
     c.fillRoundRect(d.x, d.y + 4, d.w, d.h - 8, 14, kButton);
-    label(c, {d.x, d.y + 4, d.w, d.h - 8}, "DONE", 2, kUiLight);
+    label(c, {d.x, d.y + 4, d.w, d.h - 8}, welcomeLater() ? "LATER" : "DONE", 2, kUiLight);
 }
 
 void Scene::drawSlotIcon(Canvas& c, Slot s, float x, float y) {

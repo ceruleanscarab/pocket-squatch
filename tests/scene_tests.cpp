@@ -1698,6 +1698,44 @@ static void testBigText() {
     }
 }
 
+static void testWelcome() {
+    std::printf("first start: a welcome page starts the setup hotspot and shows its QR code; LATER puts it off\n");
+    std::vector<uint16_t> fb(Scene::kSize * Scene::kSize);
+    Canvas c(fb.data(), Scene::kSize, Scene::kSize);
+    for (int big = 0; big < 2; big++) {
+        Driver d;
+        d.scene.setSpecies(Scene::Species::Horse);
+        d.scene.setBigText(big);
+        d.scene.openWelcome();  // nothing happens on a front end without Wi-Fi
+        CHECK(!d.scene.welcoming() && d.scene.takeWifiRequest() == 0);
+        d.scene.setWifiAvailable("POCKET-PONY");
+        d.scene.setWifiStatus(Scene::WifiStatus::NotSet, "");
+        d.scene.openWelcome();
+        CHECK(d.scene.welcoming() && d.scene.overlay() == Scene::Overlay::Wifi);
+        CHECK(d.scene.takeWifiRequest() == 1);  // the hotspot, for the QR code
+        d.scene.draw(c);
+        d.step(200);
+        CHECK(!d.scene.takeWelcomeDone());
+        d.tap(d.scene.wifiDoneArea());  // LATER
+        CHECK(d.scene.overlay() == Scene::Overlay::None && !d.scene.welcoming());
+        CHECK(d.scene.takeWifiRequest() == 2);  // the hotspot comes down
+        CHECK(d.scene.takeWelcomeDone());
+        CHECK(!d.scene.takeWelcomeDone());  // once
+
+        Driver j;  // set up from the phone: done, and the page says so
+        j.scene.setWifiAvailable("POCKET-PONY");
+        j.scene.setBigText(big);
+        j.scene.openWelcome();
+        j.scene.takeWifiRequest();
+        j.scene.setWifiStatus(Scene::WifiStatus::Checking, "HOME");
+        j.scene.setWifiStatus(Scene::WifiStatus::Joined, "HOME");
+        CHECK(j.scene.takeWelcomeDone());
+        j.scene.draw(c);
+        j.tap(j.scene.wifiDoneArea());
+        CHECK(j.scene.overlay() == Scene::Overlay::None);
+    }
+}
+
 int main() {
     testBoardingStable();
     testHorseTouchVoices();
@@ -1745,6 +1783,7 @@ int main() {
     testUpdateRow();
     testTownLookup();
     testBigText();
+    testWelcome();
 
     std::printf("\n%d checks, %d failed\n", gChecks, gFailures);
     return gFailures ? 1 : 0;

@@ -95,6 +95,16 @@ esp_err_t pageGet(httpd_req_t* req) {
                   "<h1>Wi-Fi for %s</h1><p>Pick your home network and type its password. The toy uses it "
                   "to set its clock and check the weather.</p>",
                   gHotspot, gHotspot);
+#if CONFIG_SQUATCH_PET_HORSE
+    std::snprintf(line2, sizeof line2,
+                  "<p style='background:#fff;border-radius:10px;padding:12px;margin:0 0 4px'>&#128214; "
+                  "<a href=/guide.pdf style='color:#9e2b23;font-weight:bold'>The Pocket Pony guide</a> "
+                  "(PDF, %u KB): how to look after your pony, the games, and more. Save it to your phone first: "
+                  "this page closes once the toy joins your Wi-Fi.<br><small>If it doesn't open here, open your web browser and go to "
+                  "<b>192.168.4.1/guide.pdf</b> while the phone is still on %s.</small></p>",
+                  static_cast<unsigned>((kGuideEnd - kGuideStart + 1023) / 1024), gHotspot);
+    std::strncat(html, line2, sizeof html - std::strlen(html) - 1);
+#endif
     if (cloud::enabled()) {  // its backup code, for safe keeping
         char code[24], line[384];
         cloud::code(code, sizeof code);
@@ -130,16 +140,6 @@ esp_err_t pageGet(httpd_req_t* req) {
                      "<b>replaces</b> the pet on this toy.</small>",
                      sizeof html - std::strlen(html) - 1);
     std::strncat(html, "<button>Save</button></form>", sizeof html - std::strlen(html) - 1);
-#if CONFIG_SQUATCH_PET_HORSE
-    std::snprintf(line2, sizeof line2,
-                  "<p style='background:#fff;border-radius:10px;padding:12px;margin-top:24px'>&#128214; "
-                  "<a href=/guide.pdf style='color:#9e2b23;font-weight:bold'>The Pocket Pony guide</a> "
-                  "(PDF, %u KB): how to look after your pony, the games, and more. Save it to your phone to read "
-                  "any time.<br><small>If it doesn't open here, open your web browser and go to "
-                  "<b>192.168.4.1/guide.pdf</b> while the phone is still on %s.</small></p>",
-                  static_cast<unsigned>((kGuideEnd - kGuideStart + 1023) / 1024), gHotspot);
-    std::strncat(html, line2, sizeof html - std::strlen(html) - 1);
-#endif
     std::strncat(html, "</body></html>", sizeof html - std::strlen(html) - 1);
     httpd_resp_set_type(req, "text/html");
     return httpd_resp_send(req, html, HTTPD_RESP_USE_STRLEN);

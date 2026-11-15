@@ -157,4 +157,21 @@ bool townToFind(char* out, size_t n) {
     return ok;
 }
 
+bool welcomed() {
+    nvs_handle_t h;
+    if (nvs_open(kNamespace, NVS_READONLY, &h) != ESP_OK) return false;
+    uint8_t v = 0;
+    const bool got = nvs_get_u8(h, "welcomed", &v) == ESP_OK;
+    nvs_close(h);
+    return got && v;
+}
+
+void setWelcomed() {
+    nvs_handle_t h;
+    if (nvs_open(kNamespace, NVS_READWRITE, &h) != ESP_OK) return;
+    nvs_set_u8(h, "welcomed", 1);
+    nvs_commit(h);
+    nvs_close(h);
+}
+
 }  // namespace storage

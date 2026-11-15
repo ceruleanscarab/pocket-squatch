@@ -91,6 +91,9 @@ Wiki: https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-4B
   `storage::saveWifi`, used by the clock and weather via `storage::wifiCredentials`; Kconfig is only the default).
   Settings > Wi-Fi in `scene/`. Not yet run on hardware.
   The horse build also serves the illustrated guide at `/guide.pdf` (`firmware/main/guide/`, linked from the setup page).
+  First start (no Wi-Fi saved, NVS `welcomed` unset): `Scene::openWelcome` shows the Wi-Fi page as a welcome with the
+  hotspot up and a Wi-Fi QR code (`scene/src/qrcodegen.cpp`, Nayuki, MIT); the Wi-Fi page shows the same code whenever
+  setup is running. Joining or LATER sets `welcomed`.
 - Boarding stable (More > Stable; "Sitter" for the Bigfoot): `Sim::board`, save version 3. While boarded nothing
   happens and it doesn't age (`born` and the rate-limit clocks shift by the time away); it comes home fed and clean.
 - Animal visitors (`Scene::Visitor`, both editions): every 4-10 minutes with the screen on, one comes by for a while,

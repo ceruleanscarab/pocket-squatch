@@ -35,6 +35,9 @@ bool wifiCredentials(char* ssid, size_t ssidLen, char* password, size_t password
 // without them. At boot this copies them into the saved settings (if nothing's saved yet), so
 // they outlive the build that brought them.
 void keepBuiltInDefaults();
+// Whether the first-start welcome (the Wi-Fi QR code) has been seen through: set up, or put off.
+bool welcomed();
+void setWelcomed();
 // The town to look up the first time it's online: one saved from menuconfig, if any.
 bool townToFind(char* out, size_t n);
 

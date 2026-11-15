@@ -352,6 +352,7 @@ int main(int, char**) {
 #if POCKET_PONY
     scene.setSpecies(Scene::Species::Horse);
     scene.setTrailsAvailable(false);
+    scene.setPrivacyAvailable(true);  // Settings > PRIVACY: the policy, as Google Play asks of apps for children
 #endif
     Scene::Settings settings;
     if (readSettings(settingsPath, settings)) scene.setSettings(settings);
@@ -521,6 +522,7 @@ int main(int, char**) {
             SDL_UnlockAudioDevice(audio);
         }
         if (scene.takeSettingsChanged()) writeSettings(settingsPath, scene.settings());
+        if (scene.takePrivacyRequest()) callStatic("openPrivacy");
         if (scene.takeSaveRequest() || ms - lastSave >= kAutosaveMs) saveAll();
 
         relayout();

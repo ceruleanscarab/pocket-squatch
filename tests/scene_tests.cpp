@@ -1825,6 +1825,26 @@ static void testNoTrails() {
     CHECK(d.scene.slotAt(2) == Scene::Slot::Stable && d.scene.slotAt(3) == Scene::Slot::Settings);
     d.pressSlot(Scene::Slot::Settings);
     CHECK(d.scene.overlay() == Scene::Overlay::Settings);
+    CHECK(d.scene.privacyArea().w == 0);  // not offered: no button
+
+    std::printf("the store app's settings page has a PRIVACY button that asks the app to open the policy\n");
+    Driver p;
+    p.scene.setPrivacyAvailable(true);
+    p.openTray();
+    p.pressSlot(Scene::Slot::More);
+    p.pressSlot(Scene::Slot::Settings);
+    const Scene::Rect r = p.scene.privacyArea();
+    CHECK(r.w >= 64 && r.h >= 64);
+    auto apart = [](const Scene::Rect& a, const Scene::Rect& b) {
+        return a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y;
+    };
+    CHECK(apart(r, p.scene.startOverArea()) && apart(r, p.scene.settingsDoneArea()));
+    std::vector<uint16_t> fb(Scene::kSize * Scene::kSize);
+    Canvas c(fb.data(), Scene::kSize, Scene::kSize);
+    p.scene.draw(c);
+    p.tap(r);
+    CHECK(p.scene.takePrivacyRequest() && !p.scene.takePrivacyRequest());
+    CHECK(p.scene.overlay() == Scene::Overlay::Settings);
 }
 
 int main() {

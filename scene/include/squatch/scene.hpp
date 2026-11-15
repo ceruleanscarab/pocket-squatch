@@ -273,6 +273,15 @@ public:
     // The trail map needs Wi-Fi scans, which the store edition of the phone app does without
     // (Android counts them as location): off, More has no TRAILS button.
     void setTrailsAvailable(bool on) { trailsAvailable_ = on; }
+    // The store edition must link to its privacy policy from inside the app: a PRIVACY button on
+    // the settings page (where the boards have WI-FI). True once per press; the app opens the page.
+    void setPrivacyAvailable(bool on) { privacyAvailable_ = on; }
+    bool takePrivacyRequest() {
+        const bool r = privacyRequest_;
+        privacyRequest_ = false;
+        return r;
+    }
+    Rect privacyArea() const;
     // Touch slop for a small screen (see GestureReader::setSlop).
     void setTouchSlop(int px) { gestures_.setSlop(px); }
     void setBigText(bool on) {
@@ -494,6 +503,7 @@ private:
     bool compact_ = false;
     bool bigText_ = false;
     bool trailsAvailable_ = true;
+    bool privacyAvailable_ = false, privacyRequest_ = false;
     bool welcome_ = false, welcomeDone_ = false;
     bool factoryAvailable_ = false, confirmNew_ = false, factoryReset_ = false;
     uint8_t qr_[160] = {};  // the setup hotspot as a Wi-Fi QR code (qrcodegen's format), if qrSize_ > 0

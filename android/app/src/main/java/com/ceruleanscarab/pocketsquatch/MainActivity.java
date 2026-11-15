@@ -3,7 +3,9 @@ package com.ceruleanscarab.pocketsquatch;
 import android.Manifest;
 import android.app.NotificationManager;
 import android.content.Context;
+import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.net.Uri;
 import android.net.wifi.ScanResult;
 import android.net.wifi.WifiManager;
 import android.os.Build;
@@ -110,6 +112,22 @@ public class MainActivity extends SDLActivity {
         String s = sScan;
         sScan = null;
         return s;
+    }
+
+    // ---- the privacy policy (Settings > PRIVACY, in the Pocket Pony edition)
+
+    public static final String PRIVACY_URL = "https://bluebeetle.games/pocket-pony/privacy.html";
+
+    public static void openPrivacy() {
+        final SDLActivity act = mSingleton;
+        if (act == null) return;
+        act.runOnUiThread(() -> {
+            try {
+                act.startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(PRIVACY_URL)));
+            } catch (Exception e) {
+                Log.w(TAG, "no browser for the privacy policy", e);
+            }
+        });
     }
 
     // ---- the "needs you" notification, planned when you leave the app

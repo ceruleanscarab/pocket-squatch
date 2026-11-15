@@ -338,13 +338,18 @@ Scene::Rect Scene::settingButtonArea(int row, bool plus) const {
 }
 
 // With Wi-Fi on the board the bottom row holds three buttons: Start over, Wi-Fi, Done.
+// Two buttons along the bottom, or three with WI-FI (the boards) or PRIVACY (the store phone app).
 Scene::Rect Scene::settingsDoneArea() const {
-    if (wifiAvailable_) return {S / 2 + 76, kSetY + kSetH - 84, 132, 72};
+    if (wifiAvailable_ || privacyAvailable_) return {S / 2 + 76, kSetY + kSetH - 84, 132, 72};
     return {S / 2 + 12, kSetY + kSetH - 84, 196, 72};
 }
 Scene::Rect Scene::startOverArea() const {
-    if (wifiAvailable_) return {S / 2 - 208, kSetY + kSetH - 84, 132, 72};
+    if (wifiAvailable_ || privacyAvailable_) return {S / 2 - 208, kSetY + kSetH - 84, 132, 72};
     return {S / 2 - 208, kSetY + kSetH - 84, 196, 72};
+}
+Scene::Rect Scene::privacyArea() const {
+    if (!privacyAvailable_ || wifiAvailable_) return {0, 0, 0, 0};
+    return {S / 2 - 66, kSetY + kSetH - 84, 132, 72};
 }
 Scene::Rect Scene::wifiButtonArea() const {
     if (!wifiAvailable_) return {0, 0, 0, 0};
@@ -773,6 +778,11 @@ void Scene::handle(const Gesture& g) {
         }
         if (wifiButtonArea().contains(g.x, g.y)) {
             overlay_ = Overlay::Wifi;
+            cue(Cue::Tick);
+            return;
+        }
+        if (privacyArea().contains(g.x, g.y)) {
+            privacyRequest_ = true;
             cue(Cue::Tick);
             return;
         }
@@ -5756,6 +5766,10 @@ void Scene::drawSettings(Canvas& c) {
         Rect w = wifiButtonArea();
         c.fillRoundRect(w.x, w.y + 4, w.w, w.h - 8, 14, 0x6E8F5A);
         label(c, {w.x, w.y + 4, w.w, w.h - 8}, "WI-FI", 2, kUiLight);
+    } else if (privacyAvailable_) {
+        Rect w = privacyArea();
+        c.fillRoundRect(w.x, w.y + 4, w.w, w.h - 8, 14, 0xD9CFBC);
+        label(c, {w.x, w.y + 4, w.w, w.h - 8}, "PRIVACY", 2, ink);
     }
     c.fillRoundRect(d.x, d.y + 4, d.w, d.h - 8, 14, kButton);
     label(c, {d.x, d.y + 4, d.w, d.h - 8}, "DONE", 2, kUiLight);

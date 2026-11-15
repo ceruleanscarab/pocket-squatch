@@ -21,7 +21,7 @@ const char* kWifiPassKey = "wifi_pass";
 const char* kLocationKey = "location";
 const char* kTownWishKey = "town_wish";
 constexpr uint8_t kLocationVersion = 1;
-constexpr uint8_t kSettingsVersion = 3;  // 1 had no volume, 2 no reindeer nose
+constexpr uint8_t kSettingsVersion = 4;  // 1 had no volume, 2 no reindeer nose, 3 no glasses
 }  // namespace
 
 void init() {
@@ -59,21 +59,24 @@ void savePet(const squatch::State& s) {
 bool loadSettings(squatch::Scene::Settings& out) {
     nvs_handle_t h;
     if (nvs_open(kNamespace, NVS_READONLY, &h) != ESP_OK) return false;
-    uint8_t b[5] = {};
+    uint8_t b[6] = {};
     size_t len = sizeof b;
     esp_err_t err = nvs_get_blob(h, kSettingsKey, b, &len);
     nvs_close(h);
     if (err != ESP_OK || len < 3) return false;
-    if (!((b[0] == 1 && len == 3) || (b[0] == 2 && len == 4) || (b[0] == kSettingsVersion && len == 5))) return false;
+    if (!((b[0] == 1 && len == 3) || (b[0] == 2 && len == 4) || (b[0] == 3 && len == 5) ||
+          (b[0] == kSettingsVersion && len == 6)))
+        return false;
     out.brightness = b[1];
     out.timeout = b[2];
     if (b[0] >= 2) out.volume = b[3];  // version 1: the default volume
     if (b[0] >= 3) out.rudolph = b[4];
+    if (b[0] >= 4) out.glasses = b[5];
     return true;
 }
 
 void saveSettings(const squatch::Scene::Settings& s) {
-    const uint8_t b[5] = {kSettingsVersion, s.brightness, s.timeout, s.volume, s.rudolph};
+    const uint8_t b[6] = {kSettingsVersion, s.brightness, s.timeout, s.volume, s.rudolph, s.glasses};
     nvs_handle_t h;
     if (nvs_open(kNamespace, NVS_READWRITE, &h) != ESP_OK) return;
     if (nvs_set_blob(h, kSettingsKey, b, sizeof b) != ESP_OK || nvs_commit(h) != ESP_OK)

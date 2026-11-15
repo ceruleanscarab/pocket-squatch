@@ -188,6 +188,12 @@ void Scene::setSettings(const Settings& s) {
     settings_.timeout = std::min<uint8_t>(s.timeout, kTimeoutSteps - 1);
     settings_.volume = std::min<uint8_t>(s.volume, kVolumeSteps - 1);
     settings_.rudolph = s.rudolph ? 1 : 0;
+    settings_.glasses = s.glasses < kGlassesStyles ? s.glasses : 0;
+}
+
+Scene::Rect Scene::glassesArea() const {
+    if (species_ != Species::Horse) return {0, 0, 0, 0};
+    return {110, 380, 260, 64};
 }
 
 // The pet's own voice (and body), as against the world's sounds and the buttons.
@@ -644,6 +650,13 @@ void Scene::handle(const Gesture& g) {
             cue(Cue::Happy);
             if (hatched() && !hiding()) react(React::Wave, 1600);
         }
+        return;
+    }
+    if (overlay_ == Overlay::Stats && g.type == GestureType::Tap && glassesArea().contains(g.x, g.y) &&
+        sim_.state().stage != Stage::Egg) {  // glasses on, a new colour, or off again
+        settings_.glasses = static_cast<uint8_t>((settings_.glasses + 1) % kGlassesStyles);
+        settingsChanged_ = true;
+        cue(Cue::Tick);
         return;
     }
     if (overlay_ == Overlay::Stats && g.type == GestureType::Tap && nameEditArea().contains(g.x, g.y) &&
@@ -3832,6 +3845,20 @@ void Scene::drawHorse(Canvas& c, const Look& L, bool mother) {
                    ey - er * 1.35f, 1.6f * s, 0x1E120E);
     }
     if (L.angry) c.line(ex - er * 1.1f, ey - er * 1.5f, ex + er * 1.1f, ey - er * 1.0f, 2.4f * s, 0x1E120E);
+    if (!mother && settings_.glasses) {  // round specs: a lens over the eye, an arm back to the ear, the other lens peeking round the front
+        static const Rgb kFrames[kGlassesStyles] = {0, 0x7A4FC0, 0xE0609A, 0x2E6FB0, 0x2A2420};
+        const Rgb frame = mix(kFrames[settings_.glasses], kNight, dark_ * 0.3f);
+        const float gx = hx + dir * 4 * s * hd, gy = hy - 3 * s * hd, gr = er * 1.6f, w = std::max(1.6f, 2.4f * s * hd);
+        c.fillCircle(gx, gy, gr, 0xCFE8F5, 0.18f);                                                // the lens
+        c.line(gx - dir * gr * 0.45f, gy - gr * 0.5f, gx - dir * gr * 0.05f, gy - gr * 0.75f, w * 0.7f, 0xFFFFFF, 0.6f);  // a glint
+        c.line(gx - dir * gr * 0.95f, gy - gr * 0.25f, hx - dir * 13 * s * hd, hy - 13 * s * hd, w, frame);  // the arm
+        c.ring(gx, gy, gr, w, frame);
+        const float fx = gx + dir * (gr + 6 * s * hd);  // the bridge, and the far lens's edge
+        c.line(gx + dir * gr * 0.95f, gy - gr * 0.2f, fx, gy - gr * 0.3f, w, frame);
+        c.fillEllipse(fx + dir * 1.5f * s * hd, gy, gr * 0.32f, gr * 0.95f, 0xCFE8F5, 0.18f);
+        c.line(fx, gy - gr * 0.9f, fx + dir * 3 * s * hd, gy, w, frame);
+        c.line(fx + dir * 3 * s * hd, gy, fx, gy + gr * 0.9f, w, frame);
+    }
     if (detail_ || stage == Stage::Baby)  // rosy cheek
         c.glow(hx + dir * 8 * s * hd, hy + 8 * s * hd, 7 * s * hd, 0xF07A7A, 0.35f);
 
@@ -5528,7 +5555,8 @@ void Scene::horseCoatName(char* out, size_t n) const {
 void Scene::drawStats(Canvas& c) {
     const State& s = sim_.state();
     c.tint(0x000000, 0.55f);
-    c.fillRoundRect(40, 76, 400, 312, 20, kUiLight);
+    const bool glassesButton = glassesArea().w > 0 && s.stage != Stage::Egg;
+    c.fillRoundRect(40, 76, 400, glassesButton ? 384 : 312, 20, kUiLight);
     const Rgb ink = 0x3B2A1E;
     const char* name = s.name[0] ? s.name : "NO NAME YET";
     c.text(240, 92, name, Canvas::textWidth(name, 3) <= 380 ? 3 : 2, ink, Align::Center);
@@ -5571,7 +5599,15 @@ void Scene::drawStats(Canvas& c) {
         std::snprintf(lines[n++], 40, "WEATHER: %s, %d%s", sky, static_cast<int>(std::lround(temp)), fahrenheit_ ? "F" : "C");
     }
     for (int i = 0; i < n; i++) c.text(64, 136 + i * 23.0f, lines[i], 2, ink);
-    c.text(240, 366, "TAP TO CLOSE", 2, 0x8A7A66, Align::Center);
+    if (glassesButton) c.text(240, 444, "TAP ANYWHERE ELSE TO CLOSE", 1, 0x8A7A66, Align::Center);
+    else c.text(240, 366, "TAP TO CLOSE", 2, 0x8A7A66, Align::Center);
+    if (glassesButton) {  // a pair of specs, in the colour it's wearing (or none)
+        static const char* kNames[kGlassesStyles] = {"GLASSES: NONE", "GLASSES: PURPLE", "GLASSES: PINK", "GLASSES: BLUE",
+                                                      "GLASSES: BLACK"};
+        const Rect b = glassesArea();
+        c.fillRoundRect(b.x, b.y + 4, b.w, b.h - 12, 14, settings_.glasses ? kButton : 0xD9CFBC);
+        c.text(b.cx(), b.cy() - 11.0f, kNames[settings_.glasses], 2, settings_.glasses ? kUiLight : ink, Align::Center);
+    }
 }
 
 void Scene::drawGallery(Canvas& c) {

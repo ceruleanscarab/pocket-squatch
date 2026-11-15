@@ -802,9 +802,7 @@ void Scene::handle(const Gesture& g) {
     }
     switch (g.type) {
         case GestureType::Tap: onTap(g.x, g.y); break;
-        case GestureType::LongPress:
-            if (g.y < kStripTouchH && !footprintArea().contains(g.x, g.y)) overlay_ = Overlay::Stats;
-            break;
+        case GestureType::LongPress: break;  // lifting it taps, as a quick press would
         case GestureType::TwoFingerTap:
             if (g.y >= kStripTouchH && !(trayOpen() && g.y >= trayTop() - 44)) doScold();
             break;
@@ -1389,6 +1387,7 @@ void Scene::shakeTree(int i) {
     if (fetch_ == Fetch::None && (++shakes_ >= 2 || rand01() < 0.4f)) {
         shakes_ = 0;
         fetch_ = Fetch::Flying;
+        appleEaten_ = false;
         coneX_ = tx + (i ? -40.0f : 40.0f);
         coneY_ = base + 8;
         coneZ_ = 170;
@@ -1413,6 +1412,11 @@ void Scene::tossCone(float vx, float vy, float vz) {
 }
 
 void Scene::endFetch() {
+    if (appleEaten_) {  // nothing left to drop
+        appleEaten_ = false;
+        fetch_ = Fetch::None;
+        return;
+    }
     if (fetch_ == Fetch::Carry) {  // dropped where it stands
         coneX_ = fetchX_ + 40;
         coneY_ = squatchFoot() + 10;
@@ -1458,8 +1462,10 @@ void Scene::updateFetch(float dt) {
             fetch_ = Fetch::None;
             return;
         }
-        // Off it goes, if it's in the mood and the pinecone isn't right at its feet.
-        if (canPlay() && drag_ != DragMode::Toss && lying > 400 && std::fabs(coneX_ - squatchX()) > 50) {
+        // Off it goes, if it's in the mood and the pinecone isn't right at its feet. (A horse
+        // goes for the apple wherever it is: to eat it.)
+        const bool horse = species_ == Species::Horse;
+        if (canPlay() && drag_ != DragMode::Toss && lying > 400 && (horse || std::fabs(coneX_ - squatchX()) > 50)) {
             fetchX_ = squatchX();
             fetch_ = Fetch::Chase;
         }
@@ -1469,13 +1475,30 @@ void Scene::updateFetch(float dt) {
         endFetch();
         return;
     }
+    if (appleEaten_ && now_ < eatUntil_) return;  // munching where it found it
     const float target = fetch_ == Fetch::Chase ? coneX_ : 240.0f;
     const float step = std::min(std::fabs(target - fetchX_), speed * dt);
     fetchX_ += target > fetchX_ ? step : -step;
     if (std::fabs(target - fetchX_) > 1) return;
+    if (fetch_ == Fetch::Chase && species_ == Species::Horse) {  // a horse eats its apple, then wanders back
+        static const char* kYum[] = {"CRUNCH! YUM!", "MMM, AN APPLE!", "THE BEST APPLE EVER", "CRUNCHY AND SWEET!"};
+        fetch_ = Fetch::Carry;
+        appleEaten_ = true;
+        eatUntil_ = now_ + 1600;
+        react(React::Eat, 1600);
+        cue(Cue::Munch);
+        speak(kYum[static_cast<int>(rand01() * 4) % 4]);
+        spawn(ParticleKind::Heart, fetchX_, headY() - 30, 0, -45, 1200);
+        return;
+    }
     if (fetch_ == Fetch::Chase) {
         fetch_ = Fetch::Carry;
         speak("GOT IT!");
+        return;
+    }
+    if (appleEaten_) {  // back from its snack
+        appleEaten_ = false;
+        fetch_ = Fetch::None;
         return;
     }
     // Back with it: dropped at your feet, and that counts as a cuddle.
@@ -1550,6 +1573,15 @@ Scene::Rect Scene::coneArea() const {
 }
 
 void Scene::drawCone(Canvas& c) {
+    if (appleEaten_) {  // being eaten: smaller with each bite, then gone
+        const float left = now_ < eatUntil_ ? static_cast<float>(eatUntil_ - now_) / 1600.0f : 0.0f;
+        if (left <= 0) return;
+        const float k = squatchScale(), r = 9 * left;
+        const float x = fetchX_ + faceDir_ * 84 * k, y = squatchFoot() - 30 * k;
+        c.fillCircle(x, y, r, 0xC8323A);
+        c.fillCircle(x, y, r * 0.55f, 0xF3E3C3);  // bitten into
+        return;
+    }
     float x = coneX_, y = coneY_ - coneZ_ - 8;
     if (fetch_ == Fetch::Carry) {  // in its paw, or a horse's mouth
         const float k = squatchScale();

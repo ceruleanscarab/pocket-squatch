@@ -460,6 +460,7 @@ extern "C" void app_main(void) {
 #endif
 #if CONFIG_SQUATCH_BOARD_AMOLED_18
     gScene.setBigText(true);  // the 480x480 scene is shown at 368x368 on a 1.8" screen
+    gScene.setTouchSlop(36);  // ...so a finger's wobble covers more scene px: about 2 mm, as on the 4" board
 #endif
     sleepInit();
     ESP_ERROR_CHECK(board_init());

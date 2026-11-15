@@ -39,11 +39,15 @@ struct Gesture {
 
 class GestureReader {
 public:
-    static constexpr int kSlopPx = 14;  // movement that still counts as a tap
+    static constexpr int kSlopPx = 14;  // movement that still counts as a tap (the default)
     static constexpr uint32_t kLongPressMs = 650;
     static constexpr size_t kQueueCap = 16;
 
     void touch(const TouchEvent& e);
+    // How far a finger may wander and still tap, in scene px. A small screen showing the scene
+    // shrunk wants more: the same finger wobble covers more scene px there.
+    void setSlop(int px) { slop_ = px > 0 ? px : kSlopPx; }
+    int slop() const { return slop_; }
     void update(uint32_t nowMs);  // long presses fire from here
     bool poll(Gesture& out);
 
@@ -54,6 +58,7 @@ private:
     int fingersDown() const { return down_[0] + down_[1]; }
 
     Mode mode_ = Mode::Idle;
+    int slop_ = kSlopPx;
     bool down_[2] = {false, false};
     int16_t x_[2] = {}, y_[2] = {};
     int16_t downX_[2] = {}, downY_[2] = {};

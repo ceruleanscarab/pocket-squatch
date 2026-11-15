@@ -34,12 +34,12 @@ void GestureReader::touch(const TouchEvent& e) {
             y_[id] = e.y;
             if (mode_ == Mode::TwoFinger) {
                 // two fingers sliding around is not a tap
-                if (dist(e.x, e.y, downX_[id], downY_[id]) > 2 * kSlopPx) mode_ = Mode::Cancelled;
+                if (dist(e.x, e.y, downX_[id], downY_[id]) > 2 * slop_) mode_ = Mode::Cancelled;
                 break;
             }
             if (id != primary_) break;
             if (mode_ == Mode::Pressed || mode_ == Mode::Held) {
-                if (dist(e.x, e.y, startX_, startY_) > kSlopPx) {
+                if (dist(e.x, e.y, startX_, startY_) > slop_) {
                     mode_ = Mode::Dragging;
                     push(GestureType::DragStart, e.x, e.y);
                     prevX_ = e.x;
@@ -63,7 +63,7 @@ void GestureReader::touch(const TouchEvent& e) {
         case TouchPhase::Up:
             if (!down_[id]) break;
             down_[id] = false;
-            if (mode_ == Mode::Pressed) {
+            if (mode_ == Mode::Pressed || mode_ == Mode::Held) {  // a slow press is still a tap
                 push(GestureType::Tap, startX_, startY_);
             } else if (mode_ == Mode::Dragging && id == primary_) {
                 push(GestureType::DragEnd, x_[id], y_[id]);
@@ -79,7 +79,7 @@ void GestureReader::touch(const TouchEvent& e) {
 void GestureReader::update(uint32_t nowMs) {
     if (mode_ == Mode::Pressed && nowMs - downMs_ >= kLongPressMs) {
         push(GestureType::LongPress, startX_, startY_);
-        mode_ = Mode::Held;  // lifting now does nothing, but moving still starts a drag
+        mode_ = Mode::Held;  // lifting still taps (a slow press), and moving still starts a drag
     }
 }
 

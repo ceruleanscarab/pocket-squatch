@@ -272,6 +272,8 @@ public:
     // For the watch, which draws its own controls on top.
     // Bigger lettering for small screens (the 1.8" AMOLED shows this 480x480 scene at 368x368):
     // text one size up, with longer lines wrapped or reworded to fit.
+    // Touch slop for a small screen (see GestureReader::setSlop).
+    void setTouchSlop(int px) { gestures_.setSlop(px); }
     void setBigText(bool on) {
         bigText_ = on;
         sceneryKey_ = -1;
@@ -338,6 +340,8 @@ private:
     void tossCone(float vx, float vy, float vz);
     void lightFire();
     void updateFetch(float dt);
+    bool appleEaten_ = false;  // the horse ate the apple it went for, and is wandering back
+    uint32_t eatUntil_ = 0;
     void endFetch();
     bool canPlay() const;
     void drawCone(Canvas& c);

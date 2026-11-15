@@ -79,6 +79,21 @@ static void testLongPressThenDrag() {
     CHECK(rd.count(GestureType::DragMove) == 1);
     CHECK(rd.count(GestureType::DragEnd) == 1);
     CHECK(rd.count(GestureType::Tap) == 0);
+
+    std::printf("a slow press, held past the long-press time and lifted, is still a tap\n");
+    Reader slow;
+    slow.send(TouchPhase::Down, 0, 50, 20, 0);
+    slow.update(GestureReader::kLongPressMs + 400);
+    slow.send(TouchPhase::Up, 0, 52, 21, GestureReader::kLongPressMs + 450);
+    CHECK(slow.count(GestureType::Tap) == 1);
+
+    std::printf("with a wider slop (the small screen) a wobbly tap stays a tap\n");
+    Reader wide;
+    wide.r.setSlop(36);
+    wide.send(TouchPhase::Down, 0, 100, 100, 0);
+    wide.send(TouchPhase::Move, 0, 120, 114, 60);  // 24 px: a drag at the default slop
+    wide.send(TouchPhase::Up, 0, 120, 114, 120);
+    CHECK(wide.count(GestureType::Tap) == 1 && wide.count(GestureType::DragStart) == 0);
 }
 
 static void testDrag() {
@@ -1800,7 +1815,31 @@ static void testMareAnswers() {
     }
     CHECK(heard.size() >= 3);  // not the same sound every time
     CHECK(d.sim.state().stage == Stage::Egg);  // just for fun: nothing in the game changes
-    CHECK(Tuning::quickToTrust().eggEnd == 7 * 60);
+    CHECK(Tuning::quickToTrust().eggEnd == 5 * 60);
+}
+
+static void testHorseEatsApple() {
+    std::printf("the horse goes for an apple that falls from the tree, and eats it\n");
+    Driver d;
+    d.scene.setSpecies(Scene::Species::Horse);
+    for (int i = 0; i < 300; i++) d.step();
+    Cue c;
+    bool dropped = false, went = false, munched = false;
+    for (int i = 0; i < 4 && !dropped; i++) {
+        d.tap(d.scene.treeArea(0));
+        for (int k = 0; k < 120 && !dropped; k++) {
+            d.step();
+            dropped = d.scene.coneOnGround() || d.scene.fetching();
+        }
+    }
+    CHECK(dropped);
+    for (int k = 0; k < 900 && (d.scene.coneOnGround() || d.scene.fetching()); k++) {
+        d.step();
+        went = went || d.scene.fetching();
+        while (d.scene.takeCue(c)) munched = munched || c == Cue::Munch;
+    }
+    CHECK(went && munched);
+    CHECK(!d.scene.coneOnGround() && !d.scene.fetching());  // eaten: no apple left lying about
 }
 
 int main() {
@@ -1853,6 +1892,7 @@ int main() {
     testWelcome();
     testLikeNew();
     testMareAnswers();
+    testHorseEatsApple();
 
     std::printf("\n%d checks, %d failed\n", gChecks, gFailures);
     return gFailures ? 1 : 0;

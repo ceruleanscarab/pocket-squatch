@@ -392,6 +392,9 @@ int board_read_touch(board_touch_t* out, int max) {
         out[i].track = (uint8_t)i;  // these chips report fingers in a steady order
         to_scene(pts[i].x, pts[i].y, &out[i].x, &out[i].y);
     }
+    static int s_was = 0;  // where each touch lands, for checking the calibration in the log
+    if (count > 0 && s_was == 0) ESP_LOGI(TAG, "touch at panel %d,%d -> scene %d,%d", pts[0].x, pts[0].y, out[0].x, out[0].y);
+    s_was = count;
     return count;
 }
 

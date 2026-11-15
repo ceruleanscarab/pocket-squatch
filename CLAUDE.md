@@ -93,7 +93,8 @@ Wiki: https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-4B
   The horse build also serves the illustrated guide at `/guide.pdf` (`firmware/main/guide/`, linked from the setup page).
   First start (no Wi-Fi saved, NVS `welcomed` unset): `Scene::openWelcome` shows the Wi-Fi page as a welcome with the
   hotspot up and a Wi-Fi QR code (`scene/src/qrcodegen.cpp`, Nayuki, MIT); the Wi-Fi page shows the same code whenever
-  setup is running. Joining or LATER sets `welcomed`.
+  setup is running. Joining or LATER sets `welcomed`. The hotspot sends DHCP option 114 (the page's address) so phones
+  open it at once; once a phone joins (`wifisetup::phonesJoined`) the screen shows a second code for http://192.168.4.1/.
   Start over on the boards has a fourth choice, "like new" (`setFactoryResetAvailable`, confirmed by a second tap):
   `storage::eraseAll` erases NVS, sets `nodefaults` so menuconfig's Wi-Fi and town aren't copied back, and restarts.
 - Boarding stable (More > Stable; "Sitter" for the Bigfoot): `Sim::board`, save version 3. While boarded nothing

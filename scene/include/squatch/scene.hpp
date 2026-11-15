@@ -242,6 +242,9 @@ public:
     // join it; the phone then opens the setup page, which also has the guide.
     void openWelcome();
     bool welcoming() const { return welcome_; }
+    // While the hotspot is up: a phone has joined it. Its setup page should open by itself; the
+    // screen then shows a second code, for the page's address, in case it doesn't.
+    void setSetupPhoneJoined(bool on) { setupPhone_ = on; }
     // True once, when the welcome is done with: Wi-Fi joined, or put off with LATER.
     bool takeWelcomeDone() {
         const bool d = welcomeDone_;
@@ -486,6 +489,9 @@ private:
     bool factoryAvailable_ = false, confirmNew_ = false, factoryReset_ = false;
     uint8_t qr_[160] = {};  // the setup hotspot as a Wi-Fi QR code (qrcodegen's format), if qrSize_ > 0
     int qrSize_ = 0;
+    uint8_t qrUrl_[160] = {};  // the setup page's address, for once a phone has joined
+    int qrUrlSize_ = 0;
+    bool setupPhone_ = false;
     void drawQr(Canvas& c, float cx, float y, int modulePx) const;
     bool welcomeLater() const { return welcome_ && wifiStatus_ != WifiStatus::Joined && wifiStatus_ != WifiStatus::Saved; }
     // The text size to draw at: one up with big text (titles, 3 and over, stay).

@@ -382,6 +382,9 @@ void Scene::setWifiAvailable(const char* hotspotName) {
     qrSize_ = qrcodegen_encodeText(text, temp, qr_, qrcodegen_Ecc_LOW, 1, 4, qrcodegen_Mask_AUTO, true)
                   ? qrcodegen_getSize(qr_)
                   : 0;
+    qrUrlSize_ = qrcodegen_encodeText("http://192.168.4.1/", temp, qrUrl_, qrcodegen_Ecc_LOW, 1, 4, qrcodegen_Mask_AUTO, true)
+                     ? qrcodegen_getSize(qrUrl_)
+                     : 0;
 }
 
 void Scene::openWelcome() {
@@ -396,17 +399,21 @@ void Scene::openWelcome() {
 }
 
 void Scene::drawQr(Canvas& c, float cx, float y, int m) const {
-    if (qrSize_ <= 0) return;
-    const int quiet = 2, side = (qrSize_ + 2 * quiet) * m;
+    const bool page = setupPhone_ && qrUrlSize_ > 0;  // once a phone has joined: the page's address
+    const uint8_t* qr = page ? qrUrl_ : qr_;
+    const int size = page ? qrUrlSize_ : qrSize_;
+    if (size <= 0) return;
+    const int quiet = 2, side = (size + 2 * quiet) * m;
     const float x0 = std::round(cx - side / 2.0f), y0 = std::round(y);
     c.fillRoundRect(x0, y0, side, side, m, 0xFFFFFF);
-    for (int r = 0; r < qrSize_; r++)
-        for (int q = 0; q < qrSize_; q++)
-            if (qrcodegen_getModule(qr_, q, r)) c.fillRect(x0 + (q + quiet) * m, y0 + (r + quiet) * m, m, m, 0x000000);
+    for (int r = 0; r < size; r++)
+        for (int q = 0; q < size; q++)
+            if (qrcodegen_getModule(qr, q, r)) c.fillRect(x0 + (q + quiet) * m, y0 + (r + quiet) * m, m, m, 0x000000);
 }
 
 void Scene::setWifiStatus(WifiStatus st, const char* ssid) {
     wifiStatus_ = st;
+    if (st != WifiStatus::SetupRunning) setupPhone_ = false;
     if (welcome_ && st == WifiStatus::Joined) welcomeDone_ = true;  // set up: no need to welcome again
     // The font is capitals, digits and a little punctuation: show the name in those.
     size_t n = 0;
@@ -5552,6 +5559,13 @@ void Scene::drawWifi(Canvas& c) {
             break;
         case WifiStatus::SetupRunning:
             if (scan) {  // a code to scan, and the network's name for typing in by hand
+                if (setupPhone_) {  // joined: the page should be open; if not, its address
+                    c.text(240, kSetY + 46, "PHONE JOINED! THE PAGE OPENS", 2, 0x3F7A3A, Align::Center);
+                    drawQr(c, 240, kSetY + 68, 7);
+                    c.text(240, kSetY + 290, "NO PAGE? SCAN THIS, OR GO TO", 2, faint, Align::Center);
+                    c.text(240, kSetY + 312, "192.168.4.1", 2, 0x7A4E1E, Align::Center);
+                    break;
+                }
                 c.text(240, kSetY + 46, "SCAN THIS WITH A PHONE CAMERA", 2, ink, Align::Center);
                 drawQr(c, 240, kSetY + 68, 7);
                 c.text(240, kSetY + 290, "OR JOIN THE WI-FI", 2, faint, Align::Center);
@@ -5646,10 +5660,10 @@ void Scene::drawWifiBig(Canvas& c) {
             break;
         case WifiStatus::SetupRunning:
             if (qrSize_ > 0) {
-                c.text(240, kSetY + 42, "SCAN WITH A PHONE", 3, ink, Align::Center);
+                c.text(240, kSetY + 42, setupPhone_ ? "PHONE JOINED!" : "SCAN WITH A PHONE", 3, setupPhone_ ? good : ink, Align::Center);
                 drawQr(c, 240, kSetY + 68, 8);
-                c.text(240, kSetY + 305, "OR JOIN THE WI-FI", 2, faint, Align::Center);
-                c.text(240, kSetY + 322, wifiHotspot_, 3, 0x7A4E1E, Align::Center);
+                c.text(240, kSetY + 300, setupPhone_ ? "NO PAGE? SCAN THIS OR GO TO" : "OR JOIN THE WI-FI", 2, faint, Align::Center);
+                c.text(240, kSetY + 318, setupPhone_ ? "192.168.4.1" : wifiHotspot_, 3, 0x7A4E1E, Align::Center);
                 break;
             }
             y = para(c, 240, y + 4, "1. ON A PHONE, JOIN", 2, ink, w);

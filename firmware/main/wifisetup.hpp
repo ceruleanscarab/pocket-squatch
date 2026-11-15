@@ -25,5 +25,7 @@ void town(char* out, size_t n);
 // A pet asked for by its backup code: 1 brought back (cloud::takeRestored has it), -1 the code
 // had no backup, 0 none asked for.
 int restoreResult();
+// How many phones have joined the hotspot (while it's up).
+int phonesJoined();
 
 }  // namespace wifisetup

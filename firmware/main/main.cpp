@@ -299,6 +299,7 @@ void gameLoop(void*) {
 
         // Wi-Fi setup from the settings: start or stop the hotspot, and pass on how it's going.
         if (gScene.takeWelcomeDone()) storage::setWelcomed();
+        gScene.setSetupPhoneJoined(wifisetup::state() == wifisetup::State::Running && wifisetup::phonesJoined() > 0);
         if (gScene.takeFactoryReset()) {  // "like new": erase it all and start as out of the box
             ESP_LOGW(TAG, "erasing everything (like new) and restarting");
             storage::eraseAll();

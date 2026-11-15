@@ -1714,6 +1714,9 @@ static void testWelcome() {
         CHECK(d.scene.welcoming() && d.scene.overlay() == Scene::Overlay::Wifi);
         CHECK(d.scene.takeWifiRequest() == 1);  // the hotspot, for the QR code
         d.scene.draw(c);
+        d.scene.setSetupPhoneJoined(true);  // then the page's address, in case it doesn't open by itself
+        d.scene.draw(c);
+        d.scene.setSetupPhoneJoined(false);
         d.step(200);
         CHECK(!d.scene.takeWelcomeDone());
         d.tap(d.scene.wifiDoneArea());  // LATER

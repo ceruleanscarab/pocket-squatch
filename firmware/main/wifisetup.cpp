@@ -32,6 +32,7 @@ char gHotspot[32];
 char gSsid[33], gPass[65];
 char gTown[64], gTownFound[40];
 char gRestore[17];  // a backup code typed in, tidied ("" for none)
+std::atomic<int> gPhones{0};  // phones joined to the hotspot
 std::atomic<int> gRestoreResult{0};  // 1 brought back, -1 not found
 char gNetworks[kMaxNetworks][33];
 int gNetworkCount = 0;
@@ -228,16 +229,17 @@ void dnsTask(void*) {
         // Find the end of the question (name, type, class) and add one A record after it.
         int p = 12;
         while (p < n && buf[p]) p += buf[p] + 1;
+        if (p + 5 > n) continue;
+        const bool wantsA = buf[p + 1] == 0 && buf[p + 2] == 1;  // an IPv4 address (not IPv6 and the like)
         p += 5;
-        if (p > n) continue;
         buf[2] = 0x81;  // a response, recursion desired
         buf[3] = 0x80;  // recursion available, no error
-        buf[6] = 0;     // one answer
-        buf[7] = 1;
+        buf[6] = 0;     // one answer, or none for anything but an address
+        buf[7] = wantsA ? 1 : 0;
         buf[8] = buf[9] = buf[10] = buf[11] = 0;
         const uint8_t answer[] = {0xC0, 0x0C, 0, 1, 0, 1, 0, 0, 0, 60, 0, 4, 192, 168, 4, 1};
-        std::memcpy(buf + p, answer, sizeof answer);
-        sendto(gDnsSock, buf, p + sizeof answer, 0, reinterpret_cast<sockaddr*>(&from), fl);
+        if (wantsA) std::memcpy(buf + p, answer, sizeof answer);
+        sendto(gDnsSock, buf, p + (wantsA ? sizeof answer : 0), 0, reinterpret_cast<sockaddr*>(&from), fl);
     }
     gDnsTask = nullptr;
     vTaskDelete(nullptr);
@@ -260,6 +262,12 @@ void setupTask(void*) {
     cfg.ap.authmode = WIFI_AUTH_OPEN;
     esp_wifi_set_config(WIFI_IF_AP, &cfg);
     esp_wifi_start();
+    {  // tell phones straight away there's a page to open (DHCP option 114, RFC 8910)
+        static char uri[] = "http://192.168.4.1/";
+        esp_netif_dhcps_stop(ap);
+        esp_netif_dhcps_option(ap, ESP_NETIF_OP_SET, ESP_NETIF_CAPTIVEPORTAL_URI, uri, std::strlen(uri));
+        esp_netif_dhcps_start(ap);
+    }
 
     // The networks it can hear, strongest first, each once.
     gNetworkCount = 0;
@@ -297,7 +305,12 @@ void setupTask(void*) {
     ESP_LOGI(TAG, "hotspot \"%s\" up, %d networks heard", gHotspot, gNetworkCount);
 
     const TickType_t until = xTaskGetTickCount() + pdMS_TO_TICKS(kTimeoutMs);
-    while (!gGotIt && !gCancel && xTaskGetTickCount() < until) vTaskDelay(pdMS_TO_TICKS(200));
+    while (!gGotIt && !gCancel && xTaskGetTickCount() < until) {
+        vTaskDelay(pdMS_TO_TICKS(200));
+        wifi_sta_list_t list{};
+        gPhones = esp_wifi_ap_get_sta_list(&list) == ESP_OK ? list.num : 0;  // so the screen can follow along
+    }
+    gPhones = 0;
     vTaskDelay(pdMS_TO_TICKS(gGotIt ? 1500 : 0));  // let the "Saved!" page reach the phone
 
     if (gDnsSock >= 0) {
@@ -361,5 +374,7 @@ void network(char* out, size_t n) { std::snprintf(out, n, "%s", gSsid); }
 void town(char* out, size_t n) { std::snprintf(out, n, "%s", gTownFound); }
 
 int restoreResult() { return gRestoreResult; }
+
+int phonesJoined() { return gPhones; }
 
 }  // namespace wifisetup

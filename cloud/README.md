@@ -21,6 +21,14 @@ even if its sound is off, for five minutes or until someone touches it. A ping w
 hours, then lapses; **Cancel the ping** takes it back. It only works where the toy can reach
 its home Wi-Fi and has some battery left.
 
+**No code?** On the same page, with the phone on the home Wi-Fi (mobile data off), press
+**Ping toys on my Wi-Fi**. Each toy's hourly check also notes which home connection it came
+from (a hash of the address, kept three hours), and this button pings every toy seen from
+the phone's connection. Most phones reach the Worker over IPv6 while the toy uses IPv4, so
+the page asks api.ipify.org for the phone's IPv4 address and sends that too; the Worker uses
+it only when the phone came over IPv6. Someone who knew a home's address could make its toy
+call out for a while, nothing more, and the answer never says whether any toy was found.
+
 ## Set it up (once)
 
 You need a Cloudflare account (the free plan is plenty) and Node.js.

@@ -127,4 +127,6 @@ Wiki: https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-4B
   asks `GET /v1/ping/<CODE>` about hourly (`cloud::checkPingJoined` in the weather task, else `cloud::startPingChecks`'
   own task) and `Scene::startFindMe` wakes it at full brightness and loud volume (even if muted), calling every 3.5 s
   for 5 minutes or until touched (`f` on the PC tries it). Needs the Worker redeployed (`npx wrangler deploy`).
+  Without a code, POST `/v1/ping-here` pings every board whose hourly check came from the caller's home connection
+  in the last 3 h (`here:<hash of IPv4 or IPv6 /64>:<code hash>` keys; the page also sends its IPv4 from api.ipify.org).
 - Later: Bluetooth visitors between two boards.

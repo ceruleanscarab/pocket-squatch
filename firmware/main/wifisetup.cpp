@@ -75,7 +75,7 @@ esp_err_t pageGet(httpd_req_t* req) {
                   "to set its clock and check the weather.</p>",
                   gHotspot, gHotspot);
     if (cloud::enabled()) {  // its backup code, for safe keeping
-        char code[24], line[256];
+        char code[24], line[384];
         cloud::code(code, sizeof code);
         std::snprintf(line, sizeof line,
                       "<p style='background:#fff;border-radius:10px;padding:10px'>This pet's <b>backup code</b>: "

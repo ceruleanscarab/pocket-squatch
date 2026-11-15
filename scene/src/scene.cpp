@@ -2060,6 +2060,14 @@ void Scene::horseChatter() {
 namespace {
 // Splits text at spaces into lines no wider than maxW at this scale; a word too long for a
 // line gets one to itself. Returns the count.
+// Copies src into dst (n bytes), cut short if it must be.
+void copyText(char* dst, size_t n, const char* src) {
+    size_t k = std::strlen(src);
+    if (k >= n) k = n - 1;
+    std::memcpy(dst, src, k);
+    dst[k] = '\0';
+}
+
 int wrapText(const char* text, int scale, float maxW, char out[][64], int maxLines) {
     int n = 0;
     char cur[64] = {};
@@ -2070,20 +2078,24 @@ int wrapText(const char* text, int scale, float maxW, char out[][64], int maxLin
         const char* e = p;
         while (*e && *e != ' ') e++;
         char word[64];
-        std::snprintf(word, sizeof word, "%.*s", static_cast<int>(e - p), p);
-        char tryLine[128];
-        std::snprintf(tryLine, sizeof tryLine, "%s%s%s", cur, cur[0] ? " " : "", word);
+        const size_t wl = std::min<size_t>(static_cast<size_t>(e - p), sizeof word - 1);
+        std::memcpy(word, p, wl);
+        word[wl] = '\0';
+        char tryLine[130];
+        copyText(tryLine, sizeof tryLine, cur);
+        if (cur[0]) std::strcat(tryLine, " ");
+        std::strcat(tryLine, word);
         if (!cur[0] || Canvas::textWidth(tryLine, scale) <= maxW) {
-            std::snprintf(cur, sizeof cur, "%s", tryLine);
+            copyText(cur, sizeof cur, tryLine);
         } else {
-            if (n < maxLines) std::snprintf(out[n], 64, "%s", cur);
+            if (n < maxLines) copyText(out[n], 64, cur);
             n++;
-            std::snprintf(cur, sizeof cur, "%s", word);
+            copyText(cur, sizeof cur, word);
         }
         p = e;
     }
     if (cur[0]) {
-        if (n < maxLines) std::snprintf(out[n], 64, "%s", cur);
+        if (n < maxLines) copyText(out[n], 64, cur);
         n++;
     }
     return std::min(n, maxLines);
@@ -2117,8 +2129,8 @@ void Scene::label(Canvas& c, const Rect& r, const char* text, int scale, Rgb col
         }
         const float h = Canvas::textHeight(s) * 2 + 2.0f * s + 2;
         if (n == 2 && h <= r.h - 12) {
-            std::snprintf(buf[0], 64, "%s", all[0]);
-            std::snprintf(buf[1], 64, "%s", all[1]);
+            copyText(buf[0], 64, all[0]);
+            copyText(buf[1], 64, all[1]);
             const float y = r.cy() - h / 2;
             c.text(r.cx(), y, buf[0], s, col, Align::Center, a);
             c.text(r.cx(), y + h - Canvas::textHeight(s), buf[1], s, col, Align::Center, a);

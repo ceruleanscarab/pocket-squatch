@@ -5675,7 +5675,9 @@ void Scene::drawWifiBig(Canvas& c) {
                 y += 4;
                 small("TOWN:", faint);
                 const Rgb col = std::strcmp(wifiTown_, "TOWN NOT FOUND") == 0 ? bad : ink;
-                c.text(240, y, wifiTown_, Canvas::textWidth(wifiTown_, 3) <= w ? 3 : 2, col, Align::Center);
+                const int ts3 = Canvas::textWidth(wifiTown_, 3) <= w ? 3 : 2;
+                c.text(240, y, wifiTown_, ts3, col, Align::Center);
+                y += lineStep(ts3);
             }
             break;
         case WifiStatus::SetupRunning:
@@ -5712,8 +5714,9 @@ void Scene::drawWifiBig(Canvas& c) {
     }
     if (updateShown()) {  // the backup code, then the version row (the steps don't leave room for them)
         if (backupCode_[0]) {
-            c.text(240, kSetY + kSetH - 204.0f, "BACKUP CODE", 2, faint, Align::Center);
-            c.text(240, kSetY + kSetH - 185.0f, backupCode_, 3, ink, Align::Center);
+            const float by = std::min(y + 14, kSetY + kSetH - 204.0f);  // just under the network (and town)
+            c.text(240, by, "BACKUP CODE", 2, faint, Align::Center);
+            c.text(240, by + 19, backupCode_, 3, ink, Align::Center);
         }
         const Rect u = updateArea();
         c.fillRoundRect(u.x, u.y + 4, u.w, u.h - 8, 14, 0xE6DCC6);

@@ -262,12 +262,14 @@ float Scene::voicePitch(Cue c) const {
         }
         default: return 1;
     }
+    // Never quite the same twice: a little up or down each time (a few percent either way).
+    const float vary = species_ == Species::Horse ? 0.94f + 0.12f * noise01(now_ / 3 + static_cast<uint32_t>(c) * 977) : 1.0f;
     switch (sim_.state().stage) {
-        case Stage::Baby: return 1.8f;    // a foal's squeaky little whinny: nearly an octave up
-        case Stage::Child: return 1.5f;
-        case Stage::Teen: return 1.22f;
-        case Stage::Elder: return 0.84f;  // lower and slower with age
-        default: return 1;
+        case Stage::Baby: return 1.8f * vary;    // a foal's squeaky little whinny: nearly an octave up
+        case Stage::Child: return 1.5f * vary;
+        case Stage::Teen: return 1.22f * vary;
+        case Stage::Elder: return 0.84f * vary;  // lower and slower with age
+        default: return vary;
     }
 }
 

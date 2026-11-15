@@ -82,6 +82,15 @@ esp_err_t guideGet(httpd_req_t* req) {
 
 esp_err_t redirect(httpd_req_t* req, httpd_err_code_t);
 
+// The captive-portal API (RFC 8908), whose address the hotspot hands out with DHCP option 114:
+// a phone that reads it is told plainly that there's a page to sign in on, and where.
+esp_err_t capportGet(httpd_req_t* req) {
+    ESP_LOGI(TAG, "phone asked the portal API: told it the setup page is at 192.168.4.1");
+    httpd_resp_set_type(req, "application/captive+json");
+    httpd_resp_set_hdr(req, "Cache-Control", "private");
+    return httpd_resp_sendstr(req, "{\"captive\": true, \"user-portal-url\": \"http://192.168.4.1/\"}");
+}
+
 esp_err_t pageGet(httpd_req_t* req) {
     // Asked for under some other name (a phone checking for internet, say www.google.com):
     // redirect, which is how a phone knows there's a page to sign in on and offers it.
@@ -286,7 +295,7 @@ void setupTask(void*) {
     esp_wifi_set_config(WIFI_IF_AP, &cfg);
     esp_wifi_start();
     {  // tell phones straight away there's a page to open (DHCP option 114, RFC 8910)
-        static char uri[] = "http://192.168.4.1/";
+        static char uri[] = "http://192.168.4.1/portal-api";
         esp_netif_dhcps_stop(ap);
         const esp_err_t e = esp_netif_dhcps_option(ap, ESP_NETIF_OP_SET, ESP_NETIF_CAPTIVEPORTAL_URI, uri, std::strlen(uri));
         esp_netif_dhcps_start(ap);
@@ -319,6 +328,8 @@ void setupTask(void*) {
         const httpd_uri_t save{"/save", HTTP_POST, saveposted, nullptr};
         httpd_register_uri_handler(server, &page);
         httpd_register_uri_handler(server, &save);
+        const httpd_uri_t capport{"/portal-api", HTTP_GET, capportGet, nullptr};
+        httpd_register_uri_handler(server, &capport);
 #if CONFIG_SQUATCH_PET_HORSE
         const httpd_uri_t guide{"/guide.pdf", HTTP_GET, guideGet, nullptr};
         httpd_register_uri_handler(server, &guide);

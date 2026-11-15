@@ -30,3 +30,6 @@ CONFIG_ESP_LCD_TOUCH_MAX_POINTS=2
 # their captive-portal checks), longer than the server's 512-byte default.
 CONFIG_HTTPD_MAX_REQ_HDR_LEN=2048
 CONFIG_HTTPD_MAX_URI_LEN=1024
+
+# Cloud backups: the Worker in cloud/ (see cloud/README.md).
+CONFIG_SQUATCH_CLOUD_URL="https://pocket-pony-saves.bluebeetlegames.workers.dev/v1/save/"

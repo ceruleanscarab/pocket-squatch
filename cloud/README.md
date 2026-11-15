@@ -21,20 +21,21 @@ npx wrangler login
 npx wrangler kv namespace create SAVES
 ```
 
-Copy the `id` it prints into `wrangler.toml` (replacing `PASTE-THE-KV-NAMESPACE-ID-HERE`), then
+Copy the `id` it prints into `wrangler.toml` (as `id = "..."`), then
 
 ```
 npx wrangler deploy
 ```
 
-It prints the Worker's address, like `https://pocket-squatch-saves.<you>.workers.dev`. Put
+It prints the Worker's address, like `https://pocket-pony-saves.<you>.workers.dev`. Put
 that, with `/v1/save/` on the end, in `firmware/sdkconfig.defaults` as
 
 ```
-CONFIG_SQUATCH_CLOUD_URL="https://pocket-squatch-saves.<you>.workers.dev/v1/save/"
+CONFIG_SQUATCH_CLOUD_URL="https://pocket-pony-saves.<you>.workers.dev/v1/save/"
 ```
 
-so every build has it, including the ones the boards update to by themselves.
+so every build has it, including the ones the boards update to by themselves. (Ours is
+`https://pocket-pony-saves.bluebeetlegames.workers.dev/v1/save/`, already set.)
 
 Check it: `curl -X PUT --data-binary @somefile https://.../v1/save/0123456789ABCDEF` says `saved`,
 and a GET of the same address gives the file back.

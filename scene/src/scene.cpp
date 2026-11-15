@@ -193,7 +193,7 @@ void Scene::setSettings(const Settings& s) {
 
 Scene::Rect Scene::glassesArea() const {
     if (species_ != Species::Horse) return {0, 0, 0, 0};
-    return {110, 380, 260, 64};
+    return {110, bigText_ ? 388 : 380, 260, 64};
 }
 
 // The pet's own voice (and body), as against the world's sounds and the buttons.
@@ -310,7 +310,7 @@ Scene::Rect Scene::nameKeyArea(int i) const {
 }
 Scene::Rect Scene::nameSuggestArea() const { return {kKeyX, kKeyY + 4 * kKeyH + 12, 216, 68}; }
 Scene::Rect Scene::nameDoneArea() const { return {kKeyX + kKeyCols * kKeyW - 216, kKeyY + 4 * kKeyH + 12, 216, 68}; }
-Scene::Rect Scene::nameEditArea() const { return {40, 76, 400, 64}; }
+Scene::Rect Scene::nameEditArea() const { return bigText_ ? Rect{40, 52, 400, 64} : Rect{40, 76, 400, 64}; }
 
 void Scene::openNaming() {
     std::snprintf(nameDraft_, sizeof nameDraft_, "%.10s", sim_.state().name);
@@ -393,9 +393,9 @@ int Scene::takeWifiRequest() {
     wifiRequest_ = 0;
     return r;
 }
-Scene::Rect Scene::startKeepArea() const { return {48, 196, 384, 68}; }
-Scene::Rect Scene::startWipeArea() const { return {48, 276, 384, 68}; }
-Scene::Rect Scene::startCancelArea() const { return {48, 356, 384, 68}; }
+Scene::Rect Scene::startKeepArea() const { return bigText_ ? Rect{48, 176, 384, 76} : Rect{48, 196, 384, 68}; }
+Scene::Rect Scene::startWipeArea() const { return bigText_ ? Rect{48, 260, 384, 68} : Rect{48, 276, 384, 68}; }
+Scene::Rect Scene::startCancelArea() const { return bigText_ ? Rect{48, 336, 384, 68} : Rect{48, 356, 384, 68}; }
 
 void Scene::startOver(bool keepCollection) {
     sim_.startOver(keepCollection);
@@ -2055,6 +2055,80 @@ void Scene::horseChatter() {
     sayFresh(kAnyTime, static_cast<int>(sizeof kAnyTime / sizeof kAnyTime[0]));
 }
 
+// ---- lettering
+
+namespace {
+// Splits text at spaces into lines no wider than maxW at this scale; a word too long for a
+// line gets one to itself. Returns the count.
+int wrapText(const char* text, int scale, float maxW, char out[][64], int maxLines) {
+    int n = 0;
+    char cur[64] = {};
+    const char* p = text;
+    while (*p) {
+        while (*p == ' ') p++;
+        if (!*p) break;
+        const char* e = p;
+        while (*e && *e != ' ') e++;
+        char word[64];
+        std::snprintf(word, sizeof word, "%.*s", static_cast<int>(e - p), p);
+        char tryLine[128];
+        std::snprintf(tryLine, sizeof tryLine, "%s%s%s", cur, cur[0] ? " " : "", word);
+        if (!cur[0] || Canvas::textWidth(tryLine, scale) <= maxW) {
+            std::snprintf(cur, sizeof cur, "%s", tryLine);
+        } else {
+            if (n < maxLines) std::snprintf(out[n], 64, "%s", cur);
+            n++;
+            std::snprintf(cur, sizeof cur, "%s", word);
+        }
+        p = e;
+    }
+    if (cur[0]) {
+        if (n < maxLines) std::snprintf(out[n], 64, "%s", cur);
+        n++;
+    }
+    return std::min(n, maxLines);
+}
+}  // namespace
+
+int Scene::lines(const char* text, int scale, float maxW) const {
+    char buf[8][64];
+    return wrapText(text, ts(scale), maxW, buf, 8);
+}
+
+float Scene::para(Canvas& c, float cx, float y, const char* text, int scale, Rgb col, float maxW, float a) const {
+    char buf[8][64];
+    const int s = ts(scale), n = wrapText(text, s, maxW, buf, 8);
+    for (int i = 0; i < n; i++) {
+        c.text(cx, y, buf[i], s, col, Align::Center, a);
+        y += lineStep(s);
+    }
+    return y;
+}
+
+void Scene::label(Canvas& c, const Rect& r, const char* text, int scale, Rgb col, float a) const {
+    const float maxW = r.w - 10.0f;
+    for (int s = ts(scale); s >= 1; s--) {
+        char buf[2][64];
+        char all[8][64];
+        const int n = wrapText(text, s, maxW, all, 8);
+        if (n == 1) {
+            c.text(r.cx(), r.cy() - Canvas::textHeight(s) / 2.0f, text, s, col, Align::Center, a);
+            return;
+        }
+        const float h = Canvas::textHeight(s) * 2 + 2.0f * s + 2;
+        if (n == 2 && h <= r.h - 12) {
+            std::snprintf(buf[0], 64, "%s", all[0]);
+            std::snprintf(buf[1], 64, "%s", all[1]);
+            const float y = r.cy() - h / 2;
+            c.text(r.cx(), y, buf[0], s, col, Align::Center, a);
+            c.text(r.cx(), y + h - Canvas::textHeight(s), buf[1], s, col, Align::Center, a);
+            return;
+        }
+        if (s == 1) c.text(r.cx(), r.cy() - Canvas::textHeight(s) / 2.0f, text, s, col, Align::Center, a);
+    }
+}
+
+
 void Scene::drawBubble(Canvas& c) {
     const char* text = bubble();
     if (!text) return;
@@ -2064,7 +2138,12 @@ void Scene::drawBubble(Canvas& c) {
         ax = kHideX + 10;
         ay = kHideY - 30;
     }
-    const float w = static_cast<float>(Canvas::textWidth(text, 2)) + 24, h = 30;
+    const int ls = ts(2);
+    char wrapped[3][64];
+    const int n = wrapText(text, ls, 420, wrapped, 3);
+    float tw = 0;
+    for (int i = 0; i < n; i++) tw = std::max(tw, static_cast<float>(Canvas::textWidth(wrapped[i], ls)));
+    const float w = tw + 24, h = 16 + Canvas::textHeight(ls) + (n - 1) * lineStep(ls);
     float bx = std::max(8.0f, std::min(static_cast<float>(S) - 8 - w, ax - w / 2));
     float by = std::max(46.0f, ay - 12 - h);
     // Fades out at the end.
@@ -2072,7 +2151,7 @@ void Scene::drawBubble(Canvas& c) {
     const float a = std::min(1.0f, left / 250.0f);
     c.fillTriangle(ax - 8, by + h - 2, ax + 8, by + h - 2, ax + (ax < 240 ? 6.0f : -6.0f), std::max(by + h + 2, ay), 0xFFF8EC, a);
     c.fillRoundRect(bx, by, w, h, 14, 0xFFF8EC, a);
-    c.text(bx + w / 2, by + 8, text, 2, 0x2B2118, Align::Center, a);
+    for (int i = 0; i < n; i++) c.text(bx + w / 2, by + 8 + i * lineStep(ls), wrapped[i], ls, 0x2B2118, Align::Center, a);
 }
 
 // ================================================================ animation
@@ -4439,9 +4518,14 @@ void Scene::drawBattery(Canvas& c, float x, float y) {
 void Scene::drawToast(Canvas& c) {
     const char* t = toast();
     if (!t) return;
-    float w = static_cast<float>(Canvas::textWidth(t, 2)) + 28;
-    c.fillRoundRect(240 - w / 2, 50, w, 32, 16, kUiDark, 0.8f);
-    c.text(240, 59, t, 2, kUiLight, Align::Center);
+    const int ls = ts(2);
+    char wrapped[3][64];
+    const int n = wrapText(t, ls, 440, wrapped, 3);
+    float tw = 0;
+    for (int i = 0; i < n; i++) tw = std::max(tw, static_cast<float>(Canvas::textWidth(wrapped[i], ls)));
+    const float w = tw + 28, h = 18 + Canvas::textHeight(ls) + (n - 1) * lineStep(ls);
+    c.fillRoundRect(240 - w / 2, 50, w, h, 16, kUiDark, 0.8f);
+    for (int i = 0; i < n; i++) c.text(240, 59 + i * lineStep(ls), wrapped[i], ls, kUiLight, Align::Center);
 }
 
 void Scene::drawTray(Canvas& c) {
@@ -4477,7 +4561,7 @@ void Scene::drawTray(Canvas& c) {
 
 // ---- the boarding stable
 
-Scene::Rect Scene::homeArea() const { return {S / 2 - 110, 262, 220, 64}; }
+Scene::Rect Scene::homeArea() const { return {S / 2 - 110, bigText_ ? 300 : 262, 220, 64}; }
 
 void Scene::toggleBoarding() {
     const State& s = sim_.state();
@@ -4511,12 +4595,21 @@ void Scene::drawBoarding(Canvas& c) {
     const char* name = sim_.state().name[0] ? sim_.state().name : (horse ? "YOUR PONY" : "YOUR BIGFOOT");
     char line[48];
     std::snprintf(line, sizeof line, horse ? "%s IS AT THE STABLE" : "%s IS WITH THE SITTER", name);
+    Rect b = homeArea();
+    if (bigText_) {
+        c.fillRoundRect(40, 120, 400, 264, 18, kUiDark, 0.82f);
+        float y = para(c, 240, 138, line, 2, kUiLight, 380);
+        y = para(c, 240, y + 8, "ALL LOOKED AFTER.", 2, 0xCFC7B5, 380);
+        para(c, 240, y, "IT WILL WAIT FOR YOU.", 2, 0xCFC7B5, 380);
+        c.fillRoundRect(b.x, b.y, b.w, b.h, 14, kGold);
+        label(c, b, "BRING HOME", 2, kUiDark);
+        return;
+    }
     int scale = Canvas::textWidth(line, 2) <= 380 ? 2 : 1;
     c.fillRoundRect(40, 150, 400, 190, 18, kUiDark, 0.82f);
     c.text(240, 172, line, scale, kUiLight, Align::Center);
     c.text(240, 202, "ALL LOOKED AFTER.", 2, 0xCFC7B5, Align::Center);
     c.text(240, 228, "IT WILL WAIT FOR YOU.", 2, 0xCFC7B5, Align::Center);
-    Rect b = homeArea();
     c.fillRoundRect(b.x, b.y, b.w, b.h, 14, kGold);
     c.text(240, b.y + b.h / 2.0f - Canvas::textHeight(2) / 2.0f, "BRING HOME", 2, kUiDark, Align::Center);
 }
@@ -4527,10 +4620,10 @@ void Scene::drawForagingBanner(Canvas& c) {
     landmarkName(s.forageHash, name, sizeof name);
     int mins = static_cast<int>((sim_.forageSecsLeft() + 59) / 60);
     std::snprintf(buf, sizeof buf, "%s - %d MIN", name, std::max(1, mins));
-    int scale = Canvas::textWidth(buf, 2) <= 440 ? 2 : 1;
-    float w = static_cast<float>(Canvas::textWidth(buf, scale)) + 24;
-    c.fillRoundRect(240 - w / 2, 88, w, 26, 13, kUiDark, 0.7f);
-    c.text(240, 101 - Canvas::textHeight(scale) / 2.0f, buf, scale, kUiLight, Align::Center);
+    int scale = Canvas::textWidth(buf, ts(2)) <= 440 ? ts(2) : Canvas::textWidth(buf, 2) <= 440 ? 2 : 1;
+    float w = static_cast<float>(Canvas::textWidth(buf, scale)) + 24, h = scale >= 3 ? 34.0f : 26.0f;
+    c.fillRoundRect(240 - w / 2, 88, w, h, h / 2, kUiDark, 0.7f);
+    c.text(240, 88 + h / 2 - Canvas::textHeight(scale) / 2.0f, buf, scale, kUiLight, Align::Center);
 }
 
 void Scene::drawLandmarkIcon(Canvas& c, LandmarkKind k, float x, float y, float z) {
@@ -4582,7 +4675,7 @@ void Scene::drawTrails(Canvas& c) {
     const Rgb ink = 0x3B2A1E, faint = 0x8A7A66;
     c.tint(0x000000, 0.55f);
     c.fillRoundRect(kMapX, kMapY, kMapW, kMapH, 20, kUiLight);
-    c.text(240, kMapY + 10, "TRAIL MAP", 2, ink, Align::Center);
+    c.text(240, bigText_ ? kMapY + 8.0f : kMapY + 10.0f, "TRAIL MAP", ts(2), ink, Align::Center);
 
     for (int i = 0; i < s.trailCount; i++) {
         const Trail& tr = s.trails[i];
@@ -4592,27 +4685,35 @@ void Scene::drawTrails(Canvas& c) {
         drawLandmarkIcon(c, landmarkKind(tr.hash), r.x + 34.0f, r.cy(), 0.95f);
         char name[24];
         landmarkName(tr.hash, name, sizeof name);
-        c.text(r.x + 68, r.y + 14, name, 2, ink);
         char sub[32];
-        std::snprintf(sub, sizeof sub, "%s%s", toString(trailDistance(tr.rssi)), out ? "  - IT'S HERE NOW" : "");
-        c.text(r.x + 68, r.y + 36, sub, 2, faint);
-        if (!sim_.trailVisited(tr.hash)) {  // a place it's never been
-            c.fillRoundRect(r.x + r.w - 64, r.y + 20, 52, 24, 12, kGold);
-            c.text(r.x + r.w - 38.0f, r.y + 25, "NEW", 2, ink, Align::Center);
+        std::snprintf(sub, sizeof sub, "%s%s", toString(trailDistance(tr.rssi)), out ? (bigText_ ? " - HERE NOW" : "  - IT'S HERE NOW") : "");
+        const bool isNew = !sim_.trailVisited(tr.hash);  // a place it's never been
+        if (bigText_) {
+            const float room = r.w - 68.0f - (isNew ? 82.0f : 12.0f);
+            c.text(r.x + 68, r.y + 11, name, Canvas::textWidth(name, 3) <= room ? 3 : 2, ink);
+            c.text(r.x + 68, r.y + 37, sub, 2, faint);
+        } else {
+            c.text(r.x + 68, r.y + 14, name, 2, ink);
+            c.text(r.x + 68, r.y + 36, sub, 2, faint);
+        }
+        if (isNew) {
+            const float bw = bigText_ ? 70.0f : 52.0f, bh = bigText_ ? 32.0f : 24.0f;
+            c.fillRoundRect(r.x + r.w - 12 - bw, r.cy() - bh / 2, bw, bh, bh / 2, kGold);
+            c.text(r.x + r.w - 12 - bw / 2, r.cy() - Canvas::textHeight(ts(2)) / 2.0f, "NEW", ts(2), ink, Align::Center);
         }
     }
     if (s.trailCount == 0) {
-        c.text(240, kRowY + 60, scanning_ ? "LISTENING..." : "NO TRAILS YET", 2, faint, Align::Center);
-        c.text(240, kRowY + 90, "NEARBY WI-FI BECOMES PLACES TO EXPLORE", 1, faint, Align::Center);
+        c.text(240, kRowY + 60, scanning_ ? "LISTENING..." : "NO TRAILS YET", ts(2), faint, Align::Center);
+        para(c, 240, bigText_ ? kRowY + 96 : kRowY + 90, "NEARBY WI-FI BECOMES PLACES TO EXPLORE", 1, faint, bigText_ ? 300 : 440);
     }
 
     if (trailNote_[0]) {  // under the title, above the rows
         int scale = Canvas::textWidth(trailNote_, 2) <= kMapW - 24 ? 2 : 1;
-        c.text(240, kMapY + 30.0f, trailNote_, scale, 0x5E8A3C, Align::Center);
+        c.text(240, bigText_ ? kMapY + 34.0f : kMapY + 30.0f, trailNote_, scale, 0x5E8A3C, Align::Center);
     }
     Rect b = rescanArea();
     c.fillRoundRect(b.x, b.y + 4, b.w, b.h - 8, 14, scanning_ ? 0xB8AE9A : kButton);
-    c.text(b.cx(), b.cy() - 7.0f, scanning_ ? "LISTENING..." : "LOOK AGAIN", 2, kUiLight, Align::Center);
+    label(c, {b.x, b.y + 4, b.w, b.h - 8}, scanning_ ? "LISTENING..." : "LOOK AGAIN", 2, kUiLight);
 }
 
 // ================================================================ games
@@ -4628,6 +4729,11 @@ constexpr const char* kHorseGameNames[5] = {"HIDE AND SEEK", "APPLE CATCH", "GRO
 constexpr const char* kHorseGameHints[5] = {"FIND WHERE IT HID: THREE GUESSES", "CATCH 10 FALLING APPLES",
                                             "BRUSH, HOOVES, MANE AND A RIBBON", "SNAP IT AS IT GALLOPS PAST",
                                             "NO RUSHING: A GAME OF CATCH"};
+// Shorter, for big text.
+constexpr const char* kHorseGameHintsShort[5] = {"THREE GUESSES TO FIND IT", "CATCH 10 FALLING APPLES",
+                                                 "BRUSH, HOOVES, MANE, RIBBON", "SNAP IT GALLOPING PAST", "NO RUSHING, JUST CATCH"};
+constexpr const char* kGameHintsShort[Scene::kGameChoices] = {"THREE GUESSES TO FIND IT", "CATCH 10 FALLING BERRIES",
+                                                              "SNAP IT AS IT RUNS PAST", "NO RUSHING, JUST CATCH"};
 // Grooming: the horse stands big in the middle; the hoof close-up and ribbon box sit on a card.
 constexpr float kHoofX = 240, kHoofY = 268;  // the hoof close-up's centre
 constexpr float kPebbleXY[4][Scene::kPebbles][2] = {{{-34, -18}, {30, 22}}, {{28, -26}, {-30, 20}},
@@ -4832,7 +4938,8 @@ void Scene::drawGroom(Canvas& c) {
         }
     } else if (groomStep_ == GroomStep::Hooves) {  // a close-up of the hoof, from underneath
         c.fillRoundRect(110, 150, 260, 236, 22, kUiLight, 0.96f);
-        c.text(240, 162, kHoofNames[hoof_ < 4 ? hoof_ : 3], 2, 0x3B2A1E, Align::Center);
+        const char* hn = kHoofNames[hoof_ < 4 ? hoof_ : 3];
+        c.text(240, 162, hn, Canvas::textWidth(hn, ts(2)) <= 248 ? ts(2) : 2, 0x3B2A1E, Align::Center);
         const float x = kHoofX, y = kHoofY;
         c.fillEllipse(x, y + 4, 70, 76, 0x4A3A30);   // the hoof wall
         c.fillEllipse(x, y + 4, 60, 66, 0x9C8468);   // the sole
@@ -4851,7 +4958,7 @@ void Scene::drawGroom(Canvas& c) {
         }
     } else {  // choose a ribbon
         c.fillRoundRect(48, 196, 384, 150, 22, kUiLight, 0.96f);
-        c.text(240, 210, "PICK A RIBBON", 2, 0x3B2A1E, Align::Center);
+        c.text(240, bigText_ ? 206 : 210, "PICK A RIBBON", ts(2), 0x3B2A1E, Align::Center);
         for (int i = 0; i < kRibbons; i++) {
             const Rect r = ribbonArea(i);
             c.fillRoundRect(r.x + 4, r.y + 4, r.w - 8, r.h - 8, 14, 0xE6DCC6);
@@ -5052,15 +5159,22 @@ void Scene::drawGamePicker(Canvas& c) {
     const Rgb ink = 0x3B2A1E, faint = 0x8A7A66;
     c.tint(0x000000, 0.55f);
     const bool horse = species_ == Species::Horse;
-    c.fillRoundRect(40, 56, 400, 380, 20, kUiLight);
-    c.text(240, 76, "LET'S PLAY!", 3, ink, Align::Center);
+    c.fillRoundRect(40, bigText_ ? 50 : 56, 400, bigText_ ? 400 : 380, 20, kUiLight);
+    c.text(240, bigText_ ? 66 : 76, "LET'S PLAY!", 3, ink, Align::Center);
     for (int i = 0; i < gameChoiceCount(); i++) {
         Rect r = gameChoiceArea(i);
         c.fillRoundRect(r.x, r.y + 3, r.w, r.h - 6, 14, i == gameChoiceCount() - 1 ? 0xD9CFBC : 0xE6DCC6);
-        c.text(r.cx(), r.y + (horse ? 12.0f : 14.0f), horse ? kHorseGameNames[i] : kGameNames[i], 2, ink, Align::Center);
+        const char* name = horse ? kHorseGameNames[i] : kGameNames[i];
+        if (bigText_) {
+            c.text(r.cx(), r.y + 10.0f, name, 3, ink, Align::Center);
+            c.text(r.cx(), r.y + 38.0f, horse ? kHorseGameHintsShort[i] : kGameHintsShort[i], 2, faint, Align::Center);
+            continue;
+        }
+        c.text(r.cx(), r.y + (horse ? 12.0f : 14.0f), name, 2, ink, Align::Center);
         c.text(r.cx(), r.y + (horse ? 37.0f : 40.0f), horse ? kHorseGameHints[i] : kGameHints[i], 1, faint, Align::Center);
     }
-    c.text(240, horse ? 424.0f : 412.0f, "TAP OUTSIDE TO CLOSE", 1, faint, Align::Center);
+    if (bigText_) c.text(240, horse ? 426.0f : 422.0f, "TAP OUTSIDE TO CLOSE", 2, faint, Align::Center);
+    else c.text(240, horse ? 424.0f : 412.0f, "TAP OUTSIDE TO CLOSE", 1, faint, Align::Center);
 }
 
 void Scene::drawGame(Canvas& c) {
@@ -5125,11 +5239,11 @@ void Scene::drawGame(Canvas& c) {
     const char* title = game_ == Game::Groom ? "GROOMING"
                       : species_ == Species::Horse && game_ == Game::Berry ? "APPLE CATCH"
                       : kGameNames[game_ == Game::Seek ? 0 : game_ == Game::Berry ? 1 : 2];
-    c.text(16, 12, title, 2, kGold);
-    c.text(16, 38, status, 2, kUiLight);
+    c.text(16, bigText_ ? 8 : 12, title, ts(2), kGold);
+    c.text(16, bigText_ ? 36 : 38, status, Canvas::textWidth(status, ts(2)) <= S - 136 ? ts(2) : 2, kUiLight);
     Rect q = gameQuitArea();
     c.fillRoundRect(q.x + 8, q.y + 10, q.w - 16, q.h - 20, 12, kButton);
-    c.text(q.cx(), q.cy() - 7.0f, "QUIT", 2, kUiLight, Align::Center);
+    label(c, {q.x + 8, q.y + 10, q.w - 16, q.h - 20}, "QUIT", 2, kUiLight);
 
     const char* msg = gameMsg_[0] ? gameMsg_ : nullptr;
     if (!msg && !gameOver_) {
@@ -5143,10 +5257,16 @@ void Scene::drawGame(Canvas& c) {
         if (game_ == Game::Photo) msg = running_ ? nullptr : "WAIT FOR IT...";
     }
     if (msg) {
-        const int scale = gameOver_ ? 3 : 2;
-        const float w = static_cast<float>(Canvas::textWidth(msg, scale)) + 32;
-        c.fillRoundRect(240 - w / 2, 80, w, gameOver_ ? 44 : 32, 16, kUiDark, 0.85f);
-        c.text(240, gameOver_ ? 91.0f : 89.0f, msg, scale, gameOver_ && gameWon_ ? kGold : kUiLight, Align::Center);
+        const int scale = gameOver_ ? 3 : ts(2);
+        char wrapped[3][64];
+        const int n = wrapText(msg, scale, 430, wrapped, 3);
+        float tw = 0;
+        for (int i = 0; i < n; i++) tw = std::max(tw, static_cast<float>(Canvas::textWidth(wrapped[i], scale)));
+        const float w = tw + 32, pad = gameOver_ ? 11.0f : scale >= 3 ? 8.0f : 9.0f;
+        const float h = 2 * pad + Canvas::textHeight(scale) + (n - 1) * lineStep(scale);
+        c.fillRoundRect(240 - w / 2, 80, w, h, 16, kUiDark, 0.85f);
+        for (int i = 0; i < n; i++)
+            c.text(240, 80 + pad + i * lineStep(scale), wrapped[i], scale, gameOver_ && gameWon_ ? kGold : kUiLight, Align::Center);
     }
 }
 
@@ -5154,7 +5274,7 @@ void Scene::drawNaming(Canvas& c) {
     const Rgb ink = 0x3B2A1E, faint = 0x8A7A66, key = 0xE6DCC6;
     c.tint(0x000000, 0.55f);
     c.fillRoundRect(8, 10, 464, 460, 20, kUiLight);
-    c.text(240, 22, "WHAT'S ITS NAME?", 2, ink, Align::Center);
+    c.text(240, bigText_ ? 19 : 22, "WHAT'S ITS NAME?", ts(2), ink, Align::Center);
 
     // the name so far, with a blinking cursor
     c.fillRoundRect(40, 46, 400, 60, 12, 0xFFFFFF, 0.6f);
@@ -5184,11 +5304,11 @@ void Scene::drawNaming(Canvas& c) {
     }
     Rect s = nameSuggestArea(), d = nameDoneArea();
     c.fillRoundRect(s.x + 3, s.y + 4, s.w - 6, s.h - 8, 14, 0x6E8F5A);
-    c.text(s.cx(), s.cy() - 7.0f, "SUGGEST", 2, kUiLight, Align::Center);
+    label(c, {s.x + 3, s.y + 4, s.w - 6, s.h - 8}, "SUGGEST", 2, kUiLight);
     bool ready = false;
     for (size_t i = 0; i < len; i++) ready |= nameDraft_[i] != ' ';
     c.fillRoundRect(d.x + 3, d.y + 4, d.w - 6, d.h - 8, 14, ready ? kButton : 0xB8AE9A);
-    c.text(d.cx(), d.cy() - 7.0f, "DONE", 2, kUiLight, Align::Center);
+    label(c, {d.x + 3, d.y + 4, d.w - 6, d.h - 8}, "DONE", 2, kUiLight);
     (void)faint;
 }
 
@@ -5196,10 +5316,24 @@ void Scene::drawStartOver(Canvas& c) {
     const Rgb ink = 0x3B2A1E, faint = 0x8A7A66;
     c.tint(0x000000, 0.6f);
     c.fillRoundRect(24, 40, 432, 400, 20, kUiLight);
-    c.text(240, 62, "START OVER?", 3, 0x7A2E1E, Align::Center);
+    c.text(240, bigText_ ? 54 : 62, "START OVER?", 3, 0x7A2E1E, Align::Center);
     const char* name = sim_.state().name[0] ? sim_.state().name : "THIS PET";
     char line[48];
     std::snprintf(line, sizeof line, "%.10s WILL BE GONE FOR GOOD,", name);
+    if (bigText_) {
+        char all[96];
+        std::snprintf(all, sizeof all, "%s %s", line, species_ == Species::Horse ? "AND A NEW FOAL WILL COME." : "AND A NEW EGG WILL BE LAID.");
+        para(c, 240, 86, all, 2, ink, 400);
+        Rect k = startKeepArea(), w = startWipeArea(), x = startCancelArea();
+        c.fillRoundRect(k.x, k.y + 3, k.w, k.h - 6, 14, kButton);
+        label(c, {k.x, k.y + 3, k.w, k.h - 6}, species_ == Species::Horse ? "NEW FOAL, KEEP PHOTOS" : "NEW EGG, KEEP PHOTOS", 2, kUiLight);
+        c.fillRoundRect(w.x, w.y + 3, w.w, w.h - 6, 14, 0x8A3A2A);
+        label(c, {w.x, w.y + 3, w.w, w.h - 6}, species_ == Species::Horse ? "NEW FOAL, WIPE EVERYTHING" : "NEW EGG, WIPE EVERYTHING", 2, kUiLight);
+        c.fillRoundRect(x.x, x.y + 3, x.w, x.h - 6, 14, 0xD9CFBC);
+        label(c, {x.x, x.y + 3, x.w, x.h - 6}, "CANCEL", 2, ink);
+        c.text(240, 416, "SETTINGS AND WI-FI STAY", 2, faint, Align::Center);
+        return;
+    }
     c.text(240, 112, line, 2, ink, Align::Center);
     c.text(240, 136, species_ == Species::Horse ? "AND A NEW FOAL WILL COME." : "AND A NEW EGG WILL BE LAID.", 2, ink, Align::Center);
     c.text(240, 166, "SETTINGS AND WI-FI STAY AS THEY ARE.", 1, faint, Align::Center);
@@ -5218,12 +5352,12 @@ void Scene::drawSettings(Canvas& c) {
     const Rgb ink = 0x3B2A1E, faint = 0x8A7A66, off = 0xD9CFBC;
     c.tint(0x000000, 0.55f);
     c.fillRoundRect(kSetX, kSetY, kSetW, kSetH, 20, kUiLight);
-    c.text(240, kSetY + 12, "SETTINGS", 2, ink, Align::Center);
+    c.text(240, bigText_ ? kSetY + 8 : kSetY + 12, "SETTINGS", ts(2), ink, Align::Center);
 
     const char* labels[kSettingRows] = {"BRIGHTNESS", "SCREEN OFF AFTER", "VOLUME"};
     for (int row = 0; row < kSettingRows; row++) {
         const int y = kSetRowY[row];
-        c.text(240, y - 24.0f, labels[row], 2, faint, Align::Center);
+        c.text(240, bigText_ ? y - 26.0f : y - 24.0f, labels[row], ts(2), faint, Align::Center);
         const int value = row == 0 ? settings_.brightness : row == 1 ? settings_.timeout : settings_.volume;
         const int top = (row == 0 ? kBrightnessSteps : row == 1 ? kTimeoutSteps : kVolumeSteps) - 1;
         for (int plus = 0; plus < 2; plus++) {
@@ -5248,14 +5382,14 @@ void Scene::drawSettings(Canvas& c) {
 
     Rect o = startOverArea(), d = settingsDoneArea();
     c.fillRoundRect(o.x, o.y + 4, o.w, o.h - 8, 14, 0xD9CFBC);
-    c.text(o.cx(), o.cy() - 7.0f, "START OVER", 2, 0x7A2E1E, Align::Center);
+    label(c, {o.x, o.y + 4, o.w, o.h - 8}, "START OVER", 2, 0x7A2E1E);
     if (wifiAvailable_) {
         Rect w = wifiButtonArea();
         c.fillRoundRect(w.x, w.y + 4, w.w, w.h - 8, 14, 0x6E8F5A);
-        c.text(w.cx(), w.cy() - 7.0f, "WI-FI", 2, kUiLight, Align::Center);
+        label(c, {w.x, w.y + 4, w.w, w.h - 8}, "WI-FI", 2, kUiLight);
     }
     c.fillRoundRect(d.x, d.y + 4, d.w, d.h - 8, 14, kButton);
-    c.text(d.cx(), d.cy() - 7.0f, "DONE", 2, kUiLight, Align::Center);
+    label(c, {d.x, d.y + 4, d.w, d.h - 8}, "DONE", 2, kUiLight);
 }
 
 // The Wi-Fi page: what's saved, and the steps while the setup hotspot is up.
@@ -5264,7 +5398,11 @@ void Scene::drawWifi(Canvas& c) {
     c.tint(0x000000, 0.55f);
     c.fillRoundRect(kSetX, kSetY, kSetW, kSetH, 20, kUiLight);
     c.text(240, kSetY + 12, "WI-FI", 3, ink, Align::Center);
-    c.text(240, kSetY + 46, "FOR THE CLOCK AND THE WEATHER", 2, faint, Align::Center);
+    c.text(240, kSetY + (bigText_ ? 42 : 46), "FOR THE CLOCK AND THE WEATHER", 2, faint, Align::Center);
+    if (bigText_) {
+        drawWifiBig(c);
+        return;
+    }
     float y = kSetY + 84;
     auto line = [&](const char* text, int scale, Rgb col) {
         c.text(240, y, text, scale, col, Align::Center);
@@ -5349,6 +5487,85 @@ void Scene::drawWifi(Canvas& c) {
            running ? 0x7A2E1E : kUiLight, Align::Center);
     c.fillRoundRect(d.x, d.y + 4, d.w, d.h - 8, 14, kButton);
     c.text(d.cx(), d.cy() - 7.0f, "DONE", 2, kUiLight, Align::Center);
+}
+
+// The Wi-Fi page with big text: the same things, wrapped, with short labels above their values.
+void Scene::drawWifiBig(Canvas& c) {
+    const Rgb ink = 0x3B2A1E, faint = 0x8A7A66, good = 0x3F7A3A, bad = 0x8A3A2A;
+    const float w = kSetW - 40.0f;
+    float y = kSetY + 70;
+    auto small = [&](const char* text, Rgb col) {  // a label
+        c.text(240, y, text, 2, col, Align::Center);
+        y += 20;
+    };
+    switch (wifiStatus_) {
+        case WifiStatus::NotSet:
+            y = para(c, 240, y + 6, "NOT SET UP YET", 2, ink, w) + 10;
+            para(c, 240, y, "TAP SET UP, THEN USE A PHONE TO PICK YOUR NETWORK", 2, faint, w);
+            break;
+        case WifiStatus::Saved:
+        case WifiStatus::Joined:
+            small("NETWORK:", faint);
+            y = para(c, 240, y, wifiSsid_, 2, ink, w);
+            y = para(c, 240, y, wifiStatus_ == WifiStatus::Joined ? "CONNECTED" : "SAVED", 2, good, w);
+            if (wifiTown_[0]) {
+                y += 4;
+                small("TOWN:", faint);
+                const Rgb col = std::strcmp(wifiTown_, "TOWN NOT FOUND") == 0 ? bad : ink;
+                c.text(240, y, wifiTown_, Canvas::textWidth(wifiTown_, 3) <= w ? 3 : 2, col, Align::Center);
+            }
+            break;
+        case WifiStatus::SetupRunning:
+            y = para(c, 240, y + 4, "1. ON A PHONE, JOIN", 2, ink, w);
+            y = para(c, 240, y, wifiHotspot_, 2, 0x7A4E1E, w) + 8;
+            y = para(c, 240, y, "2. A PAGE OPENS. IF NOT, GO TO 192.168.4.1", 2, ink, w) + 8;
+            para(c, 240, y, "3. PICK YOUR NETWORK AND TYPE ITS PASSWORD", 2, ink, w);
+            break;
+        case WifiStatus::Checking:
+            y = para(c, 240, y + 6, "CHECKING...", 2, ink, w);
+            para(c, 240, y, wifiSsid_, 2, ink, w);
+            break;
+        case WifiStatus::Failed:
+            y = para(c, 240, y + 6, "COULDN'T JOIN", 2, bad, w);
+            y = para(c, 240, y, wifiSsid_, 2, ink, w) + 8;
+            para(c, 240, y, "CHECK THE PASSWORD AND TAP SET UP TO TRY AGAIN", 2, faint, w);
+            break;
+    }
+    if (updateShown()) {  // the backup code, then the version row (the steps don't leave room for them)
+        if (backupCode_[0]) {
+            c.text(240, kSetY + kSetH - 204.0f, "BACKUP CODE", 2, faint, Align::Center);
+            c.text(240, kSetY + kSetH - 185.0f, backupCode_, 3, ink, Align::Center);
+        }
+        const Rect u = updateArea();
+        c.fillRoundRect(u.x, u.y + 4, u.w, u.h - 8, 14, 0xE6DCC6);
+        char top[40];
+        const char* sub = "TAP TO CHECK FOR AN UPDATE";
+        std::snprintf(top, sizeof top, updateBuild_ ? "VERSION %d" : "YOUR OWN BUILD", updateBuild_);
+        switch (updateStatus_) {
+            case UpdateStatus::Checking: sub = "LOOKING FOR AN UPDATE..."; break;
+            case UpdateStatus::UpToDate: sub = "UP TO DATE"; break;
+            case UpdateStatus::Downloading:
+                std::snprintf(top, sizeof top, "UPDATING... %d%%", updatePercent_);
+                sub = "";
+                break;
+            case UpdateStatus::Failed: sub = "COULDN'T UPDATE. TAP AGAIN"; break;
+            case UpdateStatus::Restarting: sub = "UPDATED! RESTARTING"; break;
+            default: break;
+        }
+        c.text(u.cx(), u.y + 12, top, 3, ink, Align::Center);
+        if (sub[0]) c.text(u.cx(), u.y + 40, sub, 2, updateStatus_ == UpdateStatus::Failed ? bad : faint, Align::Center);
+        if (updateStatus_ == UpdateStatus::Downloading) {
+            c.fillRoundRect(u.x + 40, u.y + 42, u.w - 80, 10, 5, 0xCFC4AE);
+            c.fillRoundRect(u.x + 40, u.y + 42, (u.w - 80) * updatePercent_ / 100.0f, 10, 5, good);
+        }
+    }
+    const bool running = wifiStatus_ == WifiStatus::SetupRunning, checking = wifiStatus_ == WifiStatus::Checking;
+    Rect a = wifiSetupArea(), d = wifiDoneArea();
+    c.fillRoundRect(a.x, a.y + 4, a.w, a.h - 8, 14, checking ? 0xB8AE9A : running ? 0xD9CFBC : 0x6E8F5A);
+    label(c, {a.x, a.y + 4, a.w, a.h - 8}, running ? "CANCEL" : wifiStatus_ == WifiStatus::NotSet ? "SET UP" : "SET UP AGAIN", 2,
+          running ? 0x7A2E1E : kUiLight);
+    c.fillRoundRect(d.x, d.y + 4, d.w, d.h - 8, 14, kButton);
+    label(c, {d.x, d.y + 4, d.w, d.h - 8}, "DONE", 2, kUiLight);
 }
 
 void Scene::drawSlotIcon(Canvas& c, Slot s, float x, float y) {
@@ -5577,11 +5794,17 @@ void Scene::drawStats(Canvas& c) {
     const State& s = sim_.state();
     c.tint(0x000000, 0.55f);
     const bool glassesButton = glassesArea().w > 0 && s.stage != Stage::Egg;
-    c.fillRoundRect(40, 76, 400, glassesButton ? 384 : 312, 20, kUiLight);
     const Rgb ink = 0x3B2A1E;
     const char* name = s.name[0] ? s.name : "NO NAME YET";
-    c.text(240, 92, name, Canvas::textWidth(name, 3) <= 380 ? 3 : 2, ink, Align::Center);
-    if (s.stage != Stage::Egg) c.text(240, 118, "TAP THE NAME TO CHANGE IT", 1, 0x8A7A66, Align::Center);
+    if (bigText_) {
+        c.fillRoundRect(40, 52, 400, glassesButton ? 420 : 380, 20, kUiLight);
+        c.text(240, 64, name, Canvas::textWidth(name, 3) <= 380 ? 3 : 2, ink, Align::Center);
+        if (s.stage != Stage::Egg) c.text(240, 92, "TAP THE NAME TO CHANGE IT", 2, 0x8A7A66, Align::Center);
+    } else {
+        c.fillRoundRect(40, 76, 400, glassesButton ? 384 : 312, 20, kUiLight);
+        c.text(240, 92, name, Canvas::textWidth(name, 3) <= 380 ? 3 : 2, ink, Align::Center);
+        if (s.stage != Stage::Egg) c.text(240, 118, "TAP THE NAME TO CHANGE IT", 1, 0x8A7A66, Align::Center);
+    }
 
     char lines[10][40];
     int n = 0;
@@ -5609,8 +5832,9 @@ void Scene::drawStats(Canvas& c) {
     }
     char code[12];
     dnaCode(s.genome, code, sizeof code);
-    std::snprintf(lines[n++], 40, "DNA: %s  TRAILS: %u", code, static_cast<unsigned>(s.trailsVisited));
-    if (batteryPct_ >= 0)
+    if (!bigText_)  // too long to fit big, and the least needed
+        std::snprintf(lines[n++], 40, "DNA: %s  TRAILS: %u", code, static_cast<unsigned>(s.trailsVisited));
+    if (batteryPct_ >= 0 && !bigText_)  // the strip at the top shows it too
         std::snprintf(lines[n++], 40, "BATTERY: %d%%%s", batteryPct_, charging_ ? " (CHARGING)" : "");
     if (weather_.sky != Sky::Unknown && n < 10) {
         char sky[12];
@@ -5619,15 +5843,27 @@ void Scene::drawStats(Canvas& c) {
         const float temp = fahrenheit_ ? weather_.tempC * 9 / 5 + 32 : weather_.tempC;
         std::snprintf(lines[n++], 40, "WEATHER: %s, %d%s", sky, static_cast<int>(std::lround(temp)), fahrenheit_ ? "F" : "C");
     }
-    for (int i = 0; i < n; i++) c.text(64, 136 + i * 23.0f, lines[i], 2, ink);
-    if (glassesButton) c.text(240, 444, "TAP ANYWHERE ELSE TO CLOSE", 1, 0x8A7A66, Align::Center);
-    else c.text(240, 366, "TAP TO CLOSE", 2, 0x8A7A66, Align::Center);
+    if (bigText_) {  // each line wrapped if it must be, the rest of it indented
+        float y = 124;
+        const float bottom = glassesButton ? 384.0f : 396.0f;
+        for (int i = 0; i < n; i++) {
+            char wrapped[3][64];
+            const int k = wrapText(lines[i], 3, 372, wrapped, 3);
+            for (int j = 0; j < k && y + 21 <= bottom; j++, y += 27) c.text(j ? 76.0f : 54.0f, y, wrapped[j], 3, ink);
+        }
+        c.text(240, glassesButton ? 452.0f : 410.0f, glassesButton ? "TAP ANYWHERE ELSE TO CLOSE" : "TAP TO CLOSE", 2, 0x8A7A66,
+               Align::Center);
+    } else {
+        for (int i = 0; i < n; i++) c.text(64, 136 + i * 23.0f, lines[i], 2, ink);
+        if (glassesButton) c.text(240, 444, "TAP ANYWHERE ELSE TO CLOSE", 1, 0x8A7A66, Align::Center);
+        else c.text(240, 366, "TAP TO CLOSE", 2, 0x8A7A66, Align::Center);
+    }
     if (glassesButton) {  // a pair of specs, in the colour it's wearing (or none)
         static const char* kNames[kGlassesStyles] = {"GLASSES: NONE", "GLASSES: PURPLE", "GLASSES: PINK", "GLASSES: BLUE",
                                                       "GLASSES: BLACK"};
         const Rect b = glassesArea();
         c.fillRoundRect(b.x, b.y + 4, b.w, b.h - 12, 14, settings_.glasses ? kButton : 0xD9CFBC);
-        c.text(b.cx(), b.cy() - 11.0f, kNames[settings_.glasses], 2, settings_.glasses ? kUiLight : ink, Align::Center);
+        label(c, {b.x, b.y + 4, b.w, b.h - 12}, kNames[settings_.glasses], 2, settings_.glasses ? kUiLight : ink);
     }
 }
 
@@ -5637,7 +5873,7 @@ void Scene::drawGallery(Canvas& c) {
     c.fillRoundRect(16, 56, 448, 380, 20, kUiLight);
     char title[32];
     std::snprintf(title, sizeof title, "SIGHTINGS %d / %d", sim_.photoCount(), Sim::kPhotoCount);
-    c.text(240, 74, title, 2, 0x3B2A1E, Align::Center);
+    c.text(240, bigText_ ? 70.0f : 74.0f, title, ts(2), 0x3B2A1E, Align::Center);
     for (int i = 0; i < Sim::kPhotoCount; i++) {
         float x = 28 + (i % 6) * 72.0f, y = 100 + (i / 6) * 72.0f;
         if (s.photos & (1u << i)) {
@@ -5650,10 +5886,10 @@ void Scene::drawGallery(Canvas& c) {
             c.fillCircle(bx, y + 26, 7, 0x2A1A10, 0.8f);
         } else {
             c.fillRoundRect(x, y, 64, 64, 8, 0xD9CFBC);
-            c.text(x + 32, y + 25, "?", 2, 0xA89C86, Align::Center);
+            c.text(x + 32, y + 32 - Canvas::textHeight(ts(2)) / 2.0f, "?", ts(2), 0xA89C86, Align::Center);
         }
     }
-    c.text(240, 404, "TAP TO CLOSE", 2, 0x8A7A66, Align::Center);
+    c.text(240, bigText_ ? 400.0f : 404.0f, "TAP TO CLOSE", ts(2), 0x8A7A66, Align::Center);
 }
 
 const char* toString(Scene::Slot s) {

@@ -136,7 +136,7 @@ void pretendScan(Sim& sim) {
 }
 
 void usage() {
-    std::printf("usage: squatch-pc [--new] [--detail] [--save FILE] [--zoom N] [--shot FILE.bmp] [--battery N[c]] [--weather SKY] [--date MM-DD]\n");
+    std::printf("usage: squatch-pc [--new] [--detail] [--big-text] [--save FILE] [--zoom N] [--shot FILE.bmp] [--battery N[c]] [--weather SKY] [--date MM-DD]\n");
 }
 
 }  // namespace
@@ -144,7 +144,7 @@ void usage() {
 int main(int argc, char** argv) {
     const char* savePath = "squatch.sav";
     const char* shotPath = nullptr;
-    bool fresh = false, detail = false;
+    bool fresh = false, detail = false, bigText = false;
     int zoom = 1;
     int battery = -1;  // the PC has no battery unless one is pretended
     bool charging = false;
@@ -153,6 +153,7 @@ int main(int argc, char** argv) {
     for (int i = 1; i < argc; i++) {
         if (!std::strcmp(argv[i], "--new")) fresh = true;
         else if (!std::strcmp(argv[i], "--detail")) detail = true;  // the phone's richer drawing
+        else if (!std::strcmp(argv[i], "--big-text")) bigText = true;  // as the small AMOLED board draws it
         else if (!std::strcmp(argv[i], "--save") && i + 1 < argc) savePath = argv[++i];
         else if (!std::strcmp(argv[i], "--zoom") && i + 1 < argc) zoom = std::max(1, std::atoi(argv[++i]));
         else if (!std::strcmp(argv[i], "--shot") && i + 1 < argc) shotPath = argv[++i];
@@ -199,6 +200,7 @@ int main(int argc, char** argv) {
     std::srand(static_cast<unsigned>(now));
     Scene scene(sim);
     scene.setDetail(detail);
+    scene.setBigText(bigText);
     scene.setBattery(battery, charging);
     if (weather.sky != Sky::Unknown) scene.setWeather(weather);
     if (month) scene.previewDate(month, day);

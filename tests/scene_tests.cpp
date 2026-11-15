@@ -1640,6 +1640,64 @@ static void testTownLookup() {
     CHECK(parseOpenMeteo("{\"current\":{\"weather_code\":0}}", w) && w.utcOffsetSecs == Weather::kNoOffset);
 }
 
+static void testBigText() {
+    std::printf("big text (the small AMOLED board): pages still work, and their buttons stay big and apart\n");
+    auto apart = [](const Scene::Rect& a, const Scene::Rect& b) {
+        return a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y;
+    };
+    auto big = [](const Scene::Rect& r) { return r.w >= 64 && r.h >= 64; };
+    std::vector<uint16_t> fb(Scene::kSize * Scene::kSize);
+    Canvas c(fb.data(), Scene::kSize, Scene::kSize);
+    for (int horse = 0; horse < 2; horse++) {
+        Driver d;
+        if (horse) d.scene.setSpecies(Scene::Species::Horse);
+        d.scene.setBigText(true);
+        CHECK(d.scene.bigText());
+        CHECK(big(d.scene.nameEditArea()) && big(d.scene.homeArea()));
+        CHECK(big(d.scene.startKeepArea()) && big(d.scene.startWipeArea()) && big(d.scene.startCancelArea()));
+        CHECK(apart(d.scene.startKeepArea(), d.scene.startWipeArea()) && apart(d.scene.startWipeArea(), d.scene.startCancelArea()));
+        if (horse) CHECK(big(d.scene.glassesArea()) && apart(d.scene.glassesArea(), d.scene.nameEditArea()));
+        for (int i = 0; i < d.scene.gameChoiceCount(); i++) CHECK(big(d.scene.gameChoiceArea(i)));
+
+        // The info card: the name opens naming, and (horse) the glasses button still works.
+        d.tap(240, 20);
+        CHECK(d.scene.overlay() == Scene::Overlay::Stats);
+        d.scene.draw(c);
+        if (horse) {
+            d.tap(d.scene.glassesArea());
+            CHECK(d.scene.settings().glasses == 1);
+        }
+        d.tap(d.scene.nameEditArea());
+        CHECK(d.scene.overlay() == Scene::Overlay::Name);
+        d.scene.draw(c);
+
+        // Every page and every Wi-Fi state draws, and a long line is wrapped rather than cut.
+        Driver w;
+        if (horse) w.scene.setSpecies(Scene::Species::Horse);
+        w.scene.setBigText(true);
+        w.scene.setWifiAvailable("POCKET-PONY");
+        w.scene.setBackupCode("K7QM-2XHT-9BFA-WP4D");
+        w.scene.setUpdateStatus(Scene::UpdateStatus::Idle, 412, 0);
+        w.openTray();
+        w.pressSlot(Scene::Slot::More);
+        w.pressSlot(Scene::Slot::Settings);
+        w.scene.draw(c);
+        w.tap(w.scene.wifiButtonArea());
+        CHECK(w.scene.overlay() == Scene::Overlay::Wifi);
+        const Scene::WifiStatus states[] = {Scene::WifiStatus::NotSet, Scene::WifiStatus::Saved, Scene::WifiStatus::Joined,
+                                            Scene::WifiStatus::SetupRunning, Scene::WifiStatus::Checking, Scene::WifiStatus::Failed};
+        for (Scene::WifiStatus st : states) {
+            w.scene.setWifiStatus(st, "A VERY LONG NETWORK NAME INDEED");
+            w.scene.setWifiTown("SOMEWHERE WITH A LONG NAME, A STATE");
+            w.scene.draw(c);
+        }
+        w.scene.setWifiStatus(Scene::WifiStatus::Joined, "HOME");
+        CHECK(big(w.scene.updateArea()) && apart(w.scene.updateArea(), w.scene.wifiSetupArea()));
+        w.tap(w.scene.updateArea());
+        CHECK(w.scene.takeWifiRequest() == 3);
+    }
+}
+
 int main() {
     testBoardingStable();
     testHorseTouchVoices();
@@ -1686,6 +1744,7 @@ int main() {
     testWifiPage();
     testUpdateRow();
     testTownLookup();
+    testBigText();
 
     std::printf("\n%d checks, %d failed\n", gChecks, gFailures);
     return gFailures ? 1 : 0;

@@ -70,6 +70,9 @@ Wiki: https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-4B
   first on 2026-10-17 at 7-9 fps. Since then: the scenery is cached once a minute (`Scene::drawScenery`; anything
   that moves must be drawn in `Scene::draw` after it), shading and text are cheaper (about 3x less work per frame),
   and the AMOLED scales and sends each frame on core 0 while core 1 draws the next. Not yet measured on hardware.
+  Its text is too small at that size, so the AMOLED builds turn on big text (`Scene::setBigText`; `squatch-pc --big-text`):
+  text one size up via `ts()`, wrapped with `para()`/`label()`, and some pages laid out again. The 4" board is unchanged;
+  `testBigText` checks the pages and their buttons. Tray labels and the status numbers stay at the old size (no room).
 - Android app (`android/`, SDL2, built and published to the "android" release by CI) — basic version done;
   real Wi-Fi scans (MainActivity.startWifiScan) and "needs you" notifications (PhonePet/NudgeReceiver, using
   `Wrist::nextNeed` via the `forecast` JNI export in main.cpp) — done, not yet run on a phone. It draws at 2x/3x (`Canvas` scale) inside a handheld frame.

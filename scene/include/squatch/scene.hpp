@@ -247,6 +247,14 @@ public:
 
     // Just the clearing and the pet: no status strip, tray or messages, and no naming page.
     // For the watch, which draws its own controls on top.
+    // Bigger lettering for small screens (the 1.8" AMOLED shows this 480x480 scene at 368x368):
+    // text one size up, with longer lines wrapped or reworded to fit.
+    void setBigText(bool on) {
+        bigText_ = on;
+        sceneryKey_ = -1;
+    }
+    bool bigText() const { return bigText_; }
+
     void setCompact(bool on) {
         compact_ = on;
         if (on) askedName_ = true;
@@ -453,6 +461,16 @@ private:
     int sceneryKey_ = -1;
     bool cacheScenery_ = true;
     bool compact_ = false;
+    bool bigText_ = false;
+    // The text size to draw at: one up with big text (titles, 3 and over, stay).
+    int ts(int scale) const { return bigText_ && scale <= 2 ? scale + 1 : scale; }
+    // Text centred on cx from y down, wrapped at spaces to maxW at ts(scale); returns the y
+    // below it. lines() counts the lines it would take.
+    float para(Canvas& c, float cx, float y, const char* text, int scale, Rgb col, float maxW, float a = 1) const;
+    int lines(const char* text, int scale, float maxW) const;
+    static float lineStep(int scaleDrawn) { return 9.0f * scaleDrawn + 2; }
+    // A label centred in r at ts(scale): on two lines if it's too wide, smaller as a last resort.
+    void label(Canvas& c, const Rect& r, const char* text, int scale, Rgb col, float a = 1) const;
     bool detail_ = false;
     Species species_ = Species::Squatch;
     float faceDir_ = 1;  // the horse faces right (1) or left (-1)
@@ -540,6 +558,7 @@ private:
     char wifiSsid_[33] = {}, wifiHotspot_[24] = {}, wifiTown_[40] = {};
     int wifiRequest_ = 0;
     void drawWifi(Canvas& c);
+    void drawWifiBig(Canvas& c);
     // Grooming
     GroomStep groomStep_ = GroomStep::Brush;
     float groomDirt_[kMudSpots] = {};       // 1 = mucky, 0 = clean: mud for Brush, tangles for Mane

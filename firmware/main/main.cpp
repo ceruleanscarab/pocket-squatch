@@ -449,6 +449,9 @@ extern "C" void app_main(void) {
 #if CONFIG_SQUATCH_PET_HORSE
     gScene.setSpecies(Scene::Species::Horse);
 #endif
+#if CONFIG_SQUATCH_BOARD_AMOLED_18
+    gScene.setBigText(true);  // the 480x480 scene is shown at 368x368 on a 1.8" screen
+#endif
     sleepInit();
     ESP_ERROR_CHECK(board_init());
     gHavePower = power::init(board_i2c(), kChargeMa, kTrickleMa);

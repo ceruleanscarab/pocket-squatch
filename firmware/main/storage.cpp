@@ -124,23 +124,32 @@ void saveLocation(const Location& l) {
     nvs_close(h);
 }
 
+namespace {
+// Set by "like new": the built-in (menuconfig) Wi-Fi and town are not to be used again.
+bool noDefaults() {
+    nvs_handle_t h;
+    uint8_t v = 0;
+    if (nvs_open(kNamespace, NVS_READONLY, &h) == ESP_OK) {
+        nvs_get_u8(h, "nodefaults", &v);
+        nvs_close(h);
+    }
+    return v != 0;
+}
+}  // namespace
+
 bool wifiCredentials(char* ssid, size_t ssidLen, char* password, size_t passwordLen) {
     if (loadWifi(ssid, ssidLen, password, passwordLen)) return true;
+    if (noDefaults()) {  // like new: no network until one is set up
+        ssid[0] = password[0] = '\0';
+        return false;
+    }
     std::snprintf(ssid, ssidLen, "%s", CONFIG_SQUATCH_WIFI_SSID);
     std::snprintf(password, passwordLen, "%s", CONFIG_SQUATCH_WIFI_PASSWORD);
     return ssid[0] != '\0';
 }
 
 void keepBuiltInDefaults() {
-    {  // not after "like new": that's meant to start with nothing
-        nvs_handle_t h;
-        uint8_t v = 0;
-        if (nvs_open(kNamespace, NVS_READONLY, &h) == ESP_OK) {
-            nvs_get_u8(h, "nodefaults", &v);
-            nvs_close(h);
-        }
-        if (v) return;
-    }
+    if (noDefaults()) return;  // not after "like new": that's meant to start with nothing
     char ssid[33], pass[65];
     if (!loadWifi(ssid, sizeof ssid, pass, sizeof pass) && CONFIG_SQUATCH_WIFI_SSID[0])
         saveWifi(CONFIG_SQUATCH_WIFI_SSID, CONFIG_SQUATCH_WIFI_PASSWORD);

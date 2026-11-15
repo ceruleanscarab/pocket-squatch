@@ -1,6 +1,7 @@
 #include "wifisetup.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <atomic>
 #include <cstdio>
 #include <cstring>
@@ -169,7 +170,7 @@ void urlDecode(char* s) {
     for (; *s; s++) {
         if (*s == '+') {
             *o++ = ' ';
-        } else if (*s == '%' && s[1] && s[2]) {
+        } else if (*s == '%' && std::isxdigit(static_cast<unsigned char>(s[1])) && std::isxdigit(static_cast<unsigned char>(s[2]))) {
             char hex[3] = {s[1], s[2], 0};
             *o++ = static_cast<char>(std::strtol(hex, nullptr, 16));
             s += 2;
@@ -181,11 +182,13 @@ void urlDecode(char* s) {
 }
 
 esp_err_t saveposted(httpd_req_t* req) {
-    char body[512] = {};
+    // Room for every field even when a phone percent-encodes it (a symbol is 3 bytes: %21).
+    static char body[1536];
+    std::memset(body, 0, sizeof body);
     const int len = httpd_req_recv(req, body, std::min<size_t>(req->content_len, sizeof body - 1));
     if (len <= 0) return httpd_resp_send_500(req);
     body[len] = '\0';
-    char ssid[64] = {}, other[64] = {}, pass[128] = {}, town[96] = {};
+    char ssid[100] = {}, other[100] = {}, pass[200] = {}, town[200] = {};
     httpd_query_key_value(body, "town", town, sizeof town);
     urlDecode(town);
     std::snprintf(gTown, sizeof gTown, "%s", town);

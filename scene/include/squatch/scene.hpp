@@ -330,6 +330,9 @@ private:
     void requestScan();
     void note(const char* text);
     void tapPet();
+    void petMare();  // before the birth: the mother answers a touch
+    uint32_t lastMarePat_ = 0;
+    int mareTurn_ = 0;
     void touchPet(int x, int y);  // a tap on a friendly pet: nose, belly or head
     void shakeTree(int i);
     void tossCone(float vx, float vy, float vz);

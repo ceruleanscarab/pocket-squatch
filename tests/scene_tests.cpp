@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <set>
 #include <vector>
 
 #include "squatch/canvas.hpp"
@@ -1776,6 +1777,32 @@ static void testLikeNew() {
     }
 }
 
+static void testMareAnswers() {
+    std::printf("before the foal comes, its mother answers a touch with her own sounds\n");
+    Driver d;
+    d.scene.setSpecies(Scene::Species::Horse);
+    d.sim.newGame(1798761600, 0, 3);
+    CHECK(d.sim.state().stage == Stage::Egg);
+    Cue c;
+    while (d.scene.takeCue(c)) {}
+    std::set<int> heard;
+    for (int i = 0; i < 5; i++) {
+        d.tap(d.scene.squatchArea());
+        for (int k = 0; k < 70; k++) d.step();  // a second between pats
+        bool voice = false;
+        while (d.scene.takeCue(c)) {
+            if (c == Cue::Nicker || c == Cue::Blow || c == Cue::Sigh || c == Cue::Chuckle) {
+                voice = true;
+                heard.insert(static_cast<int>(c));
+            }
+        }
+        CHECK(voice);
+    }
+    CHECK(heard.size() >= 3);  // not the same sound every time
+    CHECK(d.sim.state().stage == Stage::Egg);  // just for fun: nothing in the game changes
+    CHECK(Tuning::quickToTrust().eggEnd == 7 * 60);
+}
+
 int main() {
     testBoardingStable();
     testHorseTouchVoices();
@@ -1825,6 +1852,7 @@ int main() {
     testBigText();
     testWelcome();
     testLikeNew();
+    testMareAnswers();
 
     std::printf("\n%d checks, %d failed\n", gChecks, gFailures);
     return gFailures ? 1 : 0;

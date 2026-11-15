@@ -272,6 +272,7 @@ float Scene::voicePitch(Cue c) const {
         case Stage::Child: return 1.5f * vary;
         case Stage::Teen: return 1.22f * vary;
         case Stage::Elder: return 0.84f * vary;  // lower and slower with age
+        case Stage::Egg: return 0.9f * vary;     // the mother, before her foal comes
         default: return vary;
     }
 }
@@ -1155,7 +1156,8 @@ void Scene::doPet() {
     } else if (r == Result::Refused) {
         react(sim_.trustLevel() == TrustLevel::Hiding ? React::Flinch : React::Peek, 1000);  // not ready yet
     } else if (sim_.state().stage == Stage::Egg) {
-        react(React::Wobble, 700);
+        if (species_ == Species::Horse) petMare();
+        else react(React::Wobble, 700);
     } else {
         sayNotNow();
     }
@@ -1252,10 +1254,26 @@ void Scene::doForage(int trail) {
     }
 }
 
+// Before the foal comes, its mother is in the paddock: touch her and she answers.
+void Scene::petMare() {
+    static const Cue kSounds[] = {Cue::Nicker, Cue::Blow, Cue::Sigh, Cue::Nicker, Cue::Chuckle};
+    static const char* kLines[] = {"MAMA NICKERS SOFTLY", "SHE NUZZLES YOUR HAND", "SHE LIKES THAT",
+                                   "SHE LEANS INTO YOUR HAND", "THE FOAL IS COMING SOON"};
+    if (mareTurn_ && now_ - lastMarePat_ < 900) return;  // one answer per pat, not one per frame of a stroke
+    lastMarePat_ = now_;
+    const int i = mareTurn_++ % static_cast<int>(sizeof kSounds / sizeof kSounds[0]);
+    cue(kSounds[i]);
+    say(kLines[i], true);
+    const Rect r = squatchArea();
+    for (int k = 0; k < 2; k++)
+        spawn(ParticleKind::Heart, r.cx() + 40 + (rand01() - 0.5f) * 50, r.y + 10.0f, (rand01() - 0.5f) * 30, -45, 1200);
+}
+
 void Scene::tapPet() {
     const State& s = sim_.state();
     if (s.stage == Stage::Egg) {
-        react(React::Wobble, 700);
+        if (species_ == Species::Horse) petMare();
+        else react(React::Wobble, 700);
         return;
     }
     if (s.calling) {

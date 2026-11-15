@@ -108,6 +108,7 @@ struct Tuning {
         t.trustWandering = 17;
         t.trustFriendly = 40;
         t.trustPerWellCaredHour = 0.5f;
+        t.eggEnd = 7 * 60;  // the foal's birth: a shorter wait for an excited new owner
         return t;
     }
 

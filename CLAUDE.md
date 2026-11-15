@@ -86,7 +86,8 @@ Wiki: https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-4B
   `horse_takes.cpp` by `tools/horse_takes.py`, and the Synth picks a different take each time), words, a birth instead of an
   egg, and five games including Grooming (`Game::Groom`: brush, hooves, mane, a ribbon; no clock). Fence Jump was removed.
   It uses `Tuning::quickToTrust()` (out from behind the tree in hours, friendly by about day 3; check with
-  `squatch-harness --quick-trust`); the Bigfoot keeps the slower default. Voices are higher the younger the pet (`Scene::voicePitch`).
+  `squatch-harness --quick-trust`) and a 7-minute birth (`eggEnd`); the Bigfoot keeps the slower defaults. Before the
+  birth, touching the mother gets a nicker, blow or sigh (`Scene::petMare`). Voices are higher the younger the pet (`Scene::voicePitch`).
 - Wi-Fi setup from a phone (`firmware/main/wifisetup.cpp`: open hotspot, captive page, DNS; saved in NVS by
   `storage::saveWifi`, used by the clock and weather via `storage::wifiCredentials`; Kconfig is only the default).
   Settings > Wi-Fi in `scene/`. Not yet run on hardware.

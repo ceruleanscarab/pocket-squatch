@@ -102,7 +102,8 @@ constexpr Shape kShapes[static_cast<int>(Cue::Count)] = {
     SHAPE(kForageBack), SHAPE(kPhoto), SHAPE(kWarning), SHAPE(kThunder), SHAPE(kBoo),
     SHAPE(kBoop), SHAPE(kGiggle), SHAPE(kRustle), SHAPE(kCrackle), SHAPE(kBabble),
     SHAPE(kNeigh), SHAPE(kNicker), SHAPE(kSnort), SHAPE(kClop), SHAPE(kMunch), SHAPE(kBrush), SHAPE(kGobble), SHAPE(kGobble),
-    SHAPE(kSnort), SHAPE(kNicker), SHAPE(kNicker), SHAPE(kClop), SHAPE(kTweet), SHAPE(kQuack), SHAPE(kHoot), SHAPE(kClop), SHAPE(kClop), SHAPE(kClean), SHAPE(kEat),
+    SHAPE(kSnort), SHAPE(kNicker), SHAPE(kNicker), SHAPE(kClop), SHAPE(kTweet), SHAPE(kQuack), SHAPE(kHoot), SHAPE(kClop), SHAPE(kClop), SHAPE(kClean), SHAPE(kEat), SHAPE(kEat),
+    SHAPE(kSulk),
 };
 #undef SHAPE
 
@@ -123,20 +124,41 @@ struct ClipStyle {
     float part;   // how much of the clip, from its start
 };
 
-ClipStyle clipFor(Cue c) {
+// The takes of each recorded sound: the first recording, then the extra ones.
+const HorseClip* const kNeighs[] = {&kHorseClips[kClipNeigh], &kNeighTakes[0], &kNeighTakes[1], &kNeighTakes[2],
+                                    &kNeighTakes[3]};
+const HorseClip* const kNickers[] = {&kHorseClips[kClipNicker], &kNickerTakes[0], &kNickerTakes[1], &kNickerTakes[2],
+                                     &kNickerTakes[3]};
+const HorseClip* const kSnorts[] = {&kHorseClips[kClipSnort], &kSnortTakes[0], &kSnortTakes[1], &kSnortTakes[2]};
+const HorseClip* const kMunches[] = {&kHorseClips[kClipMunch], &kMunchTakes[0]};
+const HorseClip* const kHays[] = {&kHayTakes[0], &kHayTakes[1]};
+
+// How many takes a cue has (1 for most), and take i of them.
+int takeCount(Cue c) {
+    switch (c) {
+        case Cue::Neigh: case Cue::Nicker: case Cue::Chuckle: case Cue::Sigh: return 5;
+        case Cue::Snort: case Cue::Blow: return 4;
+        case Cue::Munch: case Cue::MunchHay: return 2;
+        default: return 1;
+    }
+}
+
+ClipStyle clipFor(Cue c, int take = 0) {
     const HorseClip* k = kHorseClips;
     switch (c) {
-        case Cue::Neigh: return {&k[kClipNeigh], 1, 1, 1};
-        case Cue::Nicker: return {&k[kClipNicker], 1, 1, 1};
-        case Cue::Snort: return {&k[kClipSnort], 1, 1, 1};
+        case Cue::Neigh: return {kNeighs[take % 5], 1, 1, 1};
+        case Cue::Nicker: return {kNickers[take % 5], 1, 1, 1};
+        case Cue::Snort: return {kSnorts[take % 4], 1, 1, 1};
         case Cue::Clop: return {&k[kClipClop], 1, 1, 1};
-        case Cue::Munch: return {&k[kClipMunch], 1, 1, 1};
+        case Cue::Munch: return {kMunches[take % 2], 1, 1, 1};
+        case Cue::MunchHay: return {kHays[take % 2], 1, 0.9f, 1};
+        case Cue::Toot: return {&kTootClip, 1, 0.85f, 1};
         case Cue::Brush: return {&k[kClipBrush], 1, 1, 1};
         case Cue::Gobble: return {&k[kClipGobble], 1, 1, 1};
         case Cue::HoHoHo: return {&k[kClipHoHoHo], 1, 1, 1};
-        case Cue::Blow: return {&k[kClipSnort], 1.3f, 0.55f, 1};      // a little puff, not a warning
-        case Cue::Chuckle: return {&k[kClipNicker], 1.3f, 0.9f, 0.55f};  // quick and bright
-        case Cue::Sigh: return {&k[kClipNicker], 0.8f, 0.7f, 1};       // low and slow
+        case Cue::Blow: return {kSnorts[take % 4], 1.3f, 0.55f, 1};      // a little puff, not a warning
+        case Cue::Chuckle: return {kNickers[take % 5], 1.3f, 0.9f, 0.55f};  // quick and bright
+        case Cue::Sigh: return {kNickers[take % 5], 0.8f, 0.7f, 1};       // low and slow
         case Cue::Rustle: return {&kRustleClip, 1, 0.8f, 1};           // for both editions
         case Cue::Thud: return {&kThudClip, 1, 0.8f, 1};
         case Cue::StepNear: return {&kStepClips[0], 1, 0.75f, 1};
@@ -164,14 +186,18 @@ const char* toString(Cue c) {
                                    "forage back", "photo", "warning", "thunder", "boo",
                                    "boop", "giggle", "rustle", "crackle", "babble",
                                    "neigh", "nicker", "snort", "clop", "munch", "brush", "gobble", "ho ho ho",
-                                   "blow", "chuckle", "sigh", "thud", "tweet", "quack", "hoot", "step", "step (far)", "splash", "sip"};
+                                   "blow", "chuckle", "sigh", "thud", "tweet", "quack", "hoot", "step", "step (far)", "splash", "sip", "munch (hay)", "toot"};
     int i = static_cast<int>(c);
     return i < static_cast<int>(Cue::Count) ? kNames[i] : "?";
 }
 
 int Synth::lengthMs(Cue c) {
-    const ClipStyle st = clipFor(c);
-    if (st.clip) return static_cast<int>(st.clip->length * st.part) * 1000 / kRate;
+    int longest = 0;  // the longest of its takes
+    for (int i = 0; i < takeCount(c); i++) {
+        const ClipStyle st = clipFor(c, i);
+        if (st.clip) longest = std::max(longest, static_cast<int>(st.clip->length * st.part) * 1000 / kRate);
+    }
+    if (longest) return longest;
     const Shape& s = kShapes[static_cast<int>(c)];
     int ms = 0;
     for (int i = 0; i < s.count; i++) ms += s.notes[i].ms + s.notes[i].gapMs;
@@ -194,7 +220,18 @@ void Synth::play(Cue c, int volume, float pitch) {
     v->cue = c;
     v->gain = kGain[volume];
     v->age = ++started_;
-    const ClipStyle st = clipFor(c);
+    // A different take from last time, when there are several.
+    const int n = takeCount(c), ci = static_cast<int>(c);
+    int take = 0;
+    if (n > 1) {
+        noise_ ^= noise_ << 13;
+        noise_ ^= noise_ >> 17;
+        noise_ ^= noise_ << 5;
+        take = static_cast<int>(noise_ % static_cast<uint32_t>(n - 1));
+        if (take >= lastTake_[ci]) take++;  // never the one it just played
+        lastTake_[ci] = static_cast<uint8_t>(take);
+    }
+    const ClipStyle st = clipFor(c, take);
     v->pitch = std::max(0.5f, std::min(2.0f, pitch * st.pitch));
     if (st.clip) {
         v->clip = st.clip->data;

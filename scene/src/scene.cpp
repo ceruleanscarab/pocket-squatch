@@ -201,7 +201,8 @@ static bool isVoice(Cue c) {
     switch (c) {
         case Cue::Happy: case Cue::Eat: case Cue::Sneeze: case Cue::Sulk: case Cue::Knock:
         case Cue::Giggle: case Cue::Babble: case Cue::Neigh: case Cue::Nicker: case Cue::Snort:
-        case Cue::Munch: case Cue::Clop: case Cue::Blow: case Cue::Chuckle: case Cue::Sigh: return true;
+        case Cue::Munch: case Cue::Clop: case Cue::Blow: case Cue::Chuckle: case Cue::Sigh: case Cue::MunchHay:
+        case Cue::Toot: return true;
         default: return false;
     }
 }
@@ -248,7 +249,7 @@ float Scene::voicePitch(Cue c) const {
     switch (c) {  // the pet's voice and body; not the world's sounds or the buttons
         case Cue::Happy: case Cue::Eat: case Cue::Sneeze: case Cue::Sulk: case Cue::Knock:
         case Cue::Giggle: case Cue::Babble: case Cue::Neigh: case Cue::Nicker: case Cue::Snort:
-        case Cue::Munch: case Cue::Clop: case Cue::Blow: case Cue::Chuckle: case Cue::Sigh: break;
+        case Cue::Munch: case Cue::Clop: case Cue::Blow: case Cue::Chuckle: case Cue::Sigh: case Cue::MunchHay: break;
         case Cue::StepNear:
         case Cue::StepFar: {  // hooves: a little lighter on a foal, and never two quite alike
             const float jitter = 0.93f + 0.12f * noise01(now_ / 7 + static_cast<uint32_t>(c));
@@ -995,12 +996,19 @@ void Scene::doFeed(Food f) {
     Result r = sim_.feed(f);
     saved(r);
     if (r == Result::Ok) {
-        cue(Cue::Eat);
+        cue(species_ == Species::Horse && f == Food::Roots ? Cue::MunchHay : Cue::Eat);
         react(React::Eat, 1400);
-        if (species_ == Species::Horse)  // apples are a treat, carrots a favourite, hay is just hay
-            speak(f == Food::Berries ? "APPLES! MY FAVE!" : (f == Food::Fish ? "CRUNCHY CARROTS!" : "HAY... OKAY."));
-        else
+        // Apples one after another: by the third, now and then, a little... toot. (The horse only.)
+        applesInRow_ = f == Food::Berries ? applesInRow_ + 1 : 0;
+        if (species_ == Species::Horse && applesInRow_ >= 3 && rand01() < 0.5f) tootAt_ = now_ + 1800;
+        if (species_ == Species::Horse) {  // apples are a treat, carrots a favourite, hay is just hay
+            static const char* kApple[] = {"APPLES! MY FAVE!", "CRUNCH! SO SWEET", "YUM YUM APPLE!"};
+            static const char* kCarrot[] = {"CRUNCHY CARROTS!", "CARROTS ARE THE BEST", "MUNCH MUNCH"};
+            static const char* kHay[] = {"HAY... OKAY.", "GOOD FOR MY TUMMY", "CHEWY HAY"};
+            sayFresh(f == Food::Berries ? kApple : f == Food::Fish ? kCarrot : kHay, 3);
+        } else {
             speak(f == Food::Berries ? "BERRIES!" : (f == Food::Fish ? "FISHY!" : "CRUNCHY!"));
+        }
         for (int i = 0; i < 5; i++)
             spawn(ParticleKind::Crumb, squatchX() + (rand01() - 0.5f) * 20, headY() + 30 * squatchScale(),
                   (rand01() - 0.5f) * 80, -40 - rand01() * 60, 900);
@@ -2295,6 +2303,17 @@ float Scene::rand01() {
 void Scene::animate(float dt) {
     const State& s = sim_.state();
     updateVisitor(dt);
+    if (tootAt_ && now_ >= tootAt_) {  // too many apples
+        tootAt_ = 0;
+        if (hatched() && !hiding()) {
+            cue(Cue::Toot);
+            react(React::Giggle, 1200);
+            speak("OOPS! TOO MANY APPLES");
+            for (int i = 0; i < 4; i++)  // a little puff, behind
+                spawn(ParticleKind::Sparkle, squatchX() - faceDir_ * 50 * squatchScale() + (rand01() - 0.5f) * 20,
+                      squatchFoot() - 50 * squatchScale(), -faceDir_ * (20 + rand01() * 30), -20, 900);
+        }
+    }
 
     trayAnim_ += (trayTarget_ > trayAnim_ ? 1 : -1) * std::min(std::fabs(trayTarget_ - trayAnim_), dt * 6);
 

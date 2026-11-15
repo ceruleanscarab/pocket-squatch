@@ -520,6 +520,8 @@ private:
     uint32_t fireUntil_ = 0, nextEmber_ = 0;
     uint32_t nextClop_ = 0;
     float stepPhase_ = 0;  // the gait phase at the last hoofstep check
+    int applesInRow_ = 0;  // apples fed one after another
+    uint32_t tootAt_ = 0;  // ...and the consequence, due then
     uint32_t drinkAt_ = 0, nextSlurp_ = 0, barnPeekUntil_ = 0;
     Visitor visitor_ = Visitor::None;
     float visX_ = 0, visY_ = 0, visDir_ = 1, visV_ = 0;

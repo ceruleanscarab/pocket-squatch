@@ -59,6 +59,8 @@ enum class Cue : uint8_t {
     StepFar,     // and the far ones
     Splash,      // a hand in the water trough
     Sip,         // the horse drinking from it
+    MunchHay,    // the horse chewing hay (Munch is for apples and carrots)
+    Toot,        // ahem: a pony after too many apples
     Count
 };
 
@@ -100,6 +102,7 @@ private:
     Voice voices_[kVoices];
     uint32_t started_ = 0;
     uint32_t noise_ = 0x1234567u;
+    uint8_t lastTake_[static_cast<int>(Cue::Count)] = {};
 };
 
 }  // namespace squatch

@@ -18,5 +18,8 @@ extern const HorseClip kHorseClips[kHorseClipCount];
 extern const HorseClip kRustleClip, kThudClip;
 extern const HorseClip kStepClips[2];  // a hoof on soft ground, two ways
 extern const HorseClip kSplashClip, kSipClip;  // water: the trough, and a horse drinking
+// More takes of each (horse_takes.cpp, made by tools/horse_takes.py), so it isn't the same every time.
+extern const HorseClip kNeighTakes[4], kNickerTakes[4], kSnortTakes[3], kMunchTakes[1], kHayTakes[2];
+extern const HorseClip kTootClip;  // a pony after too many apples
 
 }  // namespace squatch

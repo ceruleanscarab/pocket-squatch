@@ -79,7 +79,8 @@ Wiki: https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-4B
   and play fetch (tap or flick to toss), light the campfire; speech bubbles (`Scene::speak`) for replies, a hello when
   the screen comes back on, and chatter about needs, weather and seasons. All optional; none of it is timing-critical.
 - Horse edition (menuconfig Pet = Horse; `Scene::setSpecies`): its own drawing, paddock, foods, real sounds
-  (`horse_sounds.cpp`, CC0 from BigSoundBank, prepared by `tools/horse_sounds_*.py`), words, a birth instead of an
+  (`horse_sounds.cpp`, CC0 from BigSoundBank, prepared by `tools/horse_sounds_*.py`; more takes of each in
+  `horse_takes.cpp` by `tools/horse_takes.py`, and the Synth picks a different take each time), words, a birth instead of an
   egg, and five games including Grooming (`Game::Groom`: brush, hooves, mane, a ribbon; no clock). Fence Jump was removed.
   It uses `Tuning::quickToTrust()` (out from behind the tree in hours, friendly by about day 3; check with
   `squatch-harness --quick-trust`); the Bigfoot keeps the slower default. Voices are higher the younger the pet (`Scene::voicePitch`).

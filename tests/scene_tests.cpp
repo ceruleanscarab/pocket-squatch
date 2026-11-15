@@ -805,10 +805,10 @@ static void testSounds() {
     d.pressSlot(Scene::Slot::Back);
     d.pressSlot(Scene::Slot::More);
     d.pressSlot(Scene::Slot::Settings);
-    CHECK(d.scene.volume() == 2);
+    CHECK(d.scene.volume() == 1);
     while (d.scene.takeCue(c)) {}
     d.tap(d.scene.settingButtonArea(2, true));
-    CHECK(d.scene.volume() == 3);
+    CHECK(d.scene.volume() == 2);
     CHECK(d.scene.takeCue(c) && c == Cue::Happy);  // a chirp to hear the new level
     for (int i = 0; i < 5; i++) d.tap(d.scene.settingButtonArea(2, false));
     CHECK(d.scene.volume() == 0);

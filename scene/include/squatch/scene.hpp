@@ -49,7 +49,7 @@ public:
     struct Settings {
         uint8_t brightness = 3;  // a step of brightnessPercent(): 20, 40, 60, 80, 100%
         uint8_t timeout = 2;     // a step of screenTimeoutMs(): 15 s, 30 s, 1, 2, 5, 10 min, never
-        uint8_t volume = 2;      // off, quiet, medium, loud (Synth's steps)
+        uint8_t volume = 1;      // off, quiet (the default), medium, loud (Synth's steps)
         uint8_t rudolph = 0;     // the horse's red nose at Christmas: boop it to switch
         uint8_t glasses = 0;     // the horse's glasses: 0 none, then a frame colour (info card)
     };

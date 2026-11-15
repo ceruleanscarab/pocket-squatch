@@ -81,6 +81,7 @@ esp_err_t guideGet(httpd_req_t* req) {
 #endif
 
 esp_err_t pageGet(httpd_req_t* req) {
+    ESP_LOGI(TAG, "setup page sent to a phone");
     static char html[7168];
 #if CONFIG_SQUATCH_PET_HORSE
     static char line2[640];
@@ -199,6 +200,9 @@ esp_err_t saveposted(httpd_req_t* req) {
 
 // Anything else a phone asks for (its captive-portal checks): send it to the page.
 esp_err_t redirect(httpd_req_t* req, httpd_err_code_t) {
+    char host[64] = "?";
+    httpd_req_get_hdr_value_str(req, "Host", host, sizeof host);
+    ESP_LOGI(TAG, "phone asked for http://%s%s: sent to the setup page", host, req->uri);  // its captive-portal checks
     httpd_resp_set_status(req, "302 Found");
     httpd_resp_set_hdr(req, "Location", "http://192.168.4.1/");
     return httpd_resp_send(req, nullptr, 0);
@@ -231,6 +235,17 @@ void dnsTask(void*) {
         while (p < n && buf[p]) p += buf[p] + 1;
         if (p + 5 > n) continue;
         const bool wantsA = buf[p + 1] == 0 && buf[p + 2] == 1;  // an IPv4 address (not IPv6 and the like)
+        if (wantsA) {  // which names the phone looks up, for the log
+            char name[64];
+            int o = 0;
+            for (int q = 12; q < p && buf[q] && o < 60;) {
+                const int len = buf[q++];
+                if (o) name[o++] = '.';
+                for (int k = 0; k < len && q < p && o < 62; k++) name[o++] = static_cast<char>(buf[q++]);
+            }
+            name[o] = '\0';
+            ESP_LOGI(TAG, "phone looked up %s", name);
+        }
         p += 5;
         buf[2] = 0x81;  // a response, recursion desired
         buf[3] = 0x80;  // recursion available, no error
@@ -265,8 +280,9 @@ void setupTask(void*) {
     {  // tell phones straight away there's a page to open (DHCP option 114, RFC 8910)
         static char uri[] = "http://192.168.4.1/";
         esp_netif_dhcps_stop(ap);
-        esp_netif_dhcps_option(ap, ESP_NETIF_OP_SET, ESP_NETIF_CAPTIVEPORTAL_URI, uri, std::strlen(uri));
+        const esp_err_t e = esp_netif_dhcps_option(ap, ESP_NETIF_OP_SET, ESP_NETIF_CAPTIVEPORTAL_URI, uri, std::strlen(uri));
         esp_netif_dhcps_start(ap);
+        ESP_LOGI(TAG, "page address handed out with DHCP: %s", esp_err_to_name(e));
     }
 
     // The networks it can hear, strongest first, each once.
@@ -301,14 +317,16 @@ void setupTask(void*) {
 #endif
         httpd_register_err_handler(server, HTTPD_404_NOT_FOUND, redirect);
     }
-    xTaskCreatePinnedToCore(dnsTask, "dns", 3072, nullptr, 3, &gDnsTask, 0);
+    xTaskCreatePinnedToCore(dnsTask, "dns", 4096, nullptr, 3, &gDnsTask, 0);
     ESP_LOGI(TAG, "hotspot \"%s\" up, %d networks heard", gHotspot, gNetworkCount);
 
     const TickType_t until = xTaskGetTickCount() + pdMS_TO_TICKS(kTimeoutMs);
     while (!gGotIt && !gCancel && xTaskGetTickCount() < until) {
         vTaskDelay(pdMS_TO_TICKS(200));
         wifi_sta_list_t list{};
-        gPhones = esp_wifi_ap_get_sta_list(&list) == ESP_OK ? list.num : 0;  // so the screen can follow along
+        const int phones = esp_wifi_ap_get_sta_list(&list) == ESP_OK ? list.num : 0;  // so the screen can follow along
+        if (phones != gPhones) ESP_LOGI(TAG, "%d phone(s) on the hotspot", phones);
+        gPhones = phones;
     }
     gPhones = 0;
     vTaskDelay(pdMS_TO_TICKS(gGotIt ? 1500 : 0));  // let the "Saved!" page reach the phone

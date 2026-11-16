@@ -7,3 +7,7 @@ compatibility_date = "2026-10-01"
 [[kv_namespaces]]
 binding = "SAVES"
 id = "822aef5e536f4e0a836c2912d22f99cf"
+
+# A friendly address for the ping page: https://find.bluebeetle.games (the domain's DNS is on this
+# Cloudflare account; wrangler makes the record). The workers.dev address keeps working for the boards.
+routes = [{ pattern = "find.bluebeetle.games", custom_domain = true }]

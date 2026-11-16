@@ -13,7 +13,7 @@ back from its **backup code**, typed into the Wi-Fi setup page on a phone.
 
 ## Find a lost toy (ping)
 
-Open `https://pocket-pony-saves.bluebeetlegames.workers.dev/ping` on any phone or computer,
+Open **find.bluebeetle.games** (or `https://pocket-pony-saves.bluebeetlegames.workers.dev/ping`) on any phone or computer,
 type the toy's backup code and press **Ping**. The toy checks about once an hour over the
 home Wi-Fi (while it fetches the weather, or on its own if it has no town). When it hears the
 ping it wakes, turns the screen to full brightness and calls out loudly every few seconds,

@@ -130,7 +130,7 @@ document.getElementById("go").onclick=()=>send("POST");document.getElementById("
 export default {
   async fetch(req, env) {
     const url = new URL(req.url);
-    if (url.pathname === "/ping" || url.pathname === "/ping/")
+    if (url.pathname === "/ping" || url.pathname === "/ping/" || (url.pathname === "/" && url.hostname.startsWith("find.")))
       return new Response(PAGE, { headers: { "content-type": "text/html; charset=utf-8" } });
     if (url.pathname === "/v1/ping-here") return pingHere(req, env);
     const p = url.pathname.match(PING);

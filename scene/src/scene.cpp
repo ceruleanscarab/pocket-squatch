@@ -2843,9 +2843,15 @@ void Scene::animate(float dt) {
     if (species_ == Species::Horse) {  // a hoofstep as each hoof comes down, near ones louder: clip... clop...
         static const float kLegPhase[4] = {0.0f, 3.1f, 1.6f, 4.7f};  // as drawHorse: far front, far hind, near front, near hind
         const bool walking = hatched() && !s.asleep && !hiding() && walkAmt_ > 0.15f;
-        for (int i = 0; walking && i < 4; i++) {
+        // Only the near hooves, and only a few steps as it sets off: then it walks on quietly, and stays
+        // quiet for a while (every hoof of every stride, all day, was too much).
+        if (!walking && now_ >= stepQuietUntil_ && stepsLeft_ == 0) stepsLeft_ = kStepsPerWalk;
+        for (int i = 2; walking && i < 4; i++) {
             auto stride = [&](float p) { return std::floor((p + kLegPhase[i] - kPi / 2) / (2 * kPi)); };
-            if (stride(gaitPhase_) != stride(stepPhase_)) cue(i >= 2 ? Cue::StepNear : Cue::StepFar);
+            if (stride(gaitPhase_) != stride(stepPhase_) && stepsLeft_ > 0) {
+                cue(Cue::StepNear);
+                if (--stepsLeft_ == 0) stepQuietUntil_ = now_ + kStepQuietMs;
+            }
         }
         stepPhase_ = gaitPhase_;
     }

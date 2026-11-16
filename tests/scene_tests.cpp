@@ -1946,6 +1946,25 @@ static void testChargeCall() {
     }
 }
 
+static void testHoofbeats() {
+    std::printf("hoofbeats: a few as the horse sets off, not every step all day\n");
+    Driver d;
+    d.scene.setSpecies(Scene::Species::Horse);
+    Scene::Settings st = d.scene.settings();
+    st.volume = 2;
+    st.timeout = Scene::kTimeoutSteps - 1;  // never: keep the screen (and the sound) on
+    d.scene.setSettings(st);
+    int steps = 0;
+    Cue c;
+    for (int k = 0; k < 10 * 60 * 60; k++) {  // ten minutes, poking it now and then to keep it moving
+        if (k % 900 == 0) d.tap(80 + (k / 900 % 2) * 320, 360);
+        d.step();
+        while (d.scene.takeCue(c)) steps += c == Cue::StepNear || c == Cue::StepFar;
+    }
+    std::printf("  %d hoofbeats in ten minutes\n", steps);
+    CHECK(steps > 0 && steps <= 10 * 60 / 30 * 4);
+}
+
 int main() {
     testBoardingStable();
     testHorseTouchVoices();
@@ -1999,6 +2018,7 @@ int main() {
     testNoTrails();
     testFindMe();
     testChargeCall();
+    testHoofbeats();
 
     std::printf("\n%d checks, %d failed\n", gChecks, gFailures);
     return gFailures ? 1 : 0;

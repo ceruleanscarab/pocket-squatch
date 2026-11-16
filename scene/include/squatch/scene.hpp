@@ -604,6 +604,10 @@ private:
     uint32_t fireUntil_ = 0, nextEmber_ = 0;
     uint32_t nextClop_ = 0;
     float stepPhase_ = 0;  // the gait phase at the last hoofstep check
+    static constexpr int kStepsPerWalk = 4;            // hoofbeats heard as it sets off
+    static constexpr uint32_t kStepQuietMs = 30000;    // then none for this long
+    int stepsLeft_ = kStepsPerWalk;
+    uint32_t stepQuietUntil_ = 0;
     int applesInRow_ = 0;  // apples fed one after another
     uint32_t tootAt_ = 0;  // ...and the consequence, due then
     uint32_t drinkAt_ = 0, nextSlurp_ = 0, barnPeekUntil_ = 0;

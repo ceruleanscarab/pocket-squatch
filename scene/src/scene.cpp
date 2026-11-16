@@ -204,7 +204,7 @@ static bool isVoice(Cue c) {
 }
 
 void Scene::cue(Cue c) {
-    if ((settings_.volume == 0 && !findingMe()) || (screenOff_ && c != Cue::Knock)) return;  // (a lost toy calls out even when muted)
+    if ((settings_.volume == 0 && !(findingMe() && !findMeQuiet_)) || (screenOff_ && c != Cue::Knock)) return;  // (a lost toy calls out even when muted)
     // Speaking adds a little babble, unless the pet already made a sound for this moment:
     // one voice at a time, or a nicker on top of a whinny sounds wrong.
     const bool babble = c == Cue::Babble;
@@ -293,7 +293,30 @@ int Scene::brightnessPercent() const { return findingMe() ? 100 : kBrightness[se
 void Scene::startFindMe(uint32_t durationMs) {
     findMeUntil_ = std::max<uint32_t>(1, now_ + durationMs);
     findMeNextCall_ = now_;
+    chargeCall_ = findMeQuiet_ = false;
     wake();
+}
+
+void Scene::startChargeCall() {
+    if (findingMe()) return;  // already calling out (a ping): that does the job
+    const float h = hourOfDay();
+    findMeUntil_ = std::max<uint32_t>(1, now_ + 60 * 1000);
+    findMeNextCall_ = now_;
+    chargeCall_ = true;
+    findMeQuiet_ = h >= 21.0f || h < 7.0f;  // nobody wants a neigh at 3 am: just the light
+    nextChargeCall_ = now_ + 20 * 60 * 1000;
+    wake();
+}
+
+// From update: start (or repeat) the call while the battery is nearly empty; stop it once plugged in.
+void Scene::updateChargeCall() {
+    const bool empty = batteryPct_ >= 0 && batteryPct_ <= kChargeCallPercent && !charging_;
+    if (!empty) {
+        nextChargeCall_ = 0;
+        if (callingForCharge()) findMeUntil_ = 0;
+        return;
+    }
+    if (nextChargeCall_ == 0 || now_ >= nextChargeCall_) startChargeCall();
 }
 
 uint32_t Scene::screenTimeoutMs() const { return kTimeoutSecs[settings_.timeout] * 1000; }
@@ -630,7 +653,7 @@ void Scene::touch(const TouchEvent& e) {
         if (e.phase == TouchPhase::Down) {
             findMeUntil_ = 0;
             screenOff_ = waking_ = false;
-            say("YOU FOUND ME!", true);
+            say(chargeCall_ ? "PLEASE PLUG ME IN!" : "YOU FOUND ME!", true);
             cue(Cue::Happy);
         }
         return;
@@ -2525,6 +2548,7 @@ void Scene::update(uint32_t nowMs) {
     float dt = static_cast<float>(std::min<uint32_t>(dtMs, 100)) / 1000.0f;
     t_ += dt;
 
+    updateChargeCall();
     if (findingMe()) {  // calling out till found: screen on, a call every few seconds
         if (now_ >= findMeUntil_) {
             findMeUntil_ = 0;
@@ -2532,8 +2556,8 @@ void Scene::update(uint32_t nowMs) {
             screenOff_ = false;
             lastInputMs_ = now_;
             if (now_ >= findMeNextCall_) {
-                cue(species_ == Species::Horse ? Cue::Neigh : Cue::Happy);
-                findMeNextCall_ = now_ + 3500;
+                if (!findMeQuiet_) cue(species_ == Species::Horse ? Cue::Neigh : Cue::Happy);
+                findMeNextCall_ = now_ + (chargeCall_ ? 8000 : 3500);
             }
         }
     }
@@ -3232,8 +3256,9 @@ void Scene::drawFindMe(Canvas& c) const {
     c.tint(on ? 0xFFF2B0 : 0x000000, on ? 0.35f : 0.25f);
     const float w = 420, h = bigText_ ? 150 : 128, x = 240 - w / 2, y = 150;
     c.fillRoundRect(x, y, w, h, 24, on ? kGold : 0x9E2B23);
-    c.text(240, y + 22, "HERE I AM!", 4, on ? 0x3B2A1E : 0xFFFDF7, Align::Center);
-    c.text(240, y + (bigText_ ? 86 : 78), "TOUCH TO STOP", ts(2), on ? 0x3B2A1E : 0xFFFDF7, Align::Center);
+    c.text(240, y + 22, chargeCall_ ? "CHARGE ME!" : "HERE I AM!", 4, on ? 0x3B2A1E : 0xFFFDF7, Align::Center);
+    c.text(240, y + (bigText_ ? 86 : 78), chargeCall_ ? "MY BATTERY IS ALMOST EMPTY" : "TOUCH TO STOP", ts(2),
+           on ? 0x3B2A1E : 0xFFFDF7, Align::Center);
 }
 
 void Scene::drawScenery(Canvas& c) {

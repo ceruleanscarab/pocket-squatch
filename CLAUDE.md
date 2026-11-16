@@ -129,4 +129,7 @@ Wiki: https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-4B
   for 5 minutes or until touched (`f` on the PC tries it). Needs the Worker redeployed (`npx wrangler deploy`).
   Without a code, POST `/v1/ping-here` pings every board whose hourly check came from the caller's home connection
   in the last 3 h (`here:<hash of IPv4 or IPv6 /64>:<code hash>` keys; the page also sends its IPv4 from api.ipify.org).
+- Charge call: at `Scene::kChargeCallPercent` (5%) and not charging, the same banner says "CHARGE ME!" and calls every
+  8 s for a minute (loud even if muted), again every 20 minutes; 9 pm-7 am it lights up without a sound. Plugging
+  in or a touch stops it (`updateChargeCall`, `testChargeCall`). The 15% "BATTERY LOW" toast is unchanged.
 - Later: Bluetooth visitors between two boards.

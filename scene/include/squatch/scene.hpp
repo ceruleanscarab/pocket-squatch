@@ -136,7 +136,7 @@ public:
     bool takeSettingsChanged();           // true once after the player changes one
     int brightnessPercent() const;
     uint32_t screenTimeoutMs() const;     // 0: never
-    int volume() const { return findingMe() ? 3 : settings_.volume; }  // 0 (off) .. kVolumeSteps - 1; loud when found
+    int volume() const { return findingMe() && !findMeQuiet_ ? 3 : settings_.volume; }  // 0 (off) .. kVolumeSteps - 1; loud when found
     // After the timeout with no touch the screen should go dark; the front end turns the
     // panel off and stops drawing. The touch that wakes it does nothing else, so a tap on
     // a dark screen can't feed or scold by accident. News (hatching, a knock at the door,
@@ -146,6 +146,11 @@ public:
     // loudly every few seconds and flashes "HERE I AM!" until it's touched or durationMs pass.
     void startFindMe(uint32_t durationMs = 5 * 60 * 1000);
     bool findingMe() const { return findMeUntil_ != 0; }
+    // Almost out of battery (5% or less, not charging): it calls "CHARGE ME!" for a minute, and again
+    // every 20 minutes, so someone hears it and plugs it in before it goes dark. Loud by day; between
+    // 9 pm and 7 am it only lights up, without a sound. Plugging in or a touch stops it.
+    static constexpr int kChargeCallPercent = 5;
+    bool callingForCharge() const { return findingMe() && chargeCall_; }
     void wake();
     void screenOffNow();  // e.g. the board's power key
     // Sounds to play, oldest first; the front end hands them to a Synth at volume(). Nothing
@@ -510,6 +515,10 @@ private:
     bool privacyAvailable_ = false, privacyRequest_ = false;
     bool welcome_ = false, welcomeDone_ = false;
     uint32_t findMeUntil_ = 0, findMeNextCall_ = 0;
+    bool chargeCall_ = false, findMeQuiet_ = false;
+    uint32_t nextChargeCall_ = 0;
+    void startChargeCall();
+    void updateChargeCall();
     void drawFindMe(Canvas& c) const;
     bool factoryAvailable_ = false, confirmNew_ = false, factoryReset_ = false;
     uint8_t qr_[160] = {};  // the setup hotspot as a Wi-Fi QR code (qrcodegen's format), if qrSize_ > 0

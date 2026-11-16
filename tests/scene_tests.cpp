@@ -1884,6 +1884,54 @@ static void testFindMe() {
     }
 }
 
+static void testChargeCall() {
+    std::printf("charge call: at 5%% it calls out to be plugged in, quietly at night, and stops when charging\n");
+    Driver d;
+    d.scene.setSpecies(Scene::Species::Horse);
+    Scene::Settings st = d.scene.settings();
+    st.volume = 0;
+    d.scene.setSettings(st);
+    d.scene.setBattery(12, false);  // the old 15% warning only
+    for (int k = 0; k < 60; k++) d.step();
+    CHECK(!d.scene.callingForCharge());
+    d.scene.screenOffNow();
+    Cue c;
+    while (d.scene.takeCue(c)) {}
+    d.scene.setBattery(5, false);
+    int calls = 0;
+    for (int k = 0; k < 1100; k++) {  // ~18 s
+        d.step();
+        while (d.scene.takeCue(c)) calls += c == Cue::Neigh;
+    }
+    CHECK(d.scene.callingForCharge() && !d.scene.screenOff());
+    CHECK(calls >= 2);  // 10 am: out loud, even though the sound is off
+    CHECK(d.scene.brightnessPercent() == 100);
+    std::vector<uint16_t> fb(Scene::kSize * Scene::kSize);
+    Canvas cv(fb.data(), Scene::kSize, Scene::kSize);
+    d.scene.draw(cv);
+    d.scene.setBattery(5, true);  // plugged in
+    d.step();
+    CHECK(!d.scene.callingForCharge());
+    d.scene.setBattery(4, false);  // unplugged again: calls again
+    d.step();
+    CHECK(d.scene.callingForCharge());
+    d.tap(240, 300);
+    CHECK(!d.scene.callingForCharge());
+    for (int k = 0; k < 600; k++) d.step();  // touched: not again for a while
+    CHECK(!d.scene.callingForCharge());
+    {
+        Driver n;  // at 10 pm: the light only
+        n.sim.mutableState().now += 12 * 3600;
+        n.scene.setBattery(3, false);
+        int night = 0;
+        for (int k = 0; k < 1100; k++) {
+            n.step();
+            while (n.scene.takeCue(c)) night += c == Cue::Neigh || c == Cue::Happy;
+        }
+        CHECK(n.scene.callingForCharge() && night == 0);
+    }
+}
+
 int main() {
     testBoardingStable();
     testHorseTouchVoices();
@@ -1936,6 +1984,7 @@ int main() {
     testHorseEatsApple();
     testNoTrails();
     testFindMe();
+    testChargeCall();
 
     std::printf("\n%d checks, %d failed\n", gChecks, gFailures);
     return gFailures ? 1 : 0;

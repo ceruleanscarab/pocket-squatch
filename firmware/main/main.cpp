@@ -195,6 +195,10 @@ void showMessage(const char* text) {
 // Load the pet and catch up on the time the board was off, or lay a first egg.
 void startPet() {
     State saved;
+    {  // bedtime from the setup page, before any catching up
+        int bed, wake;
+        if (storage::bedtime(bed, wake)) gSim.setSleepHours(bed, wake);
+    }
     if (storage::loadPet(saved)) {
         if (!walltime::known()) {
             // The RTC lost the time and the network didn't help: carry on from the save
@@ -300,6 +304,10 @@ void gameLoop(void*) {
 
         // Wi-Fi setup from the settings: start or stop the hotspot, and pass on how it's going.
         if (gScene.takeWelcomeDone()) storage::setWelcomed();
+        if (wifisetup::takeBedtimeChanged()) {  // a new bedtime from the setup page
+            int bed, wake;
+            if (storage::bedtime(bed, wake)) gSim.setSleepHours(bed, wake);
+        }
         if (cloud::takePing()) gScene.startFindMe();  // lost and looked for: light up and call out
         gScene.setSetupPhoneJoined(wifisetup::state() == wifisetup::State::Running && wifisetup::phonesJoined() > 0);
         if (gScene.takeFactoryReset()) {  // "like new": erase it all and start as out of the box

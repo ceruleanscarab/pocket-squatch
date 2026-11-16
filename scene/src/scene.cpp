@@ -303,7 +303,8 @@ void Scene::startChargeCall() {
     findMeUntil_ = std::max<uint32_t>(1, now_ + 60 * 1000);
     findMeNextCall_ = now_;
     chargeCall_ = true;
-    findMeQuiet_ = h >= 21.0f || h < 7.0f;  // nobody wants a neigh at 3 am: just the light
+    // Nobody wants a neigh at 3 am: between bedtime and waking, just the light.
+    findMeQuiet_ = h >= sim_.tuning().sleepHour || h < sim_.tuning().wakeHour;
     nextChargeCall_ = now_ + 20 * 60 * 1000;
     wake();
 }

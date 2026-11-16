@@ -1930,6 +1930,20 @@ static void testChargeCall() {
         }
         CHECK(n.scene.callingForCharge() && night == 0);
     }
+    {
+        Driver n;  // 10 pm, but bedtime is 11: still out loud
+        n.sim.setSleepHours(23, 7);
+        n.sim.mutableState().now += 12 * 3600;
+        n.scene.setBattery(3, false);
+        int loud = 0;
+        for (int k = 0; k < 1100; k++) {
+            n.step();
+            while (n.scene.takeCue(c)) loud += c == Cue::Neigh || c == Cue::Happy;
+        }
+        CHECK(loud >= 2);
+        n.sim.setSleepHours(3, 7);  // out of range: ignored
+        CHECK(n.sim.tuning().sleepHour == 23 && n.sim.tuning().wakeHour == 7);
+    }
 }
 
 int main() {

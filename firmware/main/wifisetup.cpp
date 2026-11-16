@@ -4,6 +4,7 @@
 #include <cctype>
 #include <atomic>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 #include "esp_http_server.h"
@@ -33,6 +34,7 @@ char gHotspot[32];
 char gSsid[33], gPass[65];
 char gTown[64], gTownFound[40];
 char gRestore[17];  // a backup code typed in, tidied ("" for none)
+std::atomic<bool> gBedtimeChanged{false};
 std::atomic<int> gPhones{0};  // phones joined to the hotspot
 std::atomic<int> gRestoreResult{0};  // 1 brought back, -1 not found
 char gNetworks[kMaxNetworks][33];
@@ -100,7 +102,7 @@ esp_err_t pageGet(httpd_req_t* req) {
     if (host[0] && std::strcmp(host, "192.168.4.1") != 0 && std::strcmp(host, "192.168.4.1:80") != 0)
         return redirect(req, HTTPD_404_NOT_FOUND);
     ESP_LOGI(TAG, "setup page sent to a phone");
-    static char html[7168];
+    static char html[9216];
 #if CONFIG_SQUATCH_PET_HORSE
     static char line2[640];
 #endif
@@ -149,10 +151,29 @@ esp_err_t pageGet(httpd_req_t* req) {
                  "autocapitalize=off autocorrect=off><label>Password</label>"
                  "<input name=pass type=password id=p autocapitalize=off autocorrect=off>"
                  "<small><input type=checkbox style='width:auto' onclick=\"p.type=this.checked?'text':'password'\"> "
-                 "show the password</small>"
+                 "show the password. Already set up? Leave it empty to keep the saved one.</small>"
                  "<label>Your town</label><input name=town placeholder='e.g. Colorado Springs' autocorrect=off>"
                  "<small>For the weather and the clock. Leave it empty to keep what's set.</small>",
                  sizeof html - std::strlen(html) - 1);
+    {  // bedtime: when the pet goes to sleep and wakes (and when the toy keeps quiet)
+        int bed = 21, wake = 7;
+        storage::bedtime(bed, wake);
+        static const char* kBed[] = {"7 pm", "8 pm", "9 pm", "10 pm", "11 pm"};
+        static const char* kWake[] = {"5 am", "6 am", "7 am", "8 am", "9 am"};
+        char opt[96];
+        std::strncat(html, "<label>Bedtime</label><select name=bed>", sizeof html - std::strlen(html) - 1);
+        for (int i = 0; i < 5; i++) {
+            std::snprintf(opt, sizeof opt, "<option value=%d%s>%s</option>", 19 + i, 19 + i == bed ? " selected" : "", kBed[i]);
+            std::strncat(html, opt, sizeof html - std::strlen(html) - 1);
+        }
+        std::strncat(html, "</select><label>Wake-up time</label><select name=wake>", sizeof html - std::strlen(html) - 1);
+        for (int i = 0; i < 5; i++) {
+            std::snprintf(opt, sizeof opt, "<option value=%d%s>%s</option>", 5 + i, 5 + i == wake ? " selected" : "", kWake[i]);
+            std::strncat(html, opt, sizeof html - std::strlen(html) - 1);
+        }
+        std::strncat(html, "</select><small>The pet sleeps from bedtime until it wakes up, and the toy keeps quiet "
+                           "then.</small>", sizeof html - std::strlen(html) - 1);
+    }
     if (cloud::enabled())
         std::strncat(html,
                      "<label>Bring back a pet (optional)</label><input name=restore placeholder='its backup code' "
@@ -192,6 +213,18 @@ esp_err_t saveposted(httpd_req_t* req) {
     httpd_query_key_value(body, "town", town, sizeof town);
     urlDecode(town);
     std::snprintf(gTown, sizeof gTown, "%s", town);
+    char bed[8] = {}, wake[8] = {};
+    httpd_query_key_value(body, "bed", bed, sizeof bed);
+    httpd_query_key_value(body, "wake", wake, sizeof wake);
+    if (bed[0] && wake[0]) {
+        const int b = std::atoi(bed), w = std::atoi(wake);
+        int oldB = 21, oldW = 7;
+        const bool had = storage::bedtime(oldB, oldW);
+        if (b >= 19 && b <= 23 && w >= 5 && w <= 9 && (!had || b != oldB || w != oldW)) {
+            storage::saveBedtime(b, w);
+            gBedtimeChanged = true;
+        }
+    }
     char restore[48] = {};
     httpd_query_key_value(body, "restore", restore, sizeof restore);
     urlDecode(restore);
@@ -206,6 +239,10 @@ esp_err_t saveposted(httpd_req_t* req) {
     urlDecode(pass);
     const char* chosen = other[0] ? other : ssid;
     if (!chosen[0]) return httpd_resp_send(req, "Pick a network first.", HTTPD_RESP_USE_STRLEN);
+    char savedSsid[33], savedPass[65];  // the same network again with no password: keep the saved one
+    if (!pass[0] && storage::wifiCredentials(savedSsid, sizeof savedSsid, savedPass, sizeof savedPass) &&
+        std::strcmp(savedSsid, chosen) == 0)
+        std::snprintf(pass, sizeof pass, "%s", savedPass);
     std::snprintf(gSsid, sizeof gSsid, "%s", chosen);
     std::snprintf(gPass, sizeof gPass, "%s", pass);
     gGotIt = true;
@@ -414,6 +451,8 @@ void network(char* out, size_t n) { std::snprintf(out, n, "%s", gSsid); }
 void town(char* out, size_t n) { std::snprintf(out, n, "%s", gTownFound); }
 
 int restoreResult() { return gRestoreResult; }
+
+bool takeBedtimeChanged() { return gBedtimeChanged.exchange(false); }
 
 int phonesJoined() { return gPhones; }
 

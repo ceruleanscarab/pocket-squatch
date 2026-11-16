@@ -191,6 +191,27 @@ void setWelcomed() {
     nvs_close(h);
 }
 
+bool bedtime(int& sleepHour, int& wakeHour) {
+    nvs_handle_t h;
+    if (nvs_open(kNamespace, NVS_READONLY, &h) != ESP_OK) return false;
+    uint8_t bed = 0, wake = 0;
+    const bool got = nvs_get_u8(h, "bed_h", &bed) == ESP_OK && nvs_get_u8(h, "wake_h", &wake) == ESP_OK;
+    nvs_close(h);
+    if (!got) return false;
+    sleepHour = bed;
+    wakeHour = wake;
+    return true;
+}
+
+void saveBedtime(int sleepHour, int wakeHour) {
+    nvs_handle_t h;
+    if (nvs_open(kNamespace, NVS_READWRITE, &h) != ESP_OK) return;
+    nvs_set_u8(h, "bed_h", static_cast<uint8_t>(sleepHour));
+    nvs_set_u8(h, "wake_h", static_cast<uint8_t>(wakeHour));
+    nvs_commit(h);
+    nvs_close(h);
+}
+
 void eraseAll() {
     nvs_flash_deinit();
     if (nvs_flash_erase() != ESP_OK || nvs_flash_init() != ESP_OK) {

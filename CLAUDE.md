@@ -130,6 +130,9 @@ Wiki: https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-4B
   Without a code, POST `/v1/ping-here` pings every board whose hourly check came from the caller's home connection
   in the last 3 h (`here:<hash of IPv4 or IPv6 /64>:<code hash>` keys; the page also sends its IPv4 from api.ipify.org).
 - Charge call: at `Scene::kChargeCallPercent` (5%) and not charging, the same banner says "CHARGE ME!" and calls every
-  8 s for a minute (loud even if muted), again every 20 minutes; 9 pm-7 am it lights up without a sound. Plugging
+  8 s for a minute (loud even if muted), again every 20 minutes; bedtime to waking it lights up without a sound. Plugging
   in or a touch stops it (`updateChargeCall`, `testChargeCall`). The 15% "BATTERY LOW" toast is unchanged.
+- Bedtime: the setup page has Bedtime (7-11 pm) and Wake-up (5-9 am) choices, saved in NVS (`storage::bedtime`, keys
+  `bed_h`/`wake_h`) and applied with `Sim::setSleepHours` at boot and on `wifisetup::takeBedtimeChanged`. Not in the save.
+  Picking the saved network again with an empty password keeps the saved password, so the page can change just the bedtime.
 - Later: Bluetooth visitors between two boards.

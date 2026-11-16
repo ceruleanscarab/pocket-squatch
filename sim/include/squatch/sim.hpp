@@ -271,6 +271,12 @@ public:
     const State& state() const { return s_; }
     State& mutableState() { return s_; }  // for loading saves and tests
     const Tuning& tuning() const { return tune_; }
+    // Bedtime and waking, local hours (from the setup page): bed 19-23, wake 5-9; others are ignored.
+    void setSleepHours(int sleepHour, int wakeHour) {
+        if (sleepHour < 19 || sleepHour > 23 || wakeHour < 5 || wakeHour > 9) return;
+        tune_.sleepHour = sleepHour;
+        tune_.wakeHour = wakeHour;
+    }
     TrustLevel trustLevel() const;
     int64_t ageSecs() const { return s_.now - s_.born; }
     int localHour() const;

@@ -28,4 +28,7 @@ int restoreResult();
 // How many phones have joined the hotspot (while it's up).
 int phonesJoined();
 
+// True once after the page saved a new bedtime (in NVS: storage::bedtime), for the game loop to use.
+bool takeBedtimeChanged();
+
 }  // namespace wifisetup

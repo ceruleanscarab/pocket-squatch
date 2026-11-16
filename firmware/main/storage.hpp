@@ -37,6 +37,9 @@ bool wifiCredentials(char* ssid, size_t ssidLen, char* password, size_t password
 void keepBuiltInDefaults();
 // Whether the first-start welcome (the Wi-Fi QR code) has been seen through: set up, or put off.
 bool welcomed();
+// Bedtime and wake-up hour from the setup page; false if never set (the pet's defaults, 9 pm and 7 am).
+bool bedtime(int& sleepHour, int& wakeHour);
+void saveBedtime(int sleepHour, int wakeHour);
 void setWelcomed();
 // "Like new": erases everything kept here (the pet, settings, Wi-Fi, town, backup code) and notes
 // not to copy menuconfig's Wi-Fi and town back in, so the next start is as out of the box.

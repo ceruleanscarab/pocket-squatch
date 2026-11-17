@@ -3,8 +3,9 @@
 // under a hash of the code, so nothing in KV says which board or pony it belongs to, and
 // the code itself never lands anywhere but on the board and wherever its owner wrote it.
 //
-//   PUT /v1/save/<CODE>   body: the save (a few hundred bytes). Keeps it as the latest,
-//                         and as that day's copy for a week.
+//   PUT /v1/save/<CODE>   body: the save (a few hundred bytes). Keeps it as the latest; with
+//                         ?daily=1 (the nightly one), or if the day has none yet, also as that
+//                         day's copy for a week. Boards send one about hourly and one at night.
 //   GET /v1/save/<CODE>   the latest save;  ?day=YYYY-MM-DD  that day's, if still kept.
 //
 //   GET  /ping            a small page: type a lost board's code and press Ping.
@@ -144,7 +145,11 @@ export default {
       if (body.byteLength < 16 || body.byteLength > MAX_BYTES) return new Response("bad size\n", { status: 413 });
       const day = new Date().toISOString().slice(0, 10);
       await env.SAVES.put(key, body, { metadata: { at: Date.now(), bytes: body.byteLength } });
-      await env.SAVES.put(`${key}:${day}`, body, { expirationTtl: WEEK });
+      // The day's copy: the nightly one (?daily=1), or the first of the day if the night's didn't come.
+      // The hourly backups only refresh the latest, which keeps the writes down.
+      const dayKey = `${key}:${day}`;
+      if (url.searchParams.get("daily") === "1" || !(await env.SAVES.get(dayKey, "arrayBuffer")))
+        await env.SAVES.put(dayKey, body, { expirationTtl: WEEK });
       return new Response("saved\n");
     }
 

@@ -20,8 +20,11 @@ bool tidy(const char* typed, char out[17]);
 
 // Back up now, in the background (takes the radio). Does nothing if one is already going.
 void backupNow(const squatch::State& s);
-// Every minute or so from the game loop: backs up once a night, about 2 am.
+// Every minute or so from the game loop: backs up once a night, about 2 am (again at 3 and 4 if
+// that didn't get through), and keeps a copy of the pet for backupJoined.
 void tick(const squatch::State& s, bool batteryOk);
+// From the weather task, about hourly, while it's joined anyway: the pet as of the last tick.
+void backupJoined();
 
 // For wifisetup, while it already has the radio and is joined to the network.
 bool fetchJoined(const char* code16, squatch::State& out);

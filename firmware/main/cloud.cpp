@@ -1,6 +1,7 @@
 #include "cloud.hpp"
 
 #include <atomic>
+#include <mutex>
 #include <cctype>
 #include <cstdio>
 #include <cstring>
@@ -31,7 +32,12 @@ constexpr char kAlphabet[] = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";  // Crockford's
 std::atomic<bool> gBusy{false};
 uint8_t gOut[squatch::kSaveBytes];
 size_t gOutLen = 0;
-int gLastNight = -1;
+std::atomic<int> gLastNight{-1};  // the day (tm_yday) whose nightly backup got through
+std::atomic<int> gNightTry{-1};    // the day the backup in progress is for (-1: not a nightly one)
+int gLastAttempt = -1;             // day * 24 + hour of the last nightly try
+std::mutex gSnapLock;              // the pet as of the last tick, for backupJoined
+uint8_t gSnap[squatch::kSaveBytes];
+size_t gSnapLen = 0;
 squatch::State gRestored;
 std::atomic<bool> gHaveRestored{false};
 std::atomic<bool> gPinged{false};
@@ -114,7 +120,10 @@ void pingTask(void*) {
             char ssid[33], pass[65];
             if (storage::wifiCredentials(ssid, sizeof ssid, pass, sizeof pass)) {
                 radio::take();
-                if (netjoin::join(ssid, pass)) checkPingJoined();
+                if (netjoin::join(ssid, pass)) {
+                    checkPingJoined();
+                    backupJoined();
+                }
                 netjoin::leave();
                 radio::give();
             }
@@ -131,12 +140,19 @@ void backupTask(void*) {
     int status = -1;
     if (storage::wifiCredentials(ssid, sizeof ssid, pass, sizeof pass) && netjoin::join(ssid, pass)) {
         size_t got;
-        status = request(code16, true, gOut, gOutLen, nullptr, 0, got);
+        char url[200];
+        std::snprintf(url, sizeof url, "%s%s?daily=1", kUrl, code16);  // the night's copy is the day's keepsake
+        status = request(code16, true, gOut, gOutLen, nullptr, 0, got, gNightTry >= 0 ? url : nullptr);
     }
     netjoin::leave();
     radio::give();
-    if (status == 200) ESP_LOGI(TAG, "backed up (%u bytes)", static_cast<unsigned>(gOutLen));
-    else ESP_LOGW(TAG, "backup failed (HTTP %d)", status);
+    if (status == 200) {
+        ESP_LOGI(TAG, "backed up (%u bytes)", static_cast<unsigned>(gOutLen));
+        if (gNightTry >= 0) gLastNight = gNightTry.load();
+    } else {
+        ESP_LOGW(TAG, "backup failed (HTTP %d)%s", status, gNightTry >= 0 ? ": trying again in an hour" : "");
+    }
+    gNightTry = -1;
     gBusy = false;
     vTaskDelete(nullptr);
 }
@@ -173,13 +189,42 @@ void backupNow(const squatch::State& s) {
 
 void tick(const squatch::State& s, bool batteryOk) {
     if (!enabled()) return;
+    {
+        std::lock_guard<std::mutex> lock(gSnapLock);
+        gSnapLen = squatch::save(s, gSnap, sizeof gSnap);
+    }
     const time_t now = time(nullptr);
     if (now < 1700000000) return;  // the clock isn't set yet
     struct tm local;
     localtime_r(&now, &local);
-    if (local.tm_hour != 2 || local.tm_yday == gLastNight || !batteryOk) return;
-    gLastNight = local.tm_yday;
+    // About 2 am; if that one didn't get through, again at 3 and at 4. One try an hour.
+    const int attempt = local.tm_yday * 24 + local.tm_hour;
+    if (local.tm_hour < 2 || local.tm_hour > 4 || local.tm_yday == gLastNight || attempt == gLastAttempt || !batteryOk)
+        return;
+    if (gBusy) return;  // another backup is going: try again next minute
+    gLastAttempt = attempt;
+    gNightTry = local.tm_yday;
     backupNow(s);
+}
+
+void backupJoined() {
+    if (!enabled() || gBusy.exchange(true)) return;
+    {
+        std::lock_guard<std::mutex> lock(gSnapLock);
+        if (gSnapLen == 0) {
+            gBusy = false;
+            return;
+        }
+        std::memcpy(gOut, gSnap, gSnapLen);
+        gOutLen = gSnapLen;
+    }
+    char code16[17];
+    rawCode(code16);
+    size_t got;
+    const int status = request(code16, true, gOut, gOutLen, nullptr, 0, got);
+    if (status == 200) ESP_LOGI(TAG, "hourly backup (%u bytes)", static_cast<unsigned>(gOutLen));
+    else ESP_LOGW(TAG, "hourly backup failed (HTTP %d)", status);
+    gBusy = false;
 }
 
 bool fetchJoined(const char* code16, squatch::State& out) {

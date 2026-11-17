@@ -1,6 +1,7 @@
 # Cloud backups
 
-Each board backs its pet up once a night (about 2 am) to a small Cloudflare Worker, and
+Each board backs its pet up about hourly (while it checks the weather) and once a night (about 2 am,
+retried at 3 and 4 if that fails) to a small Cloudflare Worker, and
 right after its Wi-Fi is set up. If the board is reset, broken or replaced, the pet comes
 back from its **backup code**, typed into the Wi-Fi setup page on a phone.
 

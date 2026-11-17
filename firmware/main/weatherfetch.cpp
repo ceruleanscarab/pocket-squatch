@@ -81,7 +81,10 @@ void weatherTask(void*) {
         }
         const bool joined = ok;
         ok = ok && fetch(w);
-        if (joined) cloud::checkPingJoined();  // anyone looking for it? (while joined anyway)
+        if (joined) {  // while joined anyway: anyone looking for it? and a fresh backup
+            cloud::checkPingJoined();
+            cloud::backupJoined();
+        }
         netjoin::leave();
         radio::give();
         if (ok) {

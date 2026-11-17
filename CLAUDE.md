@@ -125,7 +125,8 @@ Wiki: https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-4B
   (`squatch-lcd4b.bin`, `squatch-amoled18.bin`, `pony-amoled18.bin`; version = CI run number, hand builds are 0).
   menuconfig Wi-Fi and town are copied into NVS at boot (`storage::keepBuiltInDefaults`) since CI builds have neither.
 - Cloud backups (`cloud/` Cloudflare Worker + KV; `firmware/main/cloud.cpp`; menuconfig Cloud backups address, empty =
-  off): nightly about 2 am and after Wi-Fi setup, PUT the save under the board's 16-character backup code (NVS
+  off): nightly about 2 am (retried at 3 and 4 if it failed; sent with `?daily=1`), hourly in the weather check (or the
+  ping task) from the copy `cloud::tick` keeps (`backupJoined`), and after Wi-Fi setup, PUT the save under the board's 16-character backup code (NVS
   `bk_code`; the Worker keys by its hash, keeps latest + a week of dailies). The phone setup page shows the code and
   takes one to restore; a restored pet comes back as from the boarding stable. Code shown on Settings > Wi-Fi.
 - Find a lost toy: the Worker's `/ping` page (also https://find.bluebeetle.games, a custom domain in `wrangler.toml`) takes a backup code; POST/DELETE `/v1/ping/<CODE>` (kept 2 h). The board

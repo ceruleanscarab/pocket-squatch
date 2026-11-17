@@ -195,6 +195,11 @@ void showMessage(const char* text) {
 // Load the pet and catch up on the time the board was off, or lay a first egg.
 void startPet() {
     State saved;
+    {  // the owner's name from the setup page
+        char owner[24];
+        storage::ownerName(owner, sizeof owner);
+        gScene.setOwnerName(owner);
+    }
     {  // bedtime from the setup page, before any catching up
         int bed, wake;
         if (storage::bedtime(bed, wake)) gSim.setSleepHours(bed, wake);
@@ -304,6 +309,11 @@ void gameLoop(void*) {
 
         // Wi-Fi setup from the settings: start or stop the hotspot, and pass on how it's going.
         if (gScene.takeWelcomeDone()) storage::setWelcomed();
+        if (wifisetup::takeOwnerChanged()) {  // a name from the setup page
+            char owner[24];
+            storage::ownerName(owner, sizeof owner);
+            gScene.setOwnerName(owner);
+        }
         if (wifisetup::takeBedtimeChanged()) {  // a new bedtime from the setup page
             int bed, wake;
             if (storage::bedtime(bed, wake)) gSim.setSleepHours(bed, wake);

@@ -34,7 +34,7 @@ char gHotspot[32];
 char gSsid[33], gPass[65];
 char gTown[64], gTownFound[40];
 char gRestore[17];  // a backup code typed in, tidied ("" for none)
-std::atomic<bool> gBedtimeChanged{false};
+std::atomic<bool> gBedtimeChanged{false}, gOwnerChanged{false};
 std::atomic<int> gPhones{0};  // phones joined to the hotspot
 std::atomic<int> gRestoreResult{0};  // 1 brought back, -1 not found
 char gNetworks[kMaxNetworks][33];
@@ -155,6 +155,15 @@ esp_err_t pageGet(httpd_req_t* req) {
                  "<label>Your town</label><input name=town placeholder='e.g. Colorado Springs' autocorrect=off>"
                  "<small>For the weather and the clock. Leave it empty to keep what's set.</small>",
                  sizeof html - std::strlen(html) - 1);
+    {  // the owner's first name: the pet says it now and then (kept on the toy only)
+        char owner[24];
+        storage::ownerName(owner, sizeof owner);
+        std::strncat(html, "<label>Your first name (optional)</label><input name=owner maxlength=10 "
+                           "autocorrect=off value=\"", sizeof html - std::strlen(html) - 1);
+        appendEscaped(html, sizeof html, owner);
+        std::strncat(html, "\"><small>Your pet will say hello to you by name. It stays on the toy.</small>",
+                     sizeof html - std::strlen(html) - 1);
+    }
     {  // bedtime: when the pet goes to sleep and wakes (and when the toy keeps quiet)
         int bed = 21, wake = 7;
         storage::bedtime(bed, wake);
@@ -213,6 +222,22 @@ esp_err_t saveposted(httpd_req_t* req) {
     httpd_query_key_value(body, "town", town, sizeof town);
     urlDecode(town);
     std::snprintf(gTown, sizeof gTown, "%s", town);
+    char owner[64] = {};  // the name as typed: tidied to letters, spaces, - and ' (up to 10)
+    if (httpd_query_key_value(body, "owner", owner, sizeof owner) == ESP_OK) {
+        urlDecode(owner);
+        char tidy[16] = {}, was[24];
+        int n = 0;
+        for (const char* p = owner; *p && n < 10; p++) {
+            const char c = static_cast<char>(std::toupper(static_cast<unsigned char>(*p)));
+            if ((c >= 'A' && c <= 'Z') || c == '-' || c == '\'' || (c == ' ' && n > 0)) tidy[n++] = c;
+        }
+        while (n > 0 && tidy[n - 1] == ' ') tidy[--n] = '\0';
+        storage::ownerName(was, sizeof was);
+        if (std::strcmp(was, tidy) != 0) {
+            storage::saveOwnerName(tidy);
+            gOwnerChanged = true;
+        }
+    }
     char bed[8] = {}, wake[8] = {};
     httpd_query_key_value(body, "bed", bed, sizeof bed);
     httpd_query_key_value(body, "wake", wake, sizeof wake);
@@ -453,6 +478,7 @@ void town(char* out, size_t n) { std::snprintf(out, n, "%s", gTownFound); }
 int restoreResult() { return gRestoreResult; }
 
 bool takeBedtimeChanged() { return gBedtimeChanged.exchange(false); }
+bool takeOwnerChanged() { return gOwnerChanged.exchange(false); }
 
 int phonesJoined() { return gPhones; }
 

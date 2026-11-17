@@ -1,6 +1,7 @@
 #include "squatch/scene.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -321,6 +322,27 @@ void Scene::updateChargeCall() {
 }
 
 uint32_t Scene::screenTimeoutMs() const { return kTimeoutSecs[settings_.timeout] * 1000; }
+
+void Scene::setOwnerName(const char* name) {
+    int n = 0;
+    for (const char* p = name ? name : ""; *p && n < kMaxOwnerLen; p++) {
+        const char c = static_cast<char>(std::toupper(static_cast<unsigned char>(*p)));
+        if ((c >= 'A' && c <= 'Z') || c == '-' || c == '\'' || (c == ' ' && n > 0)) owner_[n++] = c;
+    }
+    while (n > 0 && owner_[n - 1] == ' ') n--;
+    owner_[n] = '\0';
+}
+
+const char* Scene::withName(const char* base, const char* end, bool sometimes) {
+    if (!owner_[0] || (sometimes && rand01() < 0.5f)) {
+        std::snprintf(named_, sizeof named_, "%s%s", base, end);
+    } else {
+        std::snprintf(named_, sizeof named_, "%s, %s%s", base, owner_, end);
+        if (std::strlen(base) + std::strlen(owner_) + 2 + std::strlen(end) >= sizeof named_)  // too long: drop the base
+            std::snprintf(named_, sizeof named_, "%s%s", owner_, end);
+    }
+    return named_;
+}
 
 void Scene::wake() {
     screenOff_ = false;
@@ -654,7 +676,7 @@ void Scene::touch(const TouchEvent& e) {
         if (e.phase == TouchPhase::Down) {
             findMeUntil_ = 0;
             screenOff_ = waking_ = false;
-            say(chargeCall_ ? "PLEASE PLUG ME IN!" : "YOU FOUND ME!", true);
+            say(chargeCall_ ? "PLEASE PLUG ME IN!" : withName("YOU FOUND ME", "!", false), true);
             cue(Cue::Happy);
         }
         return;
@@ -948,7 +970,7 @@ void Scene::pressSlot(Slot s) {
             sim_.lights(!sim_.state().lightsOn);
             cue(sim_.state().lightsOn ? Cue::LightOn : Cue::LightOff);
             if (tuckIn) {  // tucked in: a little thank-you (it would have gone dark anyway)
-                say("GOODNIGHT", true);
+                say(withName("GOODNIGHT", "", false), true);
                 spawn(ParticleKind::Heart, squatchX(), headY() - 30, 0, -40, 1500);
             } else {
                 say(sim_.state().lightsOn ? "LIGHTS ON" : "LIGHTS OFF", true);
@@ -1399,7 +1421,8 @@ void Scene::touchPet(int x, int y) {
     } else {
         react(React::Wave, 1600);
         static const char* kHi[] = {"HI!", "HELLO!", "HUH?", "YES?"};
-        speak(kHi[static_cast<int>(rand01() * 4) & 3]);
+        if (owner_[0] && rand01() < 0.3f) speak(withName("HI", "!", false));
+        else speak(kHi[static_cast<int>(rand01() * 4) & 3]);
     }
 }
 
@@ -2201,11 +2224,14 @@ void Scene::greet() {
         speak("OH! IT'S YOU.");
         return;
     }
-    if (s.calling) speak("THERE YOU ARE!");
+    const float h = hourOfDay();
+    if (s.calling) speak(withName("THERE YOU ARE"));
     else if (s.hunger <= 1) speak("SO HUNGRY...");
-    else if (s.happiness <= 1) speak("I MISSED YOU!");
-    else if (species_ == Species::Horse) {
-        const float h = hourOfDay();
+    else if (s.happiness <= 1) speak(withName("I MISSED YOU"));
+    else if (owner_[0] && rand01() < 0.5f) {  // by name, half the time
+        speak(withName(h >= 5 && h < 11 ? "GOOD MORNING" : h < 17 ? "HI" : h < 21 ? "GOOD EVENING" : "UP LATE",
+                       h >= 21 || h < 5 ? "?" : "!", false));
+    } else if (species_ == Species::Horse) {
         static const char* kMorning[] = {"GOOD MORNING!", "MORNING! BREAKFAST?", "YAY, YOU'RE UP!"};
         static const char* kDay[] = {"HI THERE!", "HAY THERE!", "YOU'RE BACK!", "I WAS WAITING FOR YOU"};
         static const char* kEvening[] = {"GOOD EVENING!", "HI! PRETTY SKY TONIGHT", "THERE YOU ARE!"};
@@ -2214,7 +2240,6 @@ void Scene::greet() {
         else if (h < 21) sayFresh(kEvening, 3);
         else speak("UP LATE?");
     } else {
-        const float h = hourOfDay();
         speak(h >= 5 && h < 11 ? "GOOD MORNING!" : h < 17 ? "HI THERE!" : h < 21 ? "GOOD EVENING!" : "UP LATE?");
     }
     react(React::Wave, 1600);
@@ -2233,6 +2258,12 @@ void Scene::chatter() {
     if (s.messes >= 2) return speak(species_ == Species::Horse ? "MUCK OUT MY PADDOCK?" : "STINKY IN HERE...");
     const float h = hourOfDay();
     if (h >= 21 || h < 5) return speak("YAWN... SLEEPY");
+    if (owner_[0] && rand01() < 0.12f) {  // now and then, something sweet for its person
+        char line[28];
+        static const char* kFmt[] = {"I LOVE YOU, %s", "%s IS MY BEST FRIEND", "YOU'RE THE BEST, %s!", "%s! LOOK AT ME!"};
+        std::snprintf(line, sizeof line, kFmt[static_cast<int>(rand01() * 4) & 3], owner_);
+        return speak(line);
+    }
     if (species_ == Species::Horse) return horseChatter();
     if (rand01() < 0.5f) {
         switch (weather_.sky) {

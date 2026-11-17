@@ -40,6 +40,9 @@ bool welcomed();
 // Bedtime and wake-up hour from the setup page; false if never set (the pet's defaults, 9 pm and 7 am).
 bool bedtime(int& sleepHour, int& wakeHour);
 void saveBedtime(int sleepHour, int wakeHour);
+// The owner's first name from the setup page ("" if none). Only ever on the board.
+void ownerName(char* out, size_t n);
+void saveOwnerName(const char* name);
 void setWelcomed();
 // "Like new": erases everything kept here (the pet, settings, Wi-Fi, town, backup code) and notes
 // not to copy menuconfig's Wi-Fi and town back in, so the next start is as out of the box.

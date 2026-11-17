@@ -2041,6 +2041,34 @@ static void testHorseWalksForwards() {
     }
 }
 
+static void testOwnerName() {
+    std::printf("the pet greets its person by name now and then (the name only lives on the board)\n");
+    Driver d;
+    d.scene.setSpecies(Scene::Species::Horse);
+    d.scene.setOwnerName("robin hood!7");
+    CHECK(std::strcmp(d.scene.ownerName(), "ROBIN HOOD") == 0);
+    d.scene.setOwnerName("  ");
+    CHECK(d.scene.ownerName()[0] == '\0');
+    d.scene.setOwnerName("Robin");
+    d.sim.setName("STAR");
+    d.sim.mutableState().hunger = d.sim.mutableState().happiness = 4;  // content: a plain hello
+    int named = 0;
+    for (int i = 0; i < 20; i++) {  // the screen goes dark for a while and comes back: a hello
+        d.scene.screenOffNow();
+        for (int k = 0; k < 4000; k++) d.step();  // 64 s
+        d.tap(240, 200);
+        for (int k = 0; k < 75; k++) d.step();  // the hello comes 0.7 s after
+        named += d.scene.bubble() && std::strstr(d.scene.bubble(), "ROBIN") != nullptr;
+    }
+    CHECK(named >= 3 && named <= 17);  // sometimes, not always
+    d.sim.tick(12 * 3600);  // bedtime: tucked in by name
+    d.settle();
+    d.sim.lights(true);
+    d.openTray();
+    d.pressSlot(Scene::Slot::Light);
+    CHECK(d.scene.toast() && std::strstr(d.scene.toast(), "GOODNIGHT, ROBIN") != nullptr);
+}
+
 int main() {
     testBoardingStable();
     testHorseTouchVoices();
@@ -2097,6 +2125,7 @@ int main() {
     testHoofbeats();
     testHorseDrinks();
     testHorseWalksForwards();
+    testOwnerName();
 
     std::printf("\n%d checks, %d failed\n", gChecks, gFailures);
     return gFailures ? 1 : 0;

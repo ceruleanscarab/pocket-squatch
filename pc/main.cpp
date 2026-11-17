@@ -143,6 +143,7 @@ void usage() {
 int main(int argc, char** argv) {
     const char* savePath = "squatch.sav";
     const char* shotPath = nullptr;
+    const char* owner = "";
     bool fresh = false, detail = false, bigText = false;
     int zoom = 1;
     int battery = -1;  // the PC has no battery unless one is pretended
@@ -156,6 +157,7 @@ int main(int argc, char** argv) {
         else if (!std::strcmp(argv[i], "--save") && i + 1 < argc) savePath = argv[++i];
         else if (!std::strcmp(argv[i], "--zoom") && i + 1 < argc) zoom = std::max(1, std::atoi(argv[++i]));
         else if (!std::strcmp(argv[i], "--shot") && i + 1 < argc) shotPath = argv[++i];
+        else if (!std::strcmp(argv[i], "--owner") && i + 1 < argc) owner = argv[++i];  // as typed on the setup page
         else if (!std::strcmp(argv[i], "--date") && i + 1 < argc) {
             if (std::sscanf(argv[++i], "%d-%d", &month, &day) != 2) {
                 usage();
@@ -200,6 +202,7 @@ int main(int argc, char** argv) {
     Scene scene(sim);
     scene.setDetail(detail);
     scene.setBigText(bigText);
+    scene.setOwnerName(owner);
     scene.setBattery(battery, charging);
     if (weather.sky != Sky::Unknown) scene.setWeather(weather);
     if (month) scene.previewDate(month, day);

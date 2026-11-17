@@ -30,5 +30,7 @@ int phonesJoined();
 
 // True once after the page saved a new bedtime (in NVS: storage::bedtime), for the game loop to use.
 bool takeBedtimeChanged();
+// True once after the page saved a new owner's name (storage::ownerName).
+bool takeOwnerChanged();
 
 }  // namespace wifisetup

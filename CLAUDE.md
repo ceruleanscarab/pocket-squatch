@@ -144,4 +144,7 @@ Wiki: https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-4B
 - Light: goes out by itself a minute or so after the pet falls asleep (`EventType::LightsOut`), or 3 minutes after being
   switched on to peek; never a care mistake. Switching it off yourself while it sleeps gets "GOODNIGHT" and a heart.
   `penalizedSleepLights` now only means "it went out by itself tonight" (kept to leave `State` unchanged).
+- Owner's name: "Your first name" on the setup page (NVS `owner`, tidied to 10 letters; never in the save, backups or
+  repo) -> `Scene::setOwnerName`. Greetings, tucking in, being found and some chatter use it now and then
+  (`withName`; `testOwnerName`). `squatch-pc --owner NAME` tries it.
 - Later: Bluetooth visitors between two boards.

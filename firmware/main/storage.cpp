@@ -212,6 +212,24 @@ void saveBedtime(int sleepHour, int wakeHour) {
     nvs_close(h);
 }
 
+void ownerName(char* out, size_t n) {
+    if (n) out[0] = '\0';
+    nvs_handle_t h;
+    if (nvs_open(kNamespace, NVS_READONLY, &h) != ESP_OK) return;
+    size_t len = n;
+    if (nvs_get_str(h, "owner", out, &len) != ESP_OK && n) out[0] = '\0';
+    nvs_close(h);
+}
+
+void saveOwnerName(const char* name) {
+    nvs_handle_t h;
+    if (nvs_open(kNamespace, NVS_READWRITE, &h) != ESP_OK) return;
+    if (name && name[0]) nvs_set_str(h, "owner", name);
+    else nvs_erase_key(h, "owner");
+    nvs_commit(h);
+    nvs_close(h);
+}
+
 void eraseAll() {
     nvs_flash_deinit();
     if (nvs_flash_erase() != ESP_OK || nvs_flash_init() != ESP_OK) {

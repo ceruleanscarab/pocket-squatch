@@ -295,6 +295,11 @@ public:
     Rect privacyArea() const;
     // Touch slop for a small screen (see GestureReader::setSlop).
     void setTouchSlop(int px) { gestures_.setSlop(px); }
+    // The owner's first name (from the board's setup page; never in the save or the backups): the pet
+    // greets them by it now and then. Letters, spaces, - and ' only, up to kMaxOwnerLen; "" for none.
+    static constexpr int kMaxOwnerLen = 10;
+    void setOwnerName(const char* name);
+    const char* ownerName() const { return owner_; }
     void setBigText(bool on) {
         bigText_ = on;
         sceneryKey_ = -1;
@@ -662,6 +667,10 @@ private:
 
     // talking
     char bubble_[28] = {};
+    char owner_[kMaxOwnerLen + 1] = {};
+    char named_[28] = {};  // a line with the owner's name in it, for speak()/say()
+    // "<base>, NAME!" (or base alone without a name, or by chance when sometimes is set).
+    const char* withName(const char* base, const char* end = "!", bool sometimes = true);
     uint32_t bubbleUntil_ = 0, nextChatter_ = 30000, greetAt_ = 1200, offAt_ = 0;
     bool greeted_ = false, wasOff_ = false;
     uint8_t lastChatter_ = 255;

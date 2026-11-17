@@ -706,6 +706,11 @@ void Scene::handle(const Gesture& g) {
             if (!scanning_) requestScan();
             return;
         }
+        if (trailsDoneArea().contains(g.x, g.y)) {
+            overlay_ = Overlay::None;
+            cue(Cue::Tick);
+            return;
+        }
         Rect panel{kMapX, kMapY, kMapW, kMapH};
         if (!panel.contains(g.x, g.y) || g.y < kRowY) overlay_ = Overlay::None;  // outside, or the title
         return;
@@ -3101,7 +3106,10 @@ Scene::Slot Scene::slotAt(int i) const {
 
 Scene::Rect Scene::trailRowArea(int i) const { return {kMapX + 12, kRowY + i * kRowH, kMapW - 24, kRowH}; }
 
-Scene::Rect Scene::rescanArea() const { return {S / 2 - 120, kRowY + State::kMaxTrails * kRowH + 4, 240, 64}; }
+Scene::Rect Scene::rescanArea() const { return {kMapX + 16, kRowY + State::kMaxTrails * kRowH + 4, kMapW / 2 - 22, 64}; }
+Scene::Rect Scene::trailsDoneArea() const {  // beside LOOK AGAIN: the plain way out
+    return {S / 2 + 6, kRowY + State::kMaxTrails * kRowH + 4, kMapW / 2 - 22, 64};
+}
 
 void Scene::furColours(Rgb& fur, Rgb& face, Rgb& mark) const {
     const State& s = sim_.state();
@@ -5128,6 +5136,9 @@ void Scene::drawTrails(Canvas& c) {
     Rect b = rescanArea();
     c.fillRoundRect(b.x, b.y + 4, b.w, b.h - 8, 14, scanning_ ? 0xB8AE9A : kButton);
     label(c, {b.x, b.y + 4, b.w, b.h - 8}, scanning_ ? "LISTENING..." : "LOOK AGAIN", 2, kUiLight);
+    const Rect d = trailsDoneArea();
+    c.fillRoundRect(d.x, d.y + 4, d.w, d.h - 8, 14, kButton);
+    label(c, {d.x, d.y + 4, d.w, d.h - 8}, "DONE", 2, kUiLight);
 }
 
 // ================================================================ games

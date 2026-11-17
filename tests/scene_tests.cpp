@@ -546,6 +546,7 @@ static void testTouchTargets() {
     for (int i = 0; i < d.scene.slotCount(); i++) CHECK(big(d.scene.slotArea(i)));
     for (int i = 0; i < State::kMaxTrails; i++) CHECK(big(d.scene.trailRowArea(i)));
     CHECK(big(d.scene.rescanArea()));
+    CHECK(big(d.scene.trailsDoneArea()));
     CHECK(big(d.scene.homeArea()));
     for (int row = 0; row < Scene::kSettingRows; row++) {
         CHECK(big(d.scene.settingButtonArea(row, false)));
@@ -633,6 +634,14 @@ static void testTrailMap() {
     CHECK(d.scene.takeScanRequest());
     d.tap(10, 476);
     CHECK(d.scene.overlay() == Scene::Overlay::None);
+    std::printf("DONE closes it too\n");
+    d.openTray();
+    if (d.slotOf(Scene::Slot::Trails) < 0) d.pressSlot(Scene::Slot::More);
+    d.pressSlot(Scene::Slot::Trails);
+    CHECK(d.scene.overlay() == Scene::Overlay::Trails);
+    d.tap(d.scene.trailsDoneArea());
+    CHECK(d.scene.overlay() == Scene::Overlay::None);
+    CHECK(!d.scene.takeScanRequest());
 
     std::printf("a Child that trusts you sets off, is gone from the clearing, and comes back\n");
     growToChild(d);

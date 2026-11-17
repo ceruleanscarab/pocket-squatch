@@ -199,6 +199,7 @@ public:
     // The trail map: one row per trail, and the button that scans again.
     Rect trailRowArea(int i) const;
     Rect rescanArea() const;
+    Rect trailsDoneArea() const;
     bool scanning() const { return scanning_; }
     const char* trailNote() const { return trailNote_; }  // the map's status line
     int slotCount() const;

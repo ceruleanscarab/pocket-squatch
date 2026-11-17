@@ -1,9 +1,10 @@
 // Waveshare ESP32-S3-Touch-AMOLED-1.75C (round, in the aluminium case): the display, brightness and
 // touch, behind the same board.h as the other boards, so main.cpp, the sim and the scene don't change.
 //
-// The scene is drawn 480x480. This panel is round, 466x466, so each frame is scaled to 466x466
-// (bilinear) and fills it; the scene's round layout (Scene::setRound) keeps everything that matters
-// inside the circle. Touches are mapped back into the scene's 480x480.
+// The scene is drawn 480x480. This panel is round, 466x466: each frame is scaled to 400x400 (bilinear)
+// and centred, so the circle shows Scene::kRoundR (278) scene px around the middle and only the
+// scene's corners are lost; its round layout (Scene::setRound) keeps everything that matters inside.
+// Touches are mapped back into the scene's 480x480.
 //
 // Panel: CO5300 over QSPI (the same commands as the SH8601, so the sh8601 driver runs it), with a
 // 6 px column offset. Touch: CST9217 at 0x5A, read directly (no esp_lcd driver for it). The resets
@@ -53,6 +54,9 @@ static const char* TAG = "board";
 #define PANEL 466
 #define X_GAP 6  // the CO5300's first visible column
 
+#define OUT 400                    // the scene's 480, as shown
+#define OFF 32  // where it starts, across and down (even: these panels want even window edges)
+
 #define STRIPE_ROWS 32
 #define STRIPE_BYTES (PANEL * STRIPE_ROWS * 2)
 
@@ -72,8 +76,8 @@ static uint16_t* s_stripe[2];
 static SemaphoreHandle_t s_stripe_free;
 static bool s_cleared;
 
-static uint16_t s_src[PANEL];
-static uint8_t s_frac[PANEL];
+static uint16_t s_src[OUT];
+static uint8_t s_frac[OUT];
 
 static bool on_trans_done(esp_lcd_panel_io_handle_t io, esp_lcd_panel_io_event_data_t* ev, void* ctx) {
     (void)io;
@@ -170,8 +174,8 @@ static esp_err_t init_touch(void) {
 }
 
 static void init_scaling(void) {
-    for (int i = 0; i < PANEL; i++) {
-        float s = (i + 0.5f) * BOARD_WIDTH / PANEL - 0.5f;
+    for (int i = 0; i < OUT; i++) {
+        float s = (i + 0.5f) * BOARD_WIDTH / OUT - 0.5f;
         if (s < 0) s = 0;
         int a = (int)s;
         if (a > BOARD_WIDTH - 2) a = BOARD_WIDTH - 2;
@@ -201,7 +205,7 @@ esp_err_t board_init(void) {
     xSemaphoreGive(s_frame_done);
     xTaskCreatePinnedToCore(present_task, "present", 3072, NULL, 4, NULL, 0);
     if (init_touch() != ESP_OK) ESP_LOGW(TAG, "no touch chip answered");
-    ESP_LOGI(TAG, "display ready: the 480x480 scene at 466x466");
+    ESP_LOGI(TAG, "display ready: the 480x480 scene at 400x400, centred in the circle");
     return ESP_OK;
 }
 
@@ -229,14 +233,14 @@ uint16_t* board_draw_buffer(void) { return s_scene[s_draw]; }
 #define SPREAD(c) ((((uint32_t)(c)) | ((uint32_t)(c) << 16)) & 0x07E0F81Fu)
 static inline uint16_t swap16(uint16_t v) { return (uint16_t)((v << 8) | (v >> 8)); }
 
-static void send(int y0, int rows, int cur) {
+static void send(int x0, int w, int y0, int rows, int cur) {
     xSemaphoreTake(s_io_lock, portMAX_DELAY);
-    esp_err_t err = esp_lcd_panel_draw_bitmap(s_panel, 0, y0, PANEL, y0 + rows, s_stripe[cur]);
+    esp_err_t err = esp_lcd_panel_draw_bitmap(s_panel, x0, y0, x0 + w, y0 + rows, s_stripe[cur]);
     xSemaphoreGive(s_io_lock);
     if (err != ESP_OK) ESP_LOGE(TAG, "draw at row %d: %s", y0, esp_err_to_name(err));
 }
 
-static uint32_t s_hrow[2][PANEL];
+static uint32_t s_hrow[2][OUT];
 static int s_hrow_src[2] = {-1, -1};
 
 static const uint32_t* scaled_row(const uint16_t* scene, int sy, int keep) {
@@ -245,7 +249,7 @@ static const uint32_t* scaled_row(const uint16_t* scene, int sy, int keep) {
     int slot = s_hrow_src[0] == keep ? 1 : 0;
     const uint16_t* a = scene + sy * BOARD_WIDTH;
     uint32_t* o = s_hrow[slot];
-    for (int ox = 0; ox < PANEL; ox++) {
+    for (int ox = 0; ox < OUT; ox++) {
         int sx = s_src[ox];
         uint32_t fx = s_frac[ox];
         o[ox] = ((SPREAD(a[sx]) * (32 - fx) + SPREAD(a[sx + 1]) * fx) >> 5) & 0x07E0F81Fu;
@@ -262,13 +266,13 @@ static void send_frame(const uint16_t* scene) {
             int n = PANEL - y0 < STRIPE_ROWS ? PANEL - y0 : STRIPE_ROWS;
             xSemaphoreTake(s_stripe_free, portMAX_DELAY);
             memset(s_stripe[cur], 0, (size_t)PANEL * n * 2);
-            send(y0, n, cur);
+            send(0, PANEL, y0, n, cur);
             cur ^= 1;
         }
     }
     s_hrow_src[0] = s_hrow_src[1] = -1;
-    for (int oy0 = 0; oy0 < PANEL; oy0 += STRIPE_ROWS) {
-        int n = PANEL - oy0 < STRIPE_ROWS ? PANEL - oy0 : STRIPE_ROWS;
+    for (int oy0 = 0; oy0 < OUT; oy0 += STRIPE_ROWS) {
+        int n = OUT - oy0 < STRIPE_ROWS ? OUT - oy0 : STRIPE_ROWS;
         xSemaphoreTake(s_stripe_free, portMAX_DELAY);
         uint16_t* stripe = s_stripe[cur];
         for (int r = 0; r < n; r++) {
@@ -276,13 +280,13 @@ static void send_frame(const uint16_t* scene) {
             const uint32_t* top = scaled_row(scene, sy, sy + 1);
             const uint32_t* bot = scaled_row(scene, sy + 1, sy);
             uint32_t fy = s_frac[oy];
-            uint16_t* o = stripe + r * PANEL;
-            for (int ox = 0; ox < PANEL; ox++) {
+            uint16_t* o = stripe + r * OUT;
+            for (int ox = 0; ox < OUT; ox++) {
                 uint32_t v = ((top[ox] * (32 - fy) + bot[ox] * fy) >> 5) & 0x07E0F81Fu;
                 o[ox] = swap16((uint16_t)(v | (v >> 16)));
             }
         }
-        send(oy0, n, cur);
+        send(OFF, OUT, OFF + oy0, n, cur);
         cur ^= 1;
     }
 }
@@ -342,7 +346,9 @@ int board_read_touch(board_touch_t* out, int max) {
         const uint8_t* d = buf + i * 5 + (i ? 2 : 0);
         if ((d[0] & 0x0F) != 0x06) continue;  // 6: touching
         int px = (d[1] << 4) | (d[3] >> 4), py = (d[2] << 4) | (d[3] & 0x0F);
-        float sx = (px + 0.5f) * BOARD_WIDTH / PANEL, sy = (py + 0.5f) * BOARD_HEIGHT / PANEL;
+        float sx = (px - OFF + 0.5f) * BOARD_WIDTH / OUT, sy = (py - OFF + 0.5f) * BOARD_HEIGHT / OUT;
+        if (sx < 0) sx = 0;
+        if (sy < 0) sy = 0;
         if (sx > BOARD_WIDTH - 1) sx = BOARD_WIDTH - 1;
         if (sy > BOARD_HEIGHT - 1) sy = BOARD_HEIGHT - 1;
         out[count].track = (uint8_t)(d[0] >> 4);

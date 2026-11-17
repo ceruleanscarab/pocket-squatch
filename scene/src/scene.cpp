@@ -2211,6 +2211,40 @@ const char* Scene::bubble() const {
     return bubble_;
 }
 
+// The weekly show's result, once it's awake and someone's looking.
+void Scene::tellShowNews() {
+    const int ribbon = showNews_ - 1;
+    showNews_ = 0;
+    if (ribbon == 0) {
+        say("NO RIBBON THIS WEEK", true);
+        speak("NEXT WEEK WE'LL WIN!");
+        return;
+    }
+    static const char* kWon[] = {"", "BLUE RIBBON! 1ST PLACE!", "RED RIBBON! 2ND PLACE!", "YELLOW RIBBON! 3RD PLACE!",
+                                 "WHITE RIBBON! 4TH PLACE!"};
+    say(kWon[ribbon], true);
+    speak(ribbon == 1 ? withName("WE WON", "!", false) : withName("A RIBBON FOR US", "!", false));
+    cue(Cue::Photo);
+    react(React::Happy, 2000);
+    for (int i = 0; i < 10; i++)
+        spawn(ParticleKind::Sparkle, squatchX() + (rand01() - 0.5f) * 120, headY() - 20 - rand01() * 40,
+              (rand01() - 0.5f) * 60, -40 - rand01() * 40, 1400);
+    saveRequested_ = true;
+}
+
+void Scene::drawRosette(Canvas& c, float x, float y, float r, int ribbon) const {
+    static const Rgb kColour[] = {0, 0x2F5FC4, 0xC23A30, 0xE8C33A, 0xF4F1EA};
+    const Rgb col = sh(kColour[ribbon]), dark = sh(ribbon == 4 ? 0xC9C2B4 : mix(kColour[ribbon], 0x000000, 0.25f));
+    c.fillTriangle(x - r * 0.7f, y, x - r * 0.1f, y, x - r * 0.9f, y + r * 2.1f, dark);  // the tails
+    c.fillTriangle(x + r * 0.1f, y, x + r * 0.7f, y, x + r * 0.9f, y + r * 2.1f, dark);
+    for (int i = 0; i < 10; i++) {  // the pleated ring
+        const float a = i * 0.6283f;
+        c.fillCircle(x + std::cos(a) * r * 0.75f, y + std::sin(a) * r * 0.75f, r * 0.42f, col);
+    }
+    c.fillCircle(x, y, r * 0.55f, ribbon == 1 ? kGold : sh(0xF4EFE6));
+    c.fillCircle(x, y, r * 0.3f, col);
+}
+
 void Scene::greet() {
     greeted_ = true;
     const State& s = sim_.state();
@@ -2658,6 +2692,9 @@ void Scene::update(uint32_t nowMs) {
         greetAt_ = now_ + 700;
     }
     wasOff_ = screenOff_;
+    if (showNews_ && !screenOff_ && overlay_ == Overlay::None && hatched() && !sim_.state().asleep &&
+        now_ >= greetAt_ + 2500 && !toastCount_)
+        tellShowNews();
     if (!greeted_ && now_ >= greetAt_) greet();
     if (now_ >= nextChatter_) chatter();
 
@@ -2777,6 +2814,9 @@ void Scene::handleEvent(const Event& e) {
                 note(buf);
             }
             saveRequested_ = true;
+            break;
+        case EventType::RibbonWon:  // judged at midnight: told when it's up and the screen is on
+            showNews_ = static_cast<uint8_t>(e.a + 1);
             break;
         case EventType::LightsOut:
             cue(Cue::LightOff);
@@ -3886,6 +3926,13 @@ void Scene::drawBarn(Canvas& c) {
         const float a = side < 0 ? dl : mid, b = side < 0 ? mid : dr;
         c.line(a, dt, b, base, 3, trim);
         c.line(b, dt, a, base, 3, trim);
+    }
+    {  // the show ribbons it has won, best first, along the wall above the doors
+        const State& st = sim_.state();
+        int shown = 0;
+        for (int kind = 1; kind <= 4 && shown < 6; kind++)
+            for (int k = 0; k < st.ribbons[kind - 1] && shown < 6; k++, shown++)
+                drawRosette(c, l + 13 + shown * 17.0f, top + 12, 6, kind);
     }
     if (weather_.sky == Sky::Snow) {
         c.line(l - 10, top, mid, peak - 2, 5, sh(0xEEF3F8));
@@ -6382,6 +6429,21 @@ void Scene::drawStats(Canvas& c) {
     std::snprintf(lines[n++], 40, "TRUST: %s", s.stage == Stage::Away ? "AWAY" : trustName(sim_.trustLevel()));
     std::snprintf(lines[n++], 40, "PHOTOS: %d OF %d", sim_.photoCount(), Sim::kPhotoCount);
     std::snprintf(lines[n++], 40, "%s: %u", species_ == Species::Horse ? "HOOFPRINTS" : "FOOTPRINTS", static_cast<unsigned>(s.footprints));
+    {  // the weekly show
+        static const char* kNames[] = {"BLUE", "RED", "YELLOW", "WHITE"};
+        char* line = lines[n++];
+        int total = 0, at = std::snprintf(line, 40, "RIBBONS:");
+        for (int k = 0; k < 4; k++) {
+            if (!s.ribbons[k]) continue;
+            total += s.ribbons[k];
+            at += std::snprintf(line + at, static_cast<size_t>(std::max(0, 40 - at)), " %u %s", static_cast<unsigned>(s.ribbons[k]), kNames[k]);
+        }
+        if (!total) std::snprintf(line, 40, "RIBBONS: NONE YET");
+        else if (at >= 40 || (!bigText_ && Canvas::textWidth(line, 2) > 352)) {
+            if (s.ribbons[0]) std::snprintf(line, 40, "RIBBONS: %d, %u BLUE", total, static_cast<unsigned>(s.ribbons[0]));
+            else std::snprintf(line, 40, "RIBBONS: %d", total);
+        }
+    }
     const Traits t = sim_.traits();
     if (species_ == Species::Horse) {
         char coat[34];

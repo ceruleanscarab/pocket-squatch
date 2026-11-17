@@ -45,6 +45,8 @@ void Sim::startOver(bool keepCollection) {
         std::memcpy(s_.visited, keep.visited, sizeof s_.visited);
         s_.visitedHead = keep.visitedHead;
         s_.trailsVisited = keep.trailsVisited;
+        std::memcpy(s_.ribbons, keep.ribbons, sizeof s_.ribbons);
+        s_.lastRibbon = keep.lastRibbon;
     }
     emit(EventType::LaidEgg, 1);
 }
@@ -97,6 +99,7 @@ void Sim::step() {
         return;
     }
     if (!active()) return;
+    tallyShow();
 
     // ---- sleep
     int h = localHour();
@@ -279,6 +282,39 @@ AdultForm Sim::chooseAdultForm() const {
     return AdultForm::RidgeRunner;  // decent but not devoted care: a wild one
 }
 
+// The weekly show: a minute of today's tally, and the judging once a week of days has counted.
+void Sim::tallyShow() {
+    const int64_t day = (s_.now + s_.tzOffset) / 86400;
+    if (s_.showDay == 0) {
+        s_.showDay = day;
+        s_.showDayMistakes = s_.careMistakes;
+    }
+    if (day != s_.showDay) {  // a new day: did yesterday count, and was it a good one?
+        if (s_.showDayAwake >= tune_.showMinAwakeMins) {
+            s_.showDays++;
+            if (s_.careMistakes == s_.showDayMistakes &&
+                s_.showDayGood >= tune_.showGoodShare * s_.showDayAwake)
+                s_.showGoodDays++;
+        }
+        s_.showDay = day;
+        s_.showDayAwake = s_.showDayGood = 0;
+        s_.showDayMistakes = s_.careMistakes;
+        if (s_.showDays >= tune_.showDaysPerWeek) {
+            const int g = s_.showGoodDays;
+            const uint8_t ribbon = g >= 6 ? 1 : g >= 4 ? 2 : g >= 2 ? 3 : g >= 1 ? 4 : 0;
+            if (ribbon) {
+                s_.ribbons[ribbon - 1]++;
+                s_.lastRibbon = ribbon;
+            }
+            emit(EventType::RibbonWon, ribbon);  // 0: no ribbon this time (the scene says "next week!")
+            s_.showDays = s_.showGoodDays = 0;
+        }
+    }
+    if (s_.asleep || s_.stage == Stage::Egg) return;
+    if (s_.showDayAwake < 0xFFFF) s_.showDayAwake++;
+    if (s_.hunger >= 2 && s_.happiness >= 2 && s_.messes < 2 && !s_.sick && s_.showDayGood < 0xFFFF) s_.showDayGood++;
+}
+
 void Sim::layEgg() {
     State keep = s_;
     bool bestParent = keep.adult == AdultForm::Guardian || keep.adult == AdultForm::Legend;
@@ -296,6 +332,8 @@ void Sim::layEgg() {
     s_.tzOffset = keep.tzOffset;
     s_.photos = keep.photos;
     s_.footprints = keep.footprints;
+    std::memcpy(s_.ribbons, keep.ribbons, sizeof s_.ribbons);
+    s_.lastRibbon = keep.lastRibbon;
     s_.rng = keep.rng;
     emit(EventType::LaidEgg, static_cast<uint8_t>(s_.generation & 0xFF));
 }
@@ -670,6 +708,7 @@ const char* toString(EventType e) {
         case EventType::WentForaging: return "went foraging";
         case EventType::BackFromForaging: return "back from foraging";
         case EventType::LightsOut: return "lights out";
+        case EventType::RibbonWon: return "ribbon";
     }
     return "?";
 }

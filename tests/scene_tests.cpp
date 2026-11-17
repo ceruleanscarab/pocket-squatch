@@ -2069,6 +2069,42 @@ static void testOwnerName() {
     CHECK(d.scene.toast() && std::strstr(d.scene.toast(), "GOODNIGHT, ROBIN") != nullptr);
 }
 
+static void testShowRibbon() {
+    std::printf("the weekly show: judged at midnight, told in the morning, hung on the barn\n");
+    Driver d;
+    d.scene.setSpecies(Scene::Species::Horse);
+    d.scene.setOwnerName("Robin");
+    d.sim.setName("STAR");
+    State& s = d.sim.mutableState();
+    for (int k = 0; k < 4 * 60; k++) d.sim.tick(60);  // four hours of the day so far, all good
+    s.hunger = s.happiness = 4;
+    s.showDays = 6;
+    s.showGoodDays = 6;
+    s.showDayAwake = s.showDayGood = 300;
+    d.sim.tick(18 * 3600);  // past midnight, and on to 8 in the morning
+    s.hunger = s.happiness = 4;
+    s.sick = false;
+    s.messes = 0;
+    d.settle();
+    CHECK(d.sim.state().ribbons[0] == 1 && d.sim.state().lastRibbon == 1);
+    bool told = false;
+    for (int k = 0; k < 1500 && !told; k++) {  // after any other news
+        d.step();
+        told = d.scene.toast() && std::strstr(d.scene.toast(), "BLUE RIBBON") != nullptr;
+    }
+    CHECK(told);
+    std::vector<uint16_t> fb(Scene::kSize * Scene::kSize);
+    Canvas cv(fb.data(), Scene::kSize, Scene::kSize);
+    d.scene.draw(cv);  // the rosette on the barn wall: blue in the scenery
+    bool blue = false;
+    for (int y = 250; y < 270 && !blue; y++)
+        for (int x = 366; x < 400 && !blue; x++) {
+            const uint16_t px = fb[y * Scene::kSize + x];
+            blue = (px & 0x1F) > 16 && (px >> 11) < 12;
+        }
+    CHECK(blue);
+}
+
 int main() {
     testBoardingStable();
     testHorseTouchVoices();
@@ -2126,6 +2162,7 @@ int main() {
     testHorseDrinks();
     testHorseWalksForwards();
     testOwnerName();
+    testShowRibbon();
 
     std::printf("\n%d checks, %d failed\n", gChecks, gFailures);
     return gFailures ? 1 : 0;

@@ -111,7 +111,7 @@ Wiki: https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-4B
   open it at once; once a phone joins (`wifisetup::phonesJoined`) the screen shows a second code for http://192.168.4.1/.
   Start over on the boards has a fourth choice, "like new" (`setFactoryResetAvailable`, confirmed by a second tap):
   `storage::eraseAll` erases NVS, sets `nodefaults` so menuconfig's Wi-Fi and town aren't copied back, and restarts.
-- Boarding stable (More > Stable; "Sitter" for the Bigfoot): `Sim::board`, save version 3. While boarded nothing
+- Boarding stable (More > Stable; "Sitter" for the Bigfoot): `Sim::board`, save version 3 (days at the stable don't count for the show). While boarded nothing
   happens and it doesn't age (`born` and the rate-limit clocks shift by the time away); it comes home fed and clean.
 - Animal visitors (`Scene::Visitor`, both editions): every 4-10 minutes with the screen on, one comes by for a while,
   chosen by hour, month and weather (bunny, bird, deer at dawn/dusk, ducks with spring ducklings, butterfly in
@@ -147,4 +147,10 @@ Wiki: https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-4B
 - Owner's name: "Your first name" on the setup page (NVS `owner`, tidied to 10 letters; never in the save, backups or
   repo) -> `Scene::setOwnerName`. Greetings, tucking in, being found and some chatter use it now and then
   (`withName`; `testOwnerName`). `squatch-pc --owner NAME` tries it.
+- Weekly show (save version 4; `Sim::tallyShow`, `Tuning::show*`): each day at home and awake 30+ minutes counts; a
+  good day is 60%+ of those minutes fed and happy (2+ hearts), well, at most one fresh mess, and no care mistakes.
+  Every 7 counted days `EventType::RibbonWon` (6-7 good: blue, 4-5 red, 2-3 yellow, 1 white, 0 none). Ribbons
+  (`State::ribbons`) carry across generations like the photos. The scene tells the news once it's awake and the screen
+  is on (`tellShowNews`), hangs up to 6 rosettes on the barn wall (`drawRosette`) and lists them on the info card.
+  The harness prints ribbons per player (`--days 22` for three shows).
 - Later: Bluetooth visitors between two boards.

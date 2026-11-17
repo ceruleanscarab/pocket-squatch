@@ -476,6 +476,41 @@ static void testBoardingPauses() {
     CHECK(out.board(true) == Result::NotNow);
 }
 
+static void testVersion3SaveMigrates() {
+    std::printf("a version 3 save (from before the horse show) still loads, with no ribbons yet\n");
+    Sim sim = fresh(11);
+    sim.setName("Clover");
+    sim.tick(kDay);
+    const size_t v3Size = offsetof(State, showDay);
+    std::vector<uint8_t> buf(sizeof(SaveHeader) + v3Size);
+    std::memcpy(buf.data() + sizeof(SaveHeader), &sim.state(), v3Size);
+    SaveHeader h{kSaveMagic, 3, 0, static_cast<uint32_t>(v3Size), crc32(buf.data() + sizeof(SaveHeader), v3Size)};
+    std::memcpy(buf.data(), &h, sizeof h);
+    State loaded{};
+    CHECK(load(buf.data(), buf.size(), loaded) == LoadResult::Ok);
+    CHECK(std::strcmp(loaded.name, "Clover") == 0);
+    CHECK(loaded.showDay == 0 && loaded.lastRibbon == 0 && loaded.ribbons[0] == 0);
+}
+
+static void testWeeklyShow() {
+    std::printf("a week of good care wins a blue ribbon; a busy one, a white one now and then\n");
+    for (const Player& p : kPlayers) {
+        if (std::strcmp(p.name, "devoted") && std::strcmp(p.name, "busy")) continue;
+        RunResult r = raise(p, 77, 22);
+        const int total = r.ribbons[0] + r.ribbons[1] + r.ribbons[2] + r.ribbons[3];
+        if (!std::strcmp(p.name, "devoted")) CHECK(total >= 2 && r.ribbons[0] >= 1);  // a show a week
+        else CHECK(r.ribbons[0] == 0 && total >= 1);
+    }
+    std::printf("the ribbons stay with the family\n");
+    Sim sim = fresh(12);
+    sim.mutableState().ribbons[0] = 3;
+    sim.mutableState().lastRibbon = 1;
+    sim.startOver(true);
+    CHECK(sim.state().ribbons[0] == 3 && sim.state().lastRibbon == 1);
+    sim.startOver(false);
+    CHECK(sim.state().ribbons[0] == 0);
+}
+
 int main() {
     testEggHatches();
     testCatchUpMatchesRealTime();
@@ -497,6 +532,8 @@ int main() {
     testForageRefusals();
     testVersion2SaveMigrates();
     testBoardingPauses();
+    testVersion3SaveMigrates();
+    testWeeklyShow();
     std::printf("\n%d checks, %d failed\n", gChecks, gFailures);
     return gFailures == 0 ? 0 : 1;
 }

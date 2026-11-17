@@ -49,6 +49,7 @@ enum class EventType : uint8_t {
     WentForaging,
     BackFromForaging,   // a = footprints it brought back
     LightsOut,          // asleep with the light on: it went out by itself
+    RibbonWon,          // the weekly show: a = 1 blue, 2 red, 3 yellow, 4 white (0: none this week)
 };
 
 struct Event {
@@ -73,6 +74,11 @@ struct Tuning {
     // meter drain, seconds per heart (halved while asleep)
     float hungerSecsPerHeart = 2 * 3600;
     float happySecsPerHeart = 3 * 3600;
+
+    // the weekly show
+    int showDaysPerWeek = 7;
+    int showMinAwakeMins = 30;     // a day counts once it's been home and awake this long
+    float showGoodShare = 0.6f;    // of those minutes, this share well cared for makes a good day
 
     // sleep window, local hours
     int sleepHour = 21;
@@ -222,6 +228,20 @@ struct State {
     // While it's boarded nothing happens to it: no needs, no growing up.
     bool boarding = false;
     int64_t boardedSince = 0;
+
+    // ---- added in save version 4: the weekly horse show (a badge for the Bigfoot). Each day it's
+    // at home and awake a while counts; a good day is one spent mostly fed, happy, well and no more
+    // than one fresh mess about,
+    // with no care mistakes. After seven counted days it's judged: 6-7 good days a blue ribbon,
+    // 4-5 red, 2-3 yellow, 1 white. The ribbons are the family's, like the photos.
+    int64_t showDay = 0;          // the local day being tallied (0: not started)
+    uint16_t showDayAwake = 0;    // minutes at home and awake today
+    uint16_t showDayGood = 0;     // ... of them well cared for
+    uint16_t showDayMistakes = 0; // careMistakes when today began
+    uint8_t showDays = 0;         // counted days this week
+    uint8_t showGoodDays = 0;     // ... of them good
+    uint16_t ribbons[4] = {};     // won so far: blue, red, yellow, white
+    uint8_t lastRibbon = 0;       // the latest: 1 blue .. 4 white (0: none yet)
 };
 
 // ---------------------------------------------------------------- sim
@@ -244,6 +264,9 @@ public:
 
     // Advance the world. Any amount: a frame, an hour, a week powered off.
     void tick(int64_t seconds);
+    // The weekly show so far: counted days and good days this week (for the info card).
+    int showDaysSoFar() const { return s_.showDays; }
+    int showGoodDaysSoFar() const { return s_.showGoodDays; }
 
     // ---- player actions (all at the current sim time)
     Result setName(const char* name);
@@ -304,6 +327,7 @@ private:
     void awardPhoto(int index);
     void awardRandomPhoto();
     void finishForaging();
+    void tallyShow();
     void markVisited(uint32_t hash);
 
     Tuning tune_{};

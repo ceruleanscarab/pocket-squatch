@@ -623,6 +623,9 @@ private:
     int applesInRow_ = 0;  // apples fed one after another
     uint32_t tootAt_ = 0;  // ...and the consequence, due then
     uint32_t drinkAt_ = 0, nextSlurp_ = 0, barnPeekUntil_ = 0;
+    uint8_t showNews_ = 0;  // the weekly show's result waiting to be told: ribbon + 1 (1: none this week)
+    void tellShowNews();
+    void drawRosette(Canvas& c, float x, float y, float r, int ribbon) const;
     float drinkFromX_ = 0;  // where it set off from (it walks back there)
     bool canDrink() const;
     Visitor visitor_ = Visitor::None;

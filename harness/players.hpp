@@ -85,6 +85,7 @@ struct RunResult {
     AdultForm form = AdultForm::None;
     float trust = 0, discipline = 0;
     int photos = 0, mistakes = 0, timesRanAway = 0, timesSick = 0;
+    int ribbons[4] = {};  // the weekly show: blue, red, yellow, white
 };
 
 // The balance every run uses: the default, or the horse edition's (--quick-trust).
@@ -109,6 +110,7 @@ inline RunResult raise(const Player& p, uint64_t seed, int days = 11,
         for (size_t i = 0; i < n; i++) {
             if (evs[i].type == EventType::RanAway) r.timesRanAway++;
             if (evs[i].type == EventType::GotSick) r.timesSick++;
+            if (evs[i].type == EventType::RibbonWon && evs[i].a >= 1 && evs[i].a <= 4) r.ribbons[evs[i].a - 1]++;
             if (onEvent) onEvent(evs[i]);
         }
         if (onDay && (minute + 1) % 1440 == 0) onDay(sim, static_cast<int>((minute + 1) / 1440));

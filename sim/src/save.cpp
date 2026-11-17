@@ -35,9 +35,10 @@ LoadResult load(const uint8_t* data, size_t len, State& s) {
 
     // Fields are only ever added at the end of State, so an older save is a prefix of
     // today's State: version 1 ended with rng, just before the genome; version 2 with the
-    // forage trip, just before boarding.
+    // forage trip, just before boarding; version 3 with boarding, just before the weekly show.
     const size_t expected = h.version == 1 ? offsetof(State, genome)
                             : h.version == 2 ? offsetof(State, boarding)
+                            : h.version == 3 ? offsetof(State, showDay)
                                              : sizeof(State);
     if (h.size != expected || len < sizeof(SaveHeader) + h.size) return LoadResult::BadSize;
     if (crc32(data + sizeof(SaveHeader), h.size) != h.crc) return LoadResult::BadChecksum;

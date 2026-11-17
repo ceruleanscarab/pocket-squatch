@@ -38,25 +38,28 @@ void printEvent(const Event& e) {
     std::printf("\n");
 }
 
-void summary(int runs) {
-    std::printf("%d pets per player, raised to day 11\n\n", runs);
-    std::printf("%-13s %-42s %-9s %-9s %-9s %-9s %-9s  %6s %6s %5s %5s\n", "player", "style", "Guardian", "Runner",
-                "Couch", "Hermit", "Legend", "trust", "disc", "sick", "fled");
+void summary(int runs, int days) {
+    std::printf("%d pets per player, raised to day %d\n\n", runs, days);
+    std::printf("%-13s %-42s %-9s %-9s %-9s %-9s %-9s  %6s %6s %5s %5s  %s\n", "player", "style", "Guardian", "Runner",
+                "Couch", "Hermit", "Legend", "trust", "disc", "sick", "fled", "ribbons B/R/Y/W");
     for (const auto& p : kPlayers) {
         int forms[6] = {};
         double trust = 0, disc = 0, sick = 0, fled = 0;
+        int ribbons[4] = {};
         for (int i = 0; i < runs; i++) {
-            RunResult r = raise(p, 1000 + i);
+            RunResult r = raise(p, 1000 + i, days);
+            for (int k = 0; k < 4; k++) ribbons[k] += r.ribbons[k];
             forms[static_cast<int>(r.form)]++;
             trust += r.trust;
             disc += r.discipline;
             sick += r.timesSick;
             fled += r.timesRanAway;
         }
-        std::printf("%-13s %-42s %-9d %-9d %-9d %-9d %-9d  %6.1f %6.1f %5.1f %5.1f\n", p.name, p.blurb,
+        std::printf("%-13s %-42s %-9d %-9d %-9d %-9d %-9d  %6.1f %6.1f %5.1f %5.1f  %d/%d/%d/%d\n", p.name, p.blurb,
                     forms[int(AdultForm::Guardian)], forms[int(AdultForm::RidgeRunner)],
                     forms[int(AdultForm::CouchSquatch)], forms[int(AdultForm::Hermit)],
-                    forms[int(AdultForm::Legend)], trust / runs, disc / runs, sick / runs, fled / runs);
+                    forms[int(AdultForm::Legend)], trust / runs, disc / runs, sick / runs, fled / runs, ribbons[0],
+                    ribbons[1], ribbons[2], ribbons[3]);
     }
 }
 
@@ -82,7 +85,7 @@ int main(int argc, char** argv) {
     }
 
     if (!player) {
-        summary(runs);
+        summary(runs, days);
         return 0;
     }
     const Player* p = findPlayer(player);

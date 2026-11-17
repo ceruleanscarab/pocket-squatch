@@ -156,7 +156,8 @@ Wiki: https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-4B
 - The round Waveshare ESP32-S3-Touch-AMOLED-1.75C (aluminium case, lanyard) is a third board (`board_amoled175.c`,
   menuconfig Board, `sdkconfig.amoled175`, CI `pony-amoled175.bin`): CO5300 466x466 over QSPI through the sh8601 driver
   (6 px column gap), CST9217 touch at 0x5A read directly (SensorLib's protocol), resets on GPIO 1 (panel) and 2 (touch),
-  pins from Waveshare's 1.75C pin_config.h (the plain 1.75 differs). The whole 480 scene is scaled to 466 and the scene's
+  pins from Waveshare's 1.75C pin_config.h (the plain 1.75 differs). The 480 scene is shown at 400x400 in the middle
+  of the 466 circle (OFF 32) and the scene's
   round mode (`Scene::setRound`, `kRoundR` = 278 scene px seen) keeps the top bar, a two-row tray (`trayH`), toasts,
   the game header and every page button inside the circle (`fitRound` trims a button's outer edge, then moves it in).
   `testRoundLayout` checks every button; `SQUATCH_ROUND_SHOTS=dir ./build/squatch-scene-tests` saves each page as it

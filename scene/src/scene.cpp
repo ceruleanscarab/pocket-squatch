@@ -357,9 +357,9 @@ void Scene::screenOffNow() {
 Scene::Rect Scene::nameKeyArea(int i) const {
     return {kKeyX + (i % kKeyCols) * kKeyW, kKeyY + (i / kKeyCols) * kKeyH, kKeyW, kKeyH};
 }
-Scene::Rect Scene::nameSuggestArea() const { return {kKeyX, kKeyY + 4 * kKeyH + 12, 216, 68}; }
-Scene::Rect Scene::nameDoneArea() const { return {kKeyX + kKeyCols * kKeyW - 216, kKeyY + 4 * kKeyH + 12, 216, 68}; }
-Scene::Rect Scene::nameEditArea() const { return bigText_ ? Rect{40, 52, 400, 64} : Rect{40, 76, 400, 64}; }
+Scene::Rect Scene::nameSuggestAreaRaw() const { return {kKeyX, kKeyY + 4 * kKeyH + 12, 216, 68}; }
+Scene::Rect Scene::nameDoneAreaRaw() const { return {kKeyX + kKeyCols * kKeyW - 216, kKeyY + 4 * kKeyH + 12, 216, 68}; }
+Scene::Rect Scene::nameEditAreaRaw() const { return bigText_ ? Rect{40, 52, 400, 64} : Rect{40, 76, 400, 64}; }
 
 void Scene::openNaming() {
     std::snprintf(nameDraft_, sizeof nameDraft_, "%.10s", sim_.state().name);
@@ -391,24 +391,24 @@ Scene::Rect Scene::settingButtonArea(int row, bool plus) const {
 
 // With Wi-Fi on the board the bottom row holds three buttons: Start over, Wi-Fi, Done.
 // Two buttons along the bottom, or three with WI-FI (the boards) or PRIVACY (the store phone app).
-Scene::Rect Scene::settingsDoneArea() const {
+Scene::Rect Scene::settingsDoneAreaRaw() const {
     if (wifiAvailable_ || privacyAvailable_) return {S / 2 + 76, kSetY + kSetH - 84, 132, 72};
     return {S / 2 + 12, kSetY + kSetH - 84, 196, 72};
 }
-Scene::Rect Scene::startOverArea() const {
+Scene::Rect Scene::startOverAreaRaw() const {
     if (wifiAvailable_ || privacyAvailable_) return {S / 2 - 208, kSetY + kSetH - 84, 132, 72};
     return {S / 2 - 208, kSetY + kSetH - 84, 196, 72};
 }
-Scene::Rect Scene::privacyArea() const {
+Scene::Rect Scene::privacyAreaRaw() const {
     if (!privacyAvailable_ || wifiAvailable_) return {0, 0, 0, 0};
     return {S / 2 - 66, kSetY + kSetH - 84, 132, 72};
 }
-Scene::Rect Scene::wifiButtonArea() const {
+Scene::Rect Scene::wifiButtonAreaRaw() const {
     if (!wifiAvailable_) return {0, 0, 0, 0};
     return {S / 2 - 66, kSetY + kSetH - 84, 132, 72};
 }
-Scene::Rect Scene::wifiSetupArea() const { return {S / 2 - 208, kSetY + kSetH - 84, 196, 72}; }
-Scene::Rect Scene::updateArea() const { return {kSetX + 16, kSetY + kSetH - 160, kSetW - 32, 68}; }
+Scene::Rect Scene::wifiSetupAreaRaw() const { return {S / 2 - 208, kSetY + kSetH - 84, 196, 72}; }
+Scene::Rect Scene::updateAreaRaw() const { return {kSetX + 16, kSetY + kSetH - 160, kSetW - 32, 68}; }
 
 void Scene::setUpdateStatus(UpdateStatus st, int build, int percent) {
     updateStatus_ = st;
@@ -421,7 +421,7 @@ void Scene::setBackupCode(const char* code) { std::snprintf(backupCode_, sizeof 
 bool Scene::updateShown() const {
     return updateStatus_ != UpdateStatus::Unavailable && (wifiStatus_ == WifiStatus::Saved || wifiStatus_ == WifiStatus::Joined);
 }
-Scene::Rect Scene::wifiDoneArea() const { return {S / 2 + 12, kSetY + kSetH - 84, 196, 72}; }
+Scene::Rect Scene::wifiDoneAreaRaw() const { return {S / 2 + 12, kSetY + kSetH - 84, 196, 72}; }
 
 void Scene::setWifiAvailable(const char* hotspotName) {
     wifiAvailable_ = true;
@@ -497,7 +497,7 @@ Scene::Rect Scene::startNewArea() const {
     if (!factoryAvailable_) return {0, 0, 0, 0};
     return {48, bigText_ ? 312 : 300, 384, 68};
 }
-Scene::Rect Scene::startCancelArea() const {
+Scene::Rect Scene::startCancelAreaRaw() const {
     if (factoryAvailable_) return {48, bigText_ ? 384 : 372, 384, 68};
     return bigText_ ? Rect{48, 336, 384, 68} : Rect{48, 356, 384, 68};
 }
@@ -3120,7 +3120,37 @@ float Scene::headY() const {
     return squatchFoot() - 128 * k - (hr - 1) * 30 * k;
 }
 
-float Scene::trayTop() const { return S - kTrayH * smooth(trayAnim_); }
+float Scene::trayTop() const { return S - trayH() * smooth(trayAnim_); }
+
+Scene::Rect Scene::fitRound(Rect r) const {
+    if (!round_ || r.w == 0) return r;
+    // First trim the edge nearest the rim (so buttons in a row keep their places and never meet),
+    // or both edges of one that spans the middle; only then move it toward the middle.
+    const bool spans = r.x < 240 && r.x + r.w > 240;
+    while (!insideRound(r, 6) && r.w > 96) {
+        if (spans) {
+            r.x += 2;
+            r.w -= 4;
+        } else if (r.cx() < 240) {
+            r.x += 2;
+            r.w -= 2;
+        } else {
+            r.w -= 2;
+        }
+    }
+    const int dir = r.cy() < 240 ? 1 : -1;
+    for (int k = 0; k < 16 && !insideRound(r, 6); k++) r.y += 2 * dir;
+    return r;
+}
+
+bool Scene::insideRound(const Rect& r, float margin) const {
+    const float lim = (kRoundR - margin) * (kRoundR - margin);
+    for (int k = 0; k < 4; k++) {
+        const float x = (k & 1 ? r.x + r.w : r.x) - 240.0f, y = (k & 2 ? r.y + r.h : r.y) - 240.0f;
+        if (x * x + y * y > lim) return false;
+    }
+    return true;
+}
 
 float Scene::hourOfDay() const {
     int64_t local = sim_.state().now + sim_.state().tzOffset;
@@ -3168,7 +3198,7 @@ Scene::Rect Scene::handleArea() const {
     return {160, std::min(static_cast<int>(trayTop()) - 44, S - 64), 160, 64};
 }
 
-Scene::Rect Scene::footprintArea() const { return {S - 96, 0, 96, kStripTouchH}; }
+Scene::Rect Scene::footprintAreaRaw() const { return round_ ? Rect{320, 0, 108, kStripTouchH} : Rect{S - 96, 0, 96, kStripTouchH}; }
 
 int Scene::slotCount() const {
     switch (page_) {
@@ -3180,6 +3210,12 @@ int Scene::slotCount() const {
 }
 
 Scene::Rect Scene::slotArea(int i) const {
+    if (round_) {  // two rows of up to three, centred, so the circle doesn't cut them off
+        const int n = slotCount(), perRow = n <= 4 ? 2 : 3, row = i / perRow;
+        const int inRow = std::min(perRow, n - row * perRow), col = i % perRow;
+        const int w = 104, h = 80;
+        return {240 - inRow * w / 2 + col * w, static_cast<int>(trayTop()) + 16 + row * (h + 4), w, h};
+    }
     int w = S / slotCount();
     return {i * w, static_cast<int>(trayTop()) + 20, w, kTrayH - 20};
 }
@@ -3195,8 +3231,8 @@ Scene::Slot Scene::slotAt(int i) const {
 
 Scene::Rect Scene::trailRowArea(int i) const { return {kMapX + 12, kRowY + i * kRowH, kMapW - 24, kRowH}; }
 
-Scene::Rect Scene::rescanArea() const { return {kMapX + 16, kRowY + State::kMaxTrails * kRowH + 4, kMapW / 2 - 22, 64}; }
-Scene::Rect Scene::trailsDoneArea() const {  // beside LOOK AGAIN: the plain way out
+Scene::Rect Scene::rescanAreaRaw() const { return {kMapX + 16, kRowY + State::kMaxTrails * kRowH + 4, kMapW / 2 - 22, 64}; }
+Scene::Rect Scene::trailsDoneAreaRaw() const {  // beside LOOK AGAIN: the plain way out
     return {S / 2 + 6, kRowY + State::kMaxTrails * kRowH + 4, kMapW / 2 - 22, 64};
 }
 
@@ -4953,70 +4989,85 @@ void Scene::drawParticles(Canvas& c) {
 }
 
 void Scene::drawStrip(Canvas& c) {
+    // Where each thing sits: the square screens' bar across the top, or the round one's, shorter and
+    // lower so the circle doesn't cut its ends off (the sick cross takes the sun's place there).
+    struct Places { float cy, hunger, happy, clean, sun, sick, battery, foot, count; };
+    static constexpr Places kSquare{22, 24, 100, 176, 252, 318, 330, 410, 426};
+    static constexpr Places kRound{39, 70, 134, 196, 266, 266, 288, 344, 358};
+    const Places& P = round_ ? kRound : kSquare;
+    const float dy = P.cy - 22;  // the square bar's drawing, moved down this far
+
     const State& s = sim_.state();
     const bool live = hatched();
     const float pulse = 0.5f + 0.5f * static_cast<float>(std::sin(t_ * 6));
-    c.fillRoundRect(6, 4, S - 12, 36, 12, kUiDark, 0.55f);
+    if (round_) c.fillRoundRect(56, 20, 368, 38, 16, kUiDark, 0.55f);
+    else c.fillRoundRect(6, 4, S - 12, 36, 12, kUiDark, 0.55f);
 
     // icon size grows a little while it needs attention
     auto k = [&](bool needs) { return live && needs ? 1 + 0.18f * pulse : 1.0f; };
     auto pips = [&](float x, float value) {
         for (int i = 0; i < 4; i++) {
             float fill = std::max(0.0f, std::min(1.0f, value - i));
-            c.fillCircle(x + 20 + i * 9.5f, 22, 3.6f, 0x000000, 0.35f);
-            if (fill > 0) c.fillCircle(x + 20 + i * 9.5f, 22, 3.6f * (0.4f + 0.6f * fill), kUiLight);
+            c.fillCircle(x + 20 + i * 9.5f, P.cy, 3.6f, 0x000000, 0.35f);
+            if (fill > 0) c.fillCircle(x + 20 + i * 9.5f, P.cy, 3.6f * (0.4f + 0.6f * fill), kUiLight);
         }
     };
     const float a = live ? 1.0f : 0.35f;
 
     // hunger: berries
-    float kk = k(s.hunger <= 1);
-    c.fillCircle(24 - 5 * kk, 25, 6 * kk, 0xB0336A, a);
-    c.fillCircle(24 + 5 * kk, 25, 6 * kk, 0xB0336A, a);
-    c.fillCircle(24, 17, 6 * kk, 0xC2417A, a);
-    pips(24, live ? s.hunger : 0);
+    float kk = k(s.hunger <= 1), x = P.hunger;
+    c.fillCircle(x - 5 * kk, 25 + dy, 6 * kk, 0xB0336A, a);
+    c.fillCircle(x + 5 * kk, 25 + dy, 6 * kk, 0xB0336A, a);
+    c.fillCircle(x, 17 + dy, 6 * kk, 0xC2417A, a);
+    pips(x, live ? s.hunger : 0);
 
     // happiness: heart
     kk = k(s.happiness <= 1);
-    drawHeart(c, 100, 20, 9 * kk, 0xE76F8A, a);
-    pips(100, live ? s.happiness : 0);
+    drawHeart(c, P.happy, 20 + dy, 9 * kk, 0xE76F8A, a);
+    pips(P.happy, live ? s.happiness : 0);
 
     // cleanliness: water drop
     bool oldMess = s.messes > 0 && s.now - s.oldestMessAt >= sim_.tuning().messOldAfter;
     kk = k(oldMess);
-    c.fillCircle(176, 25, 7 * kk, 0x6EC6E8, a);
-    c.fillTriangle(176 - 6.3f * kk, 23, 176 + 6.3f * kk, 23, 176, 23 - 14 * kk, 0x6EC6E8, a);
-    pips(176, live ? std::max(0, 4 - static_cast<int>(s.messes)) : 0);
+    x = P.clean;
+    c.fillCircle(x, 25 + dy, 7 * kk, 0x6EC6E8, a);
+    c.fillTriangle(x - 6.3f * kk, 23 + dy, x + 6.3f * kk, 23 + dy, x, 23 + dy - 14 * kk, 0x6EC6E8, a);
+    pips(x, live ? std::max(0, 4 - static_cast<int>(s.messes)) : 0);
 
+    const bool sick = live && s.sick;
     // energy: sun while awake, moon while asleep (pulses if the light is still on)
     kk = k(s.asleep && s.lightsOn);
-    if (s.asleep) {
-        c.fillCircle(252, 22, 9 * kk, 0xF4F1DE, a);
-        c.fillCircle(257, 18, 8 * kk, kUiDark, a);
+    x = P.sun;
+    if (sick && P.sick == P.sun) {
+        // (the cross goes here instead)
+    } else if (s.asleep) {
+        c.fillCircle(x, P.cy, 9 * kk, 0xF4F1DE, a);
+        c.fillCircle(x + 5, P.cy - 4, 8 * kk, kUiDark, a);
     } else {
         for (int i = 0; i < 8; i++) {
             float ang = i * kPi / 4;
-            c.line(252 + std::cos(ang) * 9, 22 + std::sin(ang) * 9, 252 + std::cos(ang) * 12,
-                   22 + std::sin(ang) * 12, 2, 0xFFD25E, a);
+            c.line(x + std::cos(ang) * 9, P.cy + std::sin(ang) * 9, x + std::cos(ang) * 12,
+                   P.cy + std::sin(ang) * 12, 2, 0xFFD25E, a);
         }
-        c.fillCircle(252, 22, 6.5f, 0xFFD25E, a);
+        c.fillCircle(x, P.cy, 6.5f, 0xFFD25E, a);
     }
 
-    if (live && s.sick) {  // red cross while sick
+    if (sick) {  // red cross while sick
         float sk = k(true);
-        c.fillCircle(318, 22, 11 * sk, 0xFFFFFF);
-        c.fillRect(318 - 7 * sk, 22 - 2.5f * sk, 14 * sk, 5 * sk, 0xD64545);
-        c.fillRect(318 - 2.5f * sk, 22 - 7 * sk, 5 * sk, 14 * sk, 0xD64545);
+        x = P.sick;
+        c.fillCircle(x, P.cy, 11 * sk, 0xFFFFFF);
+        c.fillRect(x - 7 * sk, P.cy - 2.5f * sk, 14 * sk, 5 * sk, 0xD64545);
+        c.fillRect(x - 2.5f * sk, P.cy - 7 * sk, 5 * sk, 14 * sk, 0xD64545);
     }
 
     // footprints, the currency; the icon pulses while it's calling for you
     float fk = s.calling ? 1 + 0.2f * pulse : 1.0f;
-    if (s.calling) c.ring(410, 22, 15 + pulse * 5, 3, kGold, 1 - pulse * 0.6f);
-    drawFootprint(c, 410, 23, fk, s.calling ? kGold : kUiLight);
-    drawBattery(c, 330, 14);
+    if (s.calling) c.ring(P.foot, P.cy, 15 + pulse * 5, 3, kGold, 1 - pulse * 0.6f);
+    drawFootprint(c, P.foot, P.cy + 1, fk, s.calling ? kGold : kUiLight);
+    drawBattery(c, P.battery, P.cy - 8);
     char buf[12];
     std::snprintf(buf, sizeof buf, "%u", static_cast<unsigned>(s.footprints % 10000));
-    c.text(426, 15, buf, 2, kUiLight);
+    c.text(P.count, P.cy - 7, buf, 2, kUiLight);
 }
 
 // A small battery: the fill shows the charge, a bolt while it charges, red and pulsing when low.
@@ -5040,12 +5091,13 @@ void Scene::drawToast(Canvas& c) {
     if (!t) return;
     const int ls = ts(2);
     char wrapped[3][64];
-    const int n = wrapText(t, ls, 440, wrapped, 3);
+    const int n = wrapText(t, ls, round_ ? 360 : 440, wrapped, 3);
     float tw = 0;
     for (int i = 0; i < n; i++) tw = std::max(tw, static_cast<float>(Canvas::textWidth(wrapped[i], ls)));
     const float w = tw + 28, h = 18 + Canvas::textHeight(ls) + (n - 1) * lineStep(ls);
-    c.fillRoundRect(240 - w / 2, 50, w, h, 16, kUiDark, 0.8f);
-    for (int i = 0; i < n; i++) c.text(240, 59 + i * lineStep(ls), wrapped[i], ls, kUiLight, Align::Center);
+    const float ty = round_ ? 64 : 50;  // under the round top bar
+    c.fillRoundRect(240 - w / 2, ty, w, h, 16, kUiDark, 0.8f);
+    for (int i = 0; i < n; i++) c.text(240, ty + 9 + i * lineStep(ls), wrapped[i], ls, kUiLight, Align::Center);
 }
 
 void Scene::drawTray(Canvas& c) {
@@ -5059,23 +5111,25 @@ void Scene::drawTray(Canvas& c) {
     c.line(240, cy + d, 252, cy - d, 4, kUiLight);
     if (top >= S) return;
 
-    c.fillRoundRect(0, top, S, kTrayH + 20, 18, kTray, 0.95f);
+    c.fillRoundRect(0, top, S, trayH() + 20, 18, kTray, 0.95f);
     const float bob = static_cast<float>(std::sin(t_ * 5)) * 3;
     for (int i = 0; i < slotCount(); i++) {
         Rect r = slotArea(i);
         Slot slot = slotAt(i);
         float cx = static_cast<float>(r.cx());
+        const float sy = round_ ? r.y - 20.0f : top;  // the slot's own top, as if it were the tray's
         bool selected = itemFor(slot) != Item::None && itemFor(slot) == held_;
-        if (selected) c.fillRoundRect(cx - 40, top + 18, 80, 72, 16, kGold);
-        c.fillRoundRect(cx - 36, top + 22, 72, 64, 14, kButton);
-        if (!(selected && drag_ == DragMode::Item)) drawSlotIcon(c, slot, cx, top + 54 + (selected ? bob : 0));
+        if (selected) c.fillRoundRect(cx - 40, sy + 18, 80, round_ ? 66 : 72, 16, kGold);
+        c.fillRoundRect(cx - 36, sy + 22, 72, round_ ? 58 : 64, 14, kButton);
+        if (!(selected && drag_ == DragMode::Item)) drawSlotIcon(c, slot, cx, sy + (round_ ? 50 : 54) + (selected ? bob : 0));
         const bool horse = species_ == Species::Horse;
         const char* label = toString(slot);
         if (horse && slot == Slot::Berries) label = "APPLE";
         if (slot == Slot::Stable) label = sim_.state().boarding ? "HOME" : horse ? "STABLE" : "SITTER";
         if (horse && slot == Slot::Fish) label = "CARROT";
         if (horse && slot == Slot::Roots) label = "HAY";
-        c.text(cx, top + 94, label, 2, kUiLight, Align::Center);
+        if (round_) c.text(cx, sy + 84, label, 1, kUiLight, Align::Center);  // no room for the big labels
+        else c.text(cx, top + 94, label, 2, kUiLight, Align::Center);
     }
 }
 
@@ -5233,7 +5287,7 @@ void Scene::drawTrails(Canvas& c) {
     }
     Rect b = rescanArea();
     c.fillRoundRect(b.x, b.y + 4, b.w, b.h - 8, 14, scanning_ ? 0xB8AE9A : kButton);
-    label(c, {b.x, b.y + 4, b.w, b.h - 8}, scanning_ ? "LISTENING..." : "LOOK AGAIN", 2, kUiLight);
+    label(c, {b.x, b.y + 4, b.w, b.h - 8}, scanning_ ? (round_ ? "WAIT..." : "LISTENING...") : "LOOK AGAIN", 2, kUiLight);
     const Rect d = trailsDoneArea();
     c.fillRoundRect(d.x, d.y + 4, d.w, d.h - 8, 14, kButton);
     label(c, {d.x, d.y + 4, d.w, d.h - 8}, "DONE", 2, kUiLight);
@@ -5270,7 +5324,7 @@ Scene::Rect Scene::gameChoiceArea(int i) const {
     if (species_ == Species::Horse) return {56, 100 + i * 64, 368, 64};  // five rows
     return {56, 112 + i * 74, 368, 68};
 }
-Scene::Rect Scene::gameQuitArea() const { return {S - 112, 0, 112, 64}; }
+Scene::Rect Scene::gameQuitAreaRaw() const { return round_ ? Rect{184, 62, 112, 64} : Rect{S - 112, 0, 112, 64}; }
 Scene::Rect Scene::seekSpotArea(int i) const {
     return {static_cast<int>(kSeekSpotXY[i][0]) - 36, static_cast<int>(kSeekSpotXY[i][1]) - 36, 72, 72};
 }
@@ -5741,7 +5795,7 @@ void Scene::drawGame(Canvas& c) {
     }
 
     // The banner along the top: what to do, how it's going, and a way out.
-    c.fillRect(0, 0, S, 64, kUiDark);
+    c.fillRect(0, 0, S, round_ ? 128 : 64, kUiDark);  // round: taller, everything centred, QUIT beneath
     char status[32];
     switch (game_) {
         case Game::Seek: std::snprintf(status, sizeof status, "GUESSES LEFT: %d", tries_); break;
@@ -5762,8 +5816,13 @@ void Scene::drawGame(Canvas& c) {
     const char* title = game_ == Game::Groom ? "GROOMING"
                       : species_ == Species::Horse && game_ == Game::Berry ? "APPLE CATCH"
                       : kGameNames[game_ == Game::Seek ? 0 : game_ == Game::Berry ? 1 : 2];
-    c.text(16, bigText_ ? 8 : 12, title, ts(2), kGold);
-    c.text(16, bigText_ ? 36 : 38, status, Canvas::textWidth(status, ts(2)) <= S - 136 ? ts(2) : 2, kUiLight);
+    if (round_) {
+        c.text(240, 14, title, ts(2), kGold, Align::Center);
+        c.text(240, 38, status, Canvas::textWidth(status, ts(2)) <= 300 ? ts(2) : 2, kUiLight, Align::Center);
+    } else {
+        c.text(16, bigText_ ? 8 : 12, title, ts(2), kGold);
+        c.text(16, bigText_ ? 36 : 38, status, Canvas::textWidth(status, ts(2)) <= S - 136 ? ts(2) : 2, kUiLight);
+    }
     Rect q = gameQuitArea();
     c.fillRoundRect(q.x + 8, q.y + 10, q.w - 16, q.h - 20, 12, kButton);
     label(c, {q.x + 8, q.y + 10, q.w - 16, q.h - 20}, "QUIT", 2, kUiLight);
@@ -5782,14 +5841,15 @@ void Scene::drawGame(Canvas& c) {
     if (msg) {
         const int scale = gameOver_ ? 3 : ts(2);
         char wrapped[3][64];
-        const int n = wrapText(msg, scale, 430, wrapped, 3);
+        const int n = wrapText(msg, scale, round_ ? 340 : 430, wrapped, 3);
         float tw = 0;
         for (int i = 0; i < n; i++) tw = std::max(tw, static_cast<float>(Canvas::textWidth(wrapped[i], scale)));
         const float w = tw + 32, pad = gameOver_ ? 11.0f : scale >= 3 ? 8.0f : 9.0f;
         const float h = 2 * pad + Canvas::textHeight(scale) + (n - 1) * lineStep(scale);
-        c.fillRoundRect(240 - w / 2, 80, w, h, 16, kUiDark, 0.85f);
+        const float my = round_ ? 136.0f : 80.0f;
+        c.fillRoundRect(240 - w / 2, my, w, h, 16, kUiDark, 0.85f);
         for (int i = 0; i < n; i++)
-            c.text(240, 80 + pad + i * lineStep(scale), wrapped[i], scale, gameOver_ && gameWon_ ? kGold : kUiLight, Align::Center);
+            c.text(240, my + pad + i * lineStep(scale), wrapped[i], scale, gameOver_ && gameWon_ ? kGold : kUiLight, Align::Center);
     }
 }
 
@@ -6527,4 +6587,22 @@ const char* toString(Scene::Slot s) {
     return "?";
 }
 
+// On a round screen these buttons are pulled inside the circle (fitRound).
+Scene::Rect Scene::settingsDoneArea() const { return fitRound(settingsDoneAreaRaw()); }
+Scene::Rect Scene::startOverArea() const { return fitRound(startOverAreaRaw()); }
+Scene::Rect Scene::privacyArea() const { return fitRound(privacyAreaRaw()); }
+Scene::Rect Scene::wifiButtonArea() const { return fitRound(wifiButtonAreaRaw()); }
+Scene::Rect Scene::wifiSetupArea() const { return fitRound(wifiSetupAreaRaw()); }
+Scene::Rect Scene::wifiDoneArea() const { return fitRound(wifiDoneAreaRaw()); }
+Scene::Rect Scene::startCancelArea() const { return fitRound(startCancelAreaRaw()); }
+Scene::Rect Scene::nameEditArea() const { return fitRound(nameEditAreaRaw()); }
+Scene::Rect Scene::nameSuggestArea() const { return fitRound(nameSuggestAreaRaw()); }
+Scene::Rect Scene::nameDoneArea() const { return fitRound(nameDoneAreaRaw()); }
+Scene::Rect Scene::rescanArea() const { return fitRound(rescanAreaRaw()); }
+Scene::Rect Scene::trailsDoneArea() const { return fitRound(trailsDoneAreaRaw()); }
+Scene::Rect Scene::footprintArea() const { return fitRound(footprintAreaRaw()); }
+Scene::Rect Scene::gameQuitArea() const { return fitRound(gameQuitAreaRaw()); }
+Scene::Rect Scene::updateArea() const { return fitRound(updateAreaRaw()); }
+
 }  // namespace squatch
+

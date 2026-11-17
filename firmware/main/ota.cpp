@@ -38,6 +38,8 @@ void fileName(char* out, size_t n) {
 #endif
 #if CONFIG_SQUATCH_BOARD_AMOLED_18
     const char* board = "amoled18";
+#elif CONFIG_SQUATCH_BOARD_AMOLED_175
+    const char* board = "amoled175";
 #else
     const char* board = "lcd4b";
 #endif

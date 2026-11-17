@@ -54,7 +54,7 @@ jobs:
       - uses: actions/checkout@v4
 
       # One build per edition and board, each named as the boards ask for it (ota.cpp):
-      # squatch-lcd4b, squatch-amoled18 and pony-amoled18. None has Wi-Fi or a town in it.
+      # squatch-lcd4b, squatch-amoled18, pony-amoled18 and pony-amoled175 (the round 1.75C). None has Wi-Fi or a town in it.
       - name: Build firmware
         shell: bash
         run: |
@@ -75,6 +75,7 @@ jobs:
           build squatch-lcd4b ""
           build squatch-amoled18 ";sdkconfig.amoled18"
           build pony-amoled18 ";sdkconfig.amoled18;sdkconfig.pony"
+          build pony-amoled175 ";sdkconfig.amoled175;sdkconfig.pony"
           ls -l firmware-out
 
       - uses: actions/upload-artifact@v4

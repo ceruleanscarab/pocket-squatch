@@ -1,6 +1,8 @@
 set(srcs "main.cpp" "walltime.cpp" "storage.cpp" "radio.cpp" "wifiscan.cpp" "power.cpp" "audio.cpp" "netjoin.cpp" "weatherfetch.cpp" "wifisetup.cpp" "townlookup.cpp" "ota.cpp" "cloud.cpp")
 if(CONFIG_SQUATCH_BOARD_AMOLED_18)
     list(APPEND srcs "board_amoled18.c")
+elseif(CONFIG_SQUATCH_BOARD_AMOLED_175)
+    list(APPEND srcs "board_amoled175.c")
 else()
     list(APPEND srcs "board.c" "st7701_init.c")
 endif()

@@ -50,7 +50,7 @@ constexpr const char* kHotspotName = "POCKET-SQUATCH";
 
 // Charge currents for the battery each board is usually fitted with. The AXP2101's own
 // default is over an amp, far too strong for these small cells.
-#if CONFIG_SQUATCH_BOARD_AMOLED_18
+#if CONFIG_SQUATCH_BOARD_AMOLED_18 || CONFIG_SQUATCH_BOARD_AMOLED_175
 constexpr int kChargeMa = 150, kTrickleMa = 25;  // pocket-tank's setting for the 1.8's ~200 mAh cell
 constexpr bool kAudioRail = true;  // the codec's analog side is on the AXP2101's ALDO1
 #else
@@ -481,6 +481,10 @@ extern "C" void app_main(void) {
 #if CONFIG_SQUATCH_BOARD_AMOLED_18
     gScene.setBigText(true);  // the 480x480 scene is shown at 368x368 on a 1.8" screen
     gScene.setTouchSlop(36);  // ...so a finger's wobble covers more scene px: about 2 mm, as on the 4" board
+#elif CONFIG_SQUATCH_BOARD_AMOLED_175
+    gScene.setBigText(true);  // 466x466 on a 1.75" circle: small, like the 1.8"
+    gScene.setRound(true);    // ...and round: everything that matters inside the circle
+    gScene.setTouchSlop(30);
 #endif
     sleepInit();
     ESP_ERROR_CHECK(board_init());

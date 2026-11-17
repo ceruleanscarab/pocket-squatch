@@ -144,7 +144,7 @@ int main(int argc, char** argv) {
     const char* savePath = "squatch.sav";
     const char* shotPath = nullptr;
     const char* owner = "";
-    bool fresh = false, detail = false, bigText = false;
+    bool fresh = false, detail = false, bigText = false, roundScreen = false;
     int zoom = 1;
     int battery = -1;  // the PC has no battery unless one is pretended
     bool charging = false;
@@ -154,6 +154,7 @@ int main(int argc, char** argv) {
         if (!std::strcmp(argv[i], "--new")) fresh = true;
         else if (!std::strcmp(argv[i], "--detail")) detail = true;  // the phone's richer drawing
         else if (!std::strcmp(argv[i], "--big-text")) bigText = true;  // as the small AMOLED board draws it
+        else if (!std::strcmp(argv[i], "--round")) bigText = roundScreen = true;  // as the round 1.75C shows it
         else if (!std::strcmp(argv[i], "--save") && i + 1 < argc) savePath = argv[++i];
         else if (!std::strcmp(argv[i], "--zoom") && i + 1 < argc) zoom = std::max(1, std::atoi(argv[++i]));
         else if (!std::strcmp(argv[i], "--shot") && i + 1 < argc) shotPath = argv[++i];
@@ -202,6 +203,7 @@ int main(int argc, char** argv) {
     Scene scene(sim);
     scene.setDetail(detail);
     scene.setBigText(bigText);
+    scene.setRound(roundScreen);
     scene.setOwnerName(owner);
     scene.setBattery(battery, charging);
     if (weather.sky != Sky::Unknown) scene.setWeather(weather);
@@ -211,10 +213,21 @@ int main(int argc, char** argv) {
     if (readSettings(settingsPath, settings)) scene.setSettings(settings);
     std::vector<uint16_t> fb(kSize * kSize);
     Canvas canvas(fb.data(), kSize, kSize);
+    // On the round board only a circle of Scene::kRoundR around the middle shows: black out the rest.
+    auto maskRound = [&]() {
+        if (!roundScreen) return;
+        const float r2 = Scene::kRoundR * Scene::kRoundR;
+        for (int y = 0; y < kSize; y++)
+            for (int x = 0; x < kSize; x++) {
+                const float dx = x + 0.5f - kSize / 2.0f, dy = y + 0.5f - kSize / 2.0f;
+                if (dx * dx + dy * dy > r2) fb[y * kSize + x] = 0;
+            }
+    };
 
     if (shotPath) {
         for (uint32_t ms = 0; ms <= 1000; ms += 33) scene.update(ms);
         scene.draw(canvas);
+        maskRound();
         if (!saveBmp(fb, shotPath)) {
             std::fprintf(stderr, "can't write %s: %s\n", shotPath, SDL_GetError());
             return 1;
@@ -332,6 +345,7 @@ int main(int argc, char** argv) {
 
         if (scene.screenOff()) std::fill(fb.begin(), fb.end(), 0);
         else scene.draw(canvas);
+        maskRound();
         const Uint8 level = static_cast<Uint8>(255 * scene.brightnessPercent() / 100);
         SDL_SetTextureColorMod(tex, level, level, level);  // a stand-in for the panel's brightness
         SDL_UpdateTexture(tex, nullptr, fb.data(), kSize * 2);

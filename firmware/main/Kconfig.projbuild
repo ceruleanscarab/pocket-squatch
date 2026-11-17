@@ -12,6 +12,9 @@ menu "Pocket Squatch"
 
         config SQUATCH_BOARD_AMOLED_18
             bool "ESP32-S3-Touch-AMOLED-1.8 (1.8 inch, 368x448, picture scaled)"
+
+        config SQUATCH_BOARD_AMOLED_175
+            bool "ESP32-S3-Touch-AMOLED-1.75C (1.75 inch round, 466x466, round layout)"
     endchoice
 
     choice SQUATCH_PET

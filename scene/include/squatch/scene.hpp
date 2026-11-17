@@ -208,6 +208,11 @@ public:
     bool trayOpen() const { return trayTarget_ > 0.5f; }
     Item held() const { return held_; }
     Overlay overlay() const { return overlay_; }
+    void closeOverlays() {  // back to the paddock (for tests and screenshots)
+        overlay_ = Overlay::None;
+        petOverride_ = false;
+        trayTarget_ = 0;
+    }
     const char* toast() const;  // the message showing now, or nullptr
 
     // The scenery (sky, ground, trees, stump, lantern) changes only with the time of day, so
@@ -304,6 +309,31 @@ public:
         bigText_ = on;
         sceneryKey_ = -1;
     }
+    // A round screen (the 1.75C): the scene is shown so that only a circle of kRoundR scene px
+    // around the middle is seen, and the top bar, the care tray and the pages keep inside it.
+    static constexpr float kRoundR = 278;
+    void setRound(bool on) { round_ = on; }
+    bool round() const { return round_; }
+    bool insideRound(const Rect& r, float margin = 0) const;  // every corner within the circle
+    Rect fitRound(Rect r) const;  // on a round screen: nudged toward the middle and narrowed till it fits
+  private:
+    Rect settingsDoneAreaRaw() const;
+    Rect startOverAreaRaw() const;
+    Rect privacyAreaRaw() const;
+    Rect wifiButtonAreaRaw() const;
+    Rect wifiSetupAreaRaw() const;
+    Rect wifiDoneAreaRaw() const;
+    Rect startCancelAreaRaw() const;
+    Rect nameEditAreaRaw() const;
+    Rect nameSuggestAreaRaw() const;
+    Rect nameDoneAreaRaw() const;
+    Rect rescanAreaRaw() const;
+    Rect trailsDoneAreaRaw() const;
+    Rect footprintAreaRaw() const;
+    Rect gameQuitAreaRaw() const;
+    Rect updateAreaRaw() const;
+  public:
+    int trayH() const { return round_ ? 204 : kTrayH; }
     bool bigText() const { return bigText_; }
 
     void setCompact(bool on) {
@@ -671,6 +701,7 @@ private:
     // talking
     char bubble_[28] = {};
     char owner_[kMaxOwnerLen + 1] = {};
+    bool round_ = false;
     char named_[28] = {};  // a line with the owner's name in it, for speak()/say()
     // "<base>, NAME!" (or base alone without a name, or by chance when sometimes is set).
     const char* withName(const char* base, const char* end = "!", bool sometimes = true);

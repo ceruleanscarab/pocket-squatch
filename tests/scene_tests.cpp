@@ -2105,6 +2105,123 @@ static void testShowRibbon() {
     CHECK(blue);
 }
 
+static void testRoundLayout() {
+    std::printf("round screen: every button on every page sits inside the circle\n");
+    std::vector<uint16_t> fb(Scene::kSize * Scene::kSize);
+    Canvas c(fb.data(), Scene::kSize, Scene::kSize);
+    const char* shots = std::getenv("SQUATCH_ROUND_SHOTS");  // a folder: also save each page as a picture
+    int shotN = 0;
+    auto shot = [&](Driver& d, const char* name) {
+        d.scene.draw(c);
+        if (!shots) return;
+        char path[256];
+        std::snprintf(path, sizeof path, "%s/%02d-%s.ppm", shots, shotN++, name);
+        FILE* f = std::fopen(path, "wb");
+        if (!f) return;
+        std::fprintf(f, "P6 %d %d 255\n", Scene::kSize, Scene::kSize);
+        for (int y = 0; y < Scene::kSize; y++)
+            for (int x = 0; x < Scene::kSize; x++) {
+                const float dx = x + 0.5f - 240, dy = y + 0.5f - 240;
+                uint16_t p = dx * dx + dy * dy > Scene::kRoundR * Scene::kRoundR ? 0 : fb[y * Scene::kSize + x];
+                unsigned char b[3] = {(unsigned char)((p >> 11) << 3), (unsigned char)(((p >> 5) & 63) << 2), (unsigned char)((p & 31) << 3)};
+                std::fwrite(b, 1, 3, f);
+            }
+        std::fclose(f);
+    };
+    int bad = 0;
+    auto in = [&](Driver& d, const char* name, const Scene::Rect& r) {
+        if (r.w == 0) return;
+        if (!d.scene.insideRound(r, 4)) {
+            bad++;
+            std::printf("    outside the circle: %s {%d,%d,%d,%d}\n", name, r.x, r.y, r.w, r.h);
+        }
+    };
+    Driver d;
+    d.scene.setSpecies(Scene::Species::Horse);
+    d.scene.setBigText(true);
+    d.scene.setRound(true);
+    d.scene.setWifiAvailable("POCKET-PONY");
+    d.scene.setFactoryResetAvailable(true);
+    d.scene.setBackupCode("K7QM-2XHT-9BFA-WP4D");
+    d.scene.setUpdateStatus(Scene::UpdateStatus::Idle, 412, 0);
+    d.scene.setBattery(80, false);
+    d.sim.setName("STAR");
+    d.settle();
+    shot(d, "paddock");
+    in(d, "footprints", d.scene.footprintArea());
+    d.openTray();
+    shot(d, "tray");
+    for (int i = 0; i < d.scene.slotCount(); i++) in(d, "main tray slot", d.scene.slotArea(i));
+    d.pressSlot(Scene::Slot::Feed);
+    shot(d, "food");
+    for (int i = 0; i < d.scene.slotCount(); i++) in(d, "food tray slot", d.scene.slotArea(i));
+    d.pressSlot(Scene::Slot::Back);
+    d.pressSlot(Scene::Slot::More);
+    shot(d, "more");
+    for (int i = 0; i < d.scene.slotCount(); i++) in(d, "more tray slot", d.scene.slotArea(i));
+    in(d, "tray handle", d.scene.handleArea());
+    d.pressSlot(Scene::Slot::Settings);
+    shot(d, "settings");
+    for (int r = 0; r < Scene::kSettingRows; r++) {
+        in(d, "setting -", d.scene.settingButtonArea(r, false));
+        in(d, "setting +", d.scene.settingButtonArea(r, true));
+    }
+    in(d, "settings done", d.scene.settingsDoneArea());
+    in(d, "start over", d.scene.startOverArea());
+    in(d, "wi-fi button", d.scene.wifiButtonArea());
+    d.tap(d.scene.wifiButtonArea());
+    d.scene.setWifiStatus(Scene::WifiStatus::Joined, "HOME WI-FI");
+    shot(d, "wifi");
+    in(d, "wi-fi setup", d.scene.wifiSetupArea());
+    in(d, "wi-fi done", d.scene.wifiDoneArea());
+    in(d, "update", d.scene.updateArea());
+    d.scene.setWifiStatus(Scene::WifiStatus::SetupRunning, "");
+    shot(d, "wifi-setup");
+    d.tap(d.scene.wifiDoneArea());
+    d.tap(d.scene.startOverArea());
+    shot(d, "start-over");
+    in(d, "keep", d.scene.startKeepArea());
+    in(d, "wipe", d.scene.startWipeArea());
+    in(d, "like new", d.scene.startNewArea());
+    in(d, "cancel", d.scene.startCancelArea());
+    d.tap(d.scene.startCancelArea());
+    d.scene.closeOverlays();
+    d.settle();
+    d.tap(240, 40);  // the info card
+    shot(d, "info");
+    in(d, "name", d.scene.nameEditArea());
+    d.tap(d.scene.nameEditArea());
+    shot(d, "naming");
+    for (int i = 0; i < Scene::kNameKeys; i++) in(d, "name key", d.scene.nameKeyArea(i));
+    in(d, "suggest", d.scene.nameSuggestArea());
+    in(d, "name done", d.scene.nameDoneArea());
+    d.tap(d.scene.nameDoneArea());
+    d.scene.closeOverlays();
+    d.settle();
+    d.openTray();
+    if (d.slotOf(Scene::Slot::Play) < 0) d.pressSlot(Scene::Slot::Back);
+    d.pressSlot(Scene::Slot::Play);
+    shot(d, "games");
+    for (int i = 0; i < d.scene.gameChoiceCount(); i++) in(d, "game choice", d.scene.gameChoiceArea(i));
+    in(d, "game quit", d.scene.gameQuitArea());
+    d.tap(d.scene.gameChoiceArea(0));
+    d.settle();
+    shot(d, "hide-and-seek");
+    for (int i = 0; i < Scene::kSeekSpots; i++) in(d, "seek spot", d.scene.seekSpotArea(i));
+    in(d, "game quit (playing)", d.scene.gameQuitArea());
+    d.scene.closeOverlays();
+    d.settle();
+    d.openTray();
+    d.pressSlot(Scene::Slot::More);
+    d.pressSlot(Scene::Slot::Trails);
+    shot(d, "trails");
+    for (int i = 0; i < State::kMaxTrails; i++) in(d, "trail row", d.scene.trailRowArea(i));
+    in(d, "look again", d.scene.rescanArea());
+    in(d, "trails done", d.scene.trailsDoneArea());
+    d.scene.closeOverlays();
+    CHECK(bad == 0);
+}
+
 int main() {
     testBoardingStable();
     testHorseTouchVoices();
@@ -2163,6 +2280,7 @@ int main() {
     testHorseWalksForwards();
     testOwnerName();
     testShowRibbon();
+    testRoundLayout();
 
     std::printf("\n%d checks, %d failed\n", gChecks, gFailures);
     return gFailures ? 1 : 0;

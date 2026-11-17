@@ -48,6 +48,7 @@ enum class EventType : uint8_t {
     TrailsScouted,      // a = trails on the map that it has never visited
     WentForaging,
     BackFromForaging,   // a = footprints it brought back
+    LightsOut,          // asleep with the light on: it went out by itself
 };
 
 struct Event {
@@ -159,8 +160,8 @@ struct State {
 
     bool asleep = false;
     bool lightsOn = true;
-    bool penalizedSleepLights = false;  // once per night
-    int32_t sleepLightSecs = 0;         // asleep with the light left on
+    bool penalizedSleepLights = false;  // the light has gone out by itself tonight (no longer a penalty)
+    int32_t sleepLightSecs = 0;         // asleep with the light on, since it last went on
 
     bool sick = false;
     int64_t sickSince = 0;

@@ -136,4 +136,7 @@ Wiki: https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-4B
 - Bedtime: the setup page has Bedtime (7-11 pm) and Wake-up (5-9 am) choices, saved in NVS (`storage::bedtime`, keys
   `bed_h`/`wake_h`) and applied with `Sim::setSleepHours` at boot and on `wifisetup::takeBedtimeChanged`. Not in the save.
   Picking the saved network again with an empty password keeps the saved password, so the page can change just the bedtime.
+- Light: goes out by itself a minute or so after the pet falls asleep (`EventType::LightsOut`), or 3 minutes after being
+  switched on to peek; never a care mistake. Switching it off yourself while it sleeps gets "GOODNIGHT" and a heart.
+  `penalizedSleepLights` now only means "it went out by itself tonight" (kept to leave `State` unchanged).
 - Later: Bluetooth visitors between two boards.

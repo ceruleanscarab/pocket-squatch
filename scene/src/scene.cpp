@@ -938,12 +938,19 @@ void Scene::pressSlot(Slot s) {
         case Slot::Trails:
             if (trailsAvailable_) openTrails();
             break;
-        case Slot::Light:
+        case Slot::Light: {
+            const bool tuckIn = sim_.state().lightsOn && sim_.state().asleep && hatched();
             sim_.lights(!sim_.state().lightsOn);
             cue(sim_.state().lightsOn ? Cue::LightOn : Cue::LightOff);
-            say(sim_.state().lightsOn ? "LIGHTS ON" : "LIGHTS OFF", true);
+            if (tuckIn) {  // tucked in: a little thank-you (it would have gone dark anyway)
+                say("GOODNIGHT", true);
+                spawn(ParticleKind::Heart, squatchX(), headY() - 30, 0, -40, 1500);
+            } else {
+                say(sim_.state().lightsOn ? "LIGHTS ON" : "LIGHTS OFF", true);
+            }
             saveRequested_ = true;
             break;
+        }
         case Slot::Photos: overlay_ = Overlay::Gallery; break;
         case Slot::Settings: overlay_ = Overlay::Settings; break;
         case Slot::Stable: toggleBoarding(); break;
@@ -2724,6 +2731,10 @@ void Scene::handleEvent(const Event& e) {
                 std::snprintf(buf, sizeof buf, "%u NEW TRAIL%s NEARBY!", static_cast<unsigned>(e.a), e.a == 1 ? "" : "S");
                 note(buf);
             }
+            saveRequested_ = true;
+            break;
+        case EventType::LightsOut:
+            cue(Cue::LightOff);
             saveRequested_ = true;
             break;
         case EventType::BackFromForaging: {

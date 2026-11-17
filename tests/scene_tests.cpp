@@ -358,10 +358,20 @@ static void testAsleep() {
     d.tap(d.scene.squatchArea());
     CHECK(d.sim.state().hunger < 1.1f);
     CHECK(d.scene.toast() && std::strstr(d.scene.toast(), "ASLEEP"));
-    std::printf("the Light button turns the light off\n");
+    std::printf("the light went out by itself; the button turns it on to peek, and off again tucks it in\n");
+    CHECK(!d.sim.state().lightsOn);
+    const int mistakes = d.sim.state().careMistakes;
     d.pressSlot(Scene::Slot::Back);
     d.pressSlot(Scene::Slot::Light);
+    CHECK(d.sim.state().lightsOn);
+    d.pressSlot(Scene::Slot::Light);
     CHECK(!d.sim.state().lightsOn);
+    CHECK(d.scene.toast() && std::strstr(d.scene.toast(), "GOODNIGHT"));
+    d.pressSlot(Scene::Slot::Light);  // on again and left on: dark again in a few minutes, no harm done
+    d.sim.tick(5 * 60);
+    d.settle();
+    CHECK(!d.sim.state().lightsOn);
+    CHECK(d.sim.state().careMistakes == mistakes);
 }
 
 static void testHorseTouchVoices() {

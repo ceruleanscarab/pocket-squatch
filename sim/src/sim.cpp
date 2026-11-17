@@ -113,12 +113,15 @@ void Sim::step() {
         s_.lightsOn = true;
         emit(EventType::WokeUp);
     }
+    // The light goes out by itself: a minute or so after it falls asleep, or a few minutes after
+    // someone switched it on to peek. Never a care mistake; switching it off yourself is just nice.
     if (s_.asleep && s_.lightsOn) {
         s_.sleepLightSecs += kStepSecs;
-        if (s_.sleepLightSecs >= 30 * 60 && !s_.penalizedSleepLights) {
+        if (s_.sleepLightSecs >= (s_.penalizedSleepLights ? 3 * 60 : kStepSecs)) {
             s_.penalizedSleepLights = true;
-            s_.happiness = clampf(s_.happiness - 0.5f, 0, 4);
-            s_.careMistakes++;
+            s_.lightsOn = false;
+            s_.sleepLightSecs = 0;
+            emit(EventType::LightsOut);
         }
     }
 
@@ -403,6 +406,7 @@ Result Sim::pet() {
 
 Result Sim::lights(bool on) {
     s_.lightsOn = on;
+    s_.sleepLightSecs = 0;  // switched on to peek: it goes out again in a few minutes
     return Result::Ok;
 }
 
@@ -665,6 +669,7 @@ const char* toString(EventType e) {
         case EventType::TrailsScouted: return "trails scouted";
         case EventType::WentForaging: return "went foraging";
         case EventType::BackFromForaging: return "back from foraging";
+        case EventType::LightsOut: return "lights out";
     }
     return "?";
 }

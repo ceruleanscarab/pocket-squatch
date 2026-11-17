@@ -2018,6 +2018,29 @@ static void testHorseDrinks() {
     }
 }
 
+static void testHorseWalksForwards() {
+    std::printf("the horse never walks backwards: wandering, off for a drink, after an apple\n");
+    std::vector<uint16_t> fb(Scene::kSize * Scene::kSize);
+    Canvas cv(fb.data(), Scene::kSize, Scene::kSize);
+    for (int trust : {40, 90}) {
+        Driver d;
+        d.scene.setSpecies(Scene::Species::Horse);
+        d.sim.mutableState().trust = trust;
+        int walkingFrames = 0, backwards = 0;
+        for (int k = 0; k < 60 * 240; k++) {  // four minutes
+            if (k % 1500 == 100) d.tap(d.scene.fireArea());
+            if (k % 1500 == 800) d.tap(d.scene.treeArea(0));
+            d.step();
+            if (k % 3) continue;
+            d.scene.draw(cv);
+            if (!d.scene.walking()) continue;
+            walkingFrames++;
+            backwards += d.scene.facing() != d.scene.movingDir();
+        }
+        CHECK(walkingFrames > 50 && backwards == 0);
+    }
+}
+
 int main() {
     testBoardingStable();
     testHorseTouchVoices();
@@ -2073,6 +2096,7 @@ int main() {
     testChargeCall();
     testHoofbeats();
     testHorseDrinks();
+    testHorseWalksForwards();
 
     std::printf("\n%d checks, %d failed\n", gChecks, gFailures);
     return gFailures ? 1 : 0;

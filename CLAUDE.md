@@ -98,6 +98,8 @@ Wiki: https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-4B
   `board_read_touch` logs each touch's panel and scene position for checking the calibration. Voices are higher the younger the pet (`Scene::voicePitch`).
   Tap the water trough (`fireArea`, 112x92) and it walks over for a drink and back (`drinking`, `canDrink`): any time it's
   up and about, shy-but-wandering included; asleep or still hiding, a toast says so (`testHorseDrinks`).
+  Walking, it always faces the way it moves (`moveDir_`, measured in update; it used to follow its eyes and walk
+  backwards); standing, it turns to what it looks at. `testHorseWalksForwards`.
   Hoofbeats: only the near hooves, `kStepsPerWalk` (4) as it sets off, then none for `kStepQuietMs` (30 s); `testHoofbeats`.
 - Wi-Fi setup from a phone (`firmware/main/wifisetup.cpp`: open hotspot, captive page, DNS; saved in NVS by
   `storage::saveWifi`, used by the clock and weather via `storage::wifiCredentials`; Kconfig is only the default).

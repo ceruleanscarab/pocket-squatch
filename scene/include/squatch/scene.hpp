@@ -541,6 +541,12 @@ private:
     bool detail_ = false;
     Species species_ = Species::Squatch;
     float faceDir_ = 1;  // the horse faces right (1) or left (-1)
+    float moveDir_ = 1;  // the way it last moved: it walks facing this way
+public:
+    float facing() const { return faceDir_; }
+    bool walking() const { return walkAmt_ > 0.15f; }
+    float movingDir() const { return moveDir_; }
+private:
     Settings settings_;
     Cue cues_[8];
     bool cueBabble_[8] = {};  // that cue was only speech babble

@@ -2906,6 +2906,7 @@ void Scene::animate(float dt) {
         const float moved = lastPetX_ >= 0 && x >= 0 ? std::fabs(x - lastPetX_) : 0;
         // A full stride covers about 36 px (less when it's only ambling), so the hooves don't slide.
         if (moved < 40) gaitPhase_ += moved / (36 * squatchScale() * std::max(0.35f, walkAmt_)) * 2 * kPi;
+        if (moved > 0.2f && moved < 40) moveDir_ = x > lastPetX_ ? 1.0f : -1.0f;  // which way it's going
         const float want = dt > 0 ? std::min(1.0f, moved / dt / 28) : 0;
         walkAmt_ += (want - walkAmt_) * std::min(1.0f, dt * (want > walkAmt_ ? 6.0f : 4.0f));
         if (walkAmt_ < 0.02f && want == 0) {  // come to rest with the legs together
@@ -4124,7 +4125,8 @@ void Scene::drawPet(Canvas& c) {
     if (species_ == Species::Horse && drinking()) {
         const float since = static_cast<float>(now_ - drinkAt_) / 1000.0f;
         const bool there = since >= 1.4f && since < 3.8f;
-        faceDir_ = since < 3.8f ? -1.0f : 1.0f;
+        if (walkAmt_ > 0.15f) faceDir_ = moveDir_;                      // always forwards on the way,
+        else if (there) faceDir_ = kFireX < squatchX() ? -1.0f : 1.0f;  // then nose to the water
         if (there) L.mouth = 2;  // slurping
         // Head down to the water once it's there, and up again before it goes.
         L.graze = std::max(0.0f, std::min(1.0f, std::min((since - 1.4f) / 0.4f, (3.8f - since) / 0.4f)));
@@ -4139,14 +4141,15 @@ void Scene::drawPet(Canvas& c) {
     }
     if (species_ == Species::Horse && newborn()) {  // nuzzling its mother, then trotting off
         const bool off = now_ - bornAt_ >= 3000;
-        const bool toHide = sim_.trustLevel() == TrustLevel::Hiding;
-        faceDir_ = off ? (toHide ? -1.0f : 1.0f) : 1.0f;  // facing the way it goes
+        faceDir_ = off && walkAmt_ > 0.15f ? moveDir_ : 1.0f;  // facing the way it goes
         drawHorse(c, L);
         return;
     }
     if (species_ == Species::Horse) {
         // It turns to face where it's looking, but not back and forth on every glance.
-        if (L.gait >= 0 && fetch_ != Fetch::None) faceDir_ = (fetch_ == Fetch::Chase ? coneX_ : 240.0f) >= L.x ? 1.0f : -1.0f;
+        // Walking, it always faces the way it's going (it used to follow its eyes, and so walked backwards).
+        if (walkAmt_ > 0.15f) faceDir_ = moveDir_;
+        else if (L.gait >= 0 && fetch_ != Fetch::None) faceDir_ = (fetch_ == Fetch::Chase ? coneX_ : 240.0f) >= L.x ? 1.0f : -1.0f;
         else if (L.lookX > 0.35f) faceDir_ = 1;
         else if (L.lookX < -0.35f) faceDir_ = -1;
         drawHorse(c, L);

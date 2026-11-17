@@ -153,4 +153,7 @@ Wiki: https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-4B
   (`State::ribbons`) carry across generations like the photos. The scene tells the news once it's awake and the screen
   is on (`tellShowNews`), hangs up to 6 rosettes on the barn wall (`drawRosette`) and lists them on the info card.
   The harness prints ribbons per player (`--days 22` for three shows).
+- Barn case for the AMOLED-1.8 in its stock black case: `case/barn_case.py` (manifold3d + trimesh) writes multi-colour
+  parts to `case/out/` (walls, roof, trim, base, sign; back door separately) with print notes. Pocket depth is a guess
+  (13 mm) until measured; `--depth`, `--sign`. Personalised signs go to `case/personal/` (git-ignored).
 - Later: Bluetooth visitors between two boards.

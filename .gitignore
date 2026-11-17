@@ -3,3 +3,6 @@ cmake-build-*/
 .vscode/
 .idea/
 *.sav
+
+# personalised case files (a name on the sign) stay on your own computer
+case/personal/

@@ -1984,6 +1984,40 @@ static void testHoofbeats() {
     CHECK(steps > 0 && steps <= 10 * 60 / 30 * 4);
 }
 
+static void testHorseDrinks() {
+    std::printf("tap the trough and the horse walks over for a drink, even while it's still a bit shy\n");
+    for (int trust : {90, 40}) {
+        Driver d;
+        d.scene.setSpecies(Scene::Species::Horse);
+        d.sim.mutableState().trust = trust;
+        for (int i = 0; i < 300; i++) d.step();
+        d.tap(d.scene.fireArea());
+        CHECK(d.scene.drinking());
+        Cue c;
+        bool sipped = false;
+        float nearest = 1e9f;
+        std::vector<uint16_t> fb(Scene::kSize * Scene::kSize);
+        Canvas cv(fb.data(), Scene::kSize, Scene::kSize);
+        for (int k = 0; k < 400; k++) {
+            d.step();
+            if (k % 4 == 0) d.scene.draw(cv);  // the sips come with the drawing
+            nearest = std::min(nearest, static_cast<float>(d.scene.squatchArea().cx()));
+            while (d.scene.takeCue(c)) sipped = sipped || c == Cue::Sip;
+        }
+        CHECK(sipped && nearest < 200);  // at the trough
+        CHECK(!d.scene.drinking());
+    }
+    {
+        Driver d;  // asleep: it says so
+        d.scene.setSpecies(Scene::Species::Horse);
+        d.sim.tick(12 * 3600);
+        d.settle();
+        d.tap(d.scene.fireArea());
+        CHECK(!d.scene.drinking());
+        CHECK(d.scene.toast() && std::strstr(d.scene.toast(), "ASLEEP"));
+    }
+}
+
 int main() {
     testBoardingStable();
     testHorseTouchVoices();
@@ -2038,6 +2072,7 @@ int main() {
     testFindMe();
     testChargeCall();
     testHoofbeats();
+    testHorseDrinks();
 
     std::printf("\n%d checks, %d failed\n", gChecks, gFailures);
     return gFailures ? 1 : 0;

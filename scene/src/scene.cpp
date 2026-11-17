@@ -1571,9 +1571,16 @@ void Scene::lightFire() {
         cue(Cue::Splash);
         for (int i = 0; i < 6; i++)
             spawn(ParticleKind::Drop, kFireX + (rand01() - 0.5f) * 50, kFireY - 20, (rand01() - 0.5f) * 60, -120 - rand01() * 60, 700);
-        if (canPlay() && fetch_ == Fetch::None && !drinking()) {
+        if (drinking()) return;
+        const State& st = sim_.state();
+        if (canDrink() && fetch_ == Fetch::None) {
+            drinkFromX_ = squatchX();
             drinkAt_ = now_ ? now_ : 1;
             speak("A DRINK? YES!");
+        } else if (hatched() && st.asleep) {
+            say("SHH, IT'S ASLEEP", true);
+        } else if (hiding()) {
+            say("TOO SHY TO COME OUT YET", true);
         }
         return;
     }
@@ -1615,7 +1622,9 @@ Scene::Rect Scene::treeArea(int i) const {
     return i ? Rect{S - 96, 96, 96, 214} : Rect{0, 96, 96, 224};  // the trunks and the boughs above
 }
 
-Scene::Rect Scene::fireArea() const { return {static_cast<int>(kFireX) - 46, static_cast<int>(kFireY) - 36, 84, 68}; }
+Scene::Rect Scene::fireArea() const {  // generous: the whole trough (or campfire) and a bit round it
+    return {static_cast<int>(kFireX) - 56, static_cast<int>(kFireY) - 50, 112, 92};
+}
 
 Scene::Rect Scene::coneArea() const {
     if (fetch_ != Fetch::Lying) return {0, 0, 0, 0};
@@ -2971,7 +2980,14 @@ bool Scene::hatched() const {  // and here in the clearing
 }
 
 bool Scene::drinking() const {
-    return species_ == Species::Horse && drinkAt_ && now_ - drinkAt_ < 5200 && canPlay();
+    return species_ == Species::Horse && drinkAt_ && now_ - drinkAt_ < 5200 && canDrink();
+}
+
+// A drink is fine whenever it's up and about: shy-but-wandering, calling or poorly too (only not asleep,
+// still hiding, or busy with something else).
+bool Scene::canDrink() const {
+    const State& s = sim_.state();
+    return hatched() && !hiding() && !newborn() && !s.asleep && overlay_ == Overlay::None && !petOverride_;
 }
 
 bool Scene::hiding() const { return hatched() && sim_.trustLevel() == TrustLevel::Hiding && !newborn(); }
@@ -2997,9 +3013,10 @@ float Scene::squatchX() const {
     if (drinking()) {  // over to the trough, a drink, and back
         const float since = static_cast<float>(now_ - drinkAt_) / 1000.0f, at = kFireX + 96;
         auto ease = [](float p) { return p * p * (3 - 2 * p); };  // gently away, gently to a stop
-        if (since < 1.4f) return 240 + (at - 240) * ease(since / 1.4f);
+        const float from = drinkFromX_ > 0 ? drinkFromX_ : 240.0f;
+        if (since < 1.4f) return from + (at - from) * ease(since / 1.4f);
         if (since < 3.8f) return at;
-        return at + (240 - at) * ease(std::min(1.0f, (since - 3.8f) / 1.4f));
+        return at + (from - at) * ease(std::min(1.0f, (since - 3.8f) / 1.4f));
     }
     if (newborn()) {
         const float since = static_cast<float>(now_ - bornAt_) / 1000.0f;

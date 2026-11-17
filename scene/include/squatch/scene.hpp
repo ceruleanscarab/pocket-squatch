@@ -269,7 +269,8 @@ public:
     // Things to do in the clearing, and what it says. All just for fun: none of them is
     // needed to raise it, and none needs quick fingers.
     Rect treeArea(int i) const;  // 0 left, 1 right: tap to shake it (a pinecone may fall)
-    Rect fireArea() const;       // tap to light the campfire for a while
+    Rect fireArea() const;       // tap to light the campfire for a while (the horse: its water trough)
+    bool drinking() const;       // the horse is off to the trough for a drink
     Rect coneArea() const;       // a pinecone on the ground: tap to toss it, or flick it
     bool coneOnGround() const { return fetch_ == Fetch::Lying; }
     bool fetching() const { return fetch_ == Fetch::Chase || fetch_ == Fetch::Carry; }
@@ -401,7 +402,6 @@ private:
     void drawHidingHorse(Canvas& c);
     void drawMare(Canvas& c);
     bool newborn() const;
-    bool drinking() const;
     const char* stageName(Stage st) const;     // the horse edition says FOAL, YEARLING...
     const char* formName(AdultForm f) const;
     void horseCoatName(char* out, size_t n) const;  // the horse edition's 'egg': its mother, waiting for the foal
@@ -612,6 +612,8 @@ private:
     int applesInRow_ = 0;  // apples fed one after another
     uint32_t tootAt_ = 0;  // ...and the consequence, due then
     uint32_t drinkAt_ = 0, nextSlurp_ = 0, barnPeekUntil_ = 0;
+    float drinkFromX_ = 0;  // where it set off from (it walks back there)
+    bool canDrink() const;
     Visitor visitor_ = Visitor::None;
     float visX_ = 0, visY_ = 0, visDir_ = 1, visV_ = 0, visStopX_ = 0;
     uint32_t visStopUntil_ = 0;  // farm visitors: where they stop a while, and till when

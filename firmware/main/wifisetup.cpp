@@ -152,7 +152,7 @@ esp_err_t pageGet(httpd_req_t* req) {
                  "<input name=pass type=password id=p autocapitalize=off autocorrect=off>"
                  "<small><input type=checkbox style='width:auto' onclick=\"p.type=this.checked?'text':'password'\"> "
                  "show the password. Already set up? Leave it empty to keep the saved one.</small>"
-                 "<label>Your town</label><input name=town placeholder='e.g. Colorado Springs' autocorrect=off>"
+                 "<label>Your town or ZIP code</label><input name=town placeholder='e.g. Springfield or 62701' autocorrect=off>"
                  "<small>For the weather and the clock. Leave it empty to keep what's set.</small>",
                  sizeof html - std::strlen(html) - 1);
     {  // the owner's first name: the pet says it now and then (kept on the toy only)

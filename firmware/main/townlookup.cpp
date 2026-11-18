@@ -27,7 +27,22 @@ bool find(const char* town, storage::Location& out) {
             n += static_cast<size_t>(std::snprintf(q + n, sizeof q - n, "%%%02X", ch));
         }
     }
-    std::snprintf(url, sizeof url, "https://geocoding-api.open-meteo.com/v1/search?name=%s&count=1&language=en&format=json", q);
+    // A US ZIP code works too (five digits, or ZIP+4): looked up in the US only, since the same digits
+    // can be a postcode elsewhere (80919 is also one in France).
+    bool zip = true;
+    int digits = 0;
+    for (const char* p = town; *p; p++) {
+        if (*p >= '0' && *p <= '9') digits++;
+        else if (!(*p == '-' && digits == 5) && *p != ' ') zip = false;
+    }
+    zip = zip && (digits == 5 || digits == 9);
+    if (zip) {
+        std::snprintf(q, sizeof q, "%.5s", town[0] == ' ' ? town + 1 : town);
+        for (int i = 0; q[i]; i++)
+            if (q[i] < '0' || q[i] > '9') q[i] = '\0';
+    }
+    std::snprintf(url, sizeof url, "https://geocoding-api.open-meteo.com/v1/search?name=%s&count=1&language=en&format=json%s",
+                  q, zip ? "&countryCode=US" : "");
     gBody[0] = '\0';
     esp_http_client_config_t cfg{};
     cfg.url = url;

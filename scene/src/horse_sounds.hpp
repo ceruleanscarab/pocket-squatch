@@ -21,5 +21,8 @@ extern const HorseClip kSplashClip, kSipClip;  // water: the trough, and a horse
 // More takes of each (horse_takes.cpp, made by tools/horse_takes.py), so it isn't the same every time.
 extern const HorseClip kNeighTakes[4], kNickerTakes[4], kSnortTakes[3], kMunchTakes[1], kHayTakes[2];
 extern const HorseClip kTootClip;  // a pony after too many apples
+// The visitors' real calls (farm_sounds.cpp, made by tools/farm_sounds.py): the barn cat, the goat (the sheep
+// too, a little higher), the farm dog and the owl.
+extern const HorseClip kMeowClip, kBleatClip, kWoofClip, kHootClip;
 
 }  // namespace squatch

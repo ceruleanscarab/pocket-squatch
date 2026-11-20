@@ -145,7 +145,7 @@ int takeCount(Cue c) {
     switch (c) {
         case Cue::Neigh: case Cue::Nicker: case Cue::Chuckle: case Cue::Sigh: return 5;
         case Cue::Snort: case Cue::Blow: return 4;
-        case Cue::Munch: case Cue::MunchHay: return 2;
+        case Cue::Munch: case Cue::MunchHay: case Cue::Bleat: return 2;
         default: return 1;
     }
 }
@@ -172,6 +172,10 @@ ClipStyle clipFor(Cue c, int take = 0) {
         case Cue::StepFar: return {&kStepClips[1], 1, 0.45f, 1};
         case Cue::Splash: return {&kSplashClip, 1, 0.7f, 1};
         case Cue::Sip: return {&kSipClip, 1, 0.75f, 1};
+        case Cue::Meow: return {&kMeowClip, 1, 0.8f, 1};
+        case Cue::Bleat: return {&kBleatClip, take % 2 ? 1.15f : 1.0f, 0.8f, 1};  // the sheep's a little higher
+        case Cue::Woof: return {&kWoofClip, 1, 0.75f, 1};
+        case Cue::Hoot: return {&kHootClip, 1, 0.75f, 1};
         default: return {nullptr, 1, 1, 1};
     }
 }

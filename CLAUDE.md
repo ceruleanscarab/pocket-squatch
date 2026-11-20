@@ -117,7 +117,9 @@ Wiki: https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-4B
   chosen by hour, month and weather (bunny, bird, deer at dawn/dusk, ducks with spring ducklings, butterfly in
   warm months, owl at night). Tap one to send it off. Scene-only: nothing in the save.
   The horse edition's farm adds a hen with chicks, a goat, a sheep (a lamb in spring), the farm dog, a piglet and the
-  barn cat (also some nights), each with its own synth call (`Cue::Cluck`, `Bleat`, `Woof`, `Oink`, `Meow`); they walk
+  barn cat (also some nights), each with its own call (`Cue::Cluck`, `Bleat`, `Woof`, `Oink`, `Meow`); the cat, goat/sheep,
+  dog and owl (`Hoot`) are real recordings (`farm_sounds.cpp` by `tools/farm_sounds.py`, CC0 BigSoundBank; the sheep is the
+  goat a little higher, every other bleat), the hen, piglet, ducks and birds are still synth; they walk
   in, stop a while beside the pony (`visStopX_`), and walk on.
 - Updates over the air (`firmware/main/ota.cpp`, menuconfig Automatic updates): two app slots (`partitions.csv`, nvs kept
   where it was), rollback if a new build doesn't run a minute. Nightly about 3 am (screen off, battery 40%+ or charging)
